@@ -9,6 +9,7 @@ type MessageReplyDraftPayload = {
   companyName?: string;
   contextMode?: 'new' | 'reply';
   currentBody?: string;
+  deliveryMode?: 'both' | 'email' | 'letter';
   historyText?: string;
   instruction?: string;
   issueText?: string;
@@ -50,10 +51,14 @@ async function requireAuthenticatedUser(request: Request) {
   }
 }
 
-function buildSystemPrompt() {
+function buildSystemPrompt(deliveryMode: MessageReplyDraftPayload['deliveryMode']) {
   return [
     'Du schreibst kurze, professionelle deutschsprachige Nachrichten einer Immobilienverwaltung an Mieter.',
+    'Die zusätzliche Anweisung des Nutzers ist verbindlich und hat immer höchste Priorität vor Stilvorgaben und Standardformulierungen.',
     'Erzeuge nur den Nachrichtentext ohne Betreff und ohne Signatur.',
+    deliveryMode === 'letter'
+      ? 'Wenn die Nachricht in eine Briefvorlage eingefügt wird, darfst du keine Anrede und keine Abschlussformel schreiben.'
+      : '',
     'Sprich den Mieter mit seinem echten Namen an, niemals mit dem Firmennamen der Verwaltung.',
     'Wenn ein Anredehinweis wie Frau oder Herr vorhanden ist, musst du ihn exakt übernehmen.',
     'Wenn kein sauberer Name vorliegt, verwende eine neutrale Anrede wie "Guten Tag".',
@@ -63,27 +68,38 @@ function buildSystemPrompt() {
     'Verwende nur Informationen aus dem Kontext und erfinde keine Fakten.',
     'Nenne niemals interne Firmenadressen oder bitte den Mieter nicht, an die Verwaltungsadresse zu schreiben, außer die Nutzeranweisung verlangt das ausdrücklich.',
     'Wenn der Kontextmodus "Neue Nachricht" ist, ignoriere frühere Probleme vollständig und schreibe nur zur aktuellen Nutzeranweisung.',
+    'Wenn der Kontextmodus "Neue Nachricht" ist, darfst du frühere Themen wie Wasserschaden, Zähler, Ablesung, Termine oder andere Altvorgänge nicht erwähnen, außer die aktuelle Nutzeranweisung verlangt das ausdrücklich.',
+    'Wenn der Kontextmodus "Neue Nachricht" ist, dürfen Objekt-, Einheits- oder Zählerdaten nur genannt werden, wenn sie für die aktuelle Nutzeranweisung unmittelbar nötig sind.',
     'Wenn eine Antwortadresse genannt werden soll, darf nur die konfigurierte Absenderadresse verwendet werden.',
     'Wenn Zählerdaten vorhanden sind und die Anweisung zu Zählerständen, Ablesung oder Zählertausch passt, liste die vorhandenen Zähler konkret mit auf.',
     'Wenn der Anredehinweis "Frau" ist, darfst du unter keinen Umständen "Herr" schreiben.',
-  ].join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 function buildUserPrompt(payload: MessageReplyDraftPayload) {
   const contextMode = payload.contextMode === 'new' ? 'new' : 'reply';
+  const instruction = cleanText(payload.instruction);
+  const includeContextDetails = contextMode === 'reply';
+  const meters =
+    includeContextDetails && Array.isArray(payload.meters) && payload.meters.length > 0
+      ? payload.meters.join('; ')
+      : 'keine';
   return [
     `Firma: ${cleanText(payload.companyName) || '–'}`,
     `Mieter: ${cleanText(payload.recipientName) || '–'}`,
     `Anredehinweis: ${cleanText(payload.recipientSalutation) || '–'}`,
+    `Zielkanal: ${payload.deliveryMode === 'letter' ? 'Briefvorlage' : 'E-Mail / Standard'}`,
     `E-Mail Mieter: ${cleanText(payload.recipientEmail) || '–'}`,
     `Absenderadresse: ${cleanText(payload.senderEmail) || 'portal@halbmann-holding.de'}`,
-    `Objekt: ${cleanText(payload.propertyName) || '–'}`,
-    `Einheit: ${cleanText(payload.unitLabel) || '–'}`,
+    `Objekt: ${includeContextDetails ? cleanText(payload.propertyName) || '–' : 'Ignorieren'}`,
+    `Einheit: ${includeContextDetails ? cleanText(payload.unitLabel) || '–' : 'Ignorieren'}`,
     `Betreff: ${cleanText(payload.subject) || '–'}`,
     `Kontextmodus: ${contextMode === 'reply' ? 'Antwort auf bestehenden Verlauf' : 'Neue Nachricht'}`,
     '',
     'Zugeordnete Zähler:',
-    Array.isArray(payload.meters) && payload.meters.length > 0 ? payload.meters.join('; ') : 'keine',
+    meters,
     '',
     contextMode === 'reply' ? 'Ausgangsnachricht des Mieters:' : 'Frühere Themen:',
     cleanText(contextMode === 'reply' ? payload.issueText : '') || 'Ignorieren',
@@ -92,12 +108,15 @@ function buildUserPrompt(payload: MessageReplyDraftPayload) {
     cleanText(payload.currentBody) || '–',
     '',
     'Zusätzliche Anweisung:',
-    cleanText(payload.instruction) || 'Keine',
+    instruction || 'Keine',
+    instruction ? 'Diese zusätzliche Anweisung ist verbindlich. Setze sie exakt um.' : '',
     '',
     contextMode === 'reply'
       ? 'Schreibe jetzt eine passende Antwort an den Mieter.'
       : 'Schreibe jetzt eine neue, eigenständige Nachricht an den Mieter. Frühere Probleme dürfen nicht erwähnt werden, außer die Anweisung verlangt das ausdrücklich.',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export async function POST(request: Request) {
@@ -125,7 +144,7 @@ export async function POST(request: Request) {
       input: [
         {
           role: 'system',
-          content: [buildSystemPrompt(), settingsBlock ? `Zusätzliche Vorgabe:\n${settingsBlock}` : '']
+          content: [buildSystemPrompt(payload.deliveryMode), settingsBlock ? `Zusätzliche Vorgabe:\n${settingsBlock}` : '']
             .filter(Boolean)
             .join('\n\n'),
         },

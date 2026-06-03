@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { FieldValue } from 'firebase-admin/firestore';
 import { NextResponse } from 'next/server';
 import { getAdminDb, hasFirebaseAdminConfig } from '../../../../lib/firebaseAdmin';
@@ -7,12 +9,18 @@ import {
   setFirestoreDocument,
 } from '../../../../lib/firestoreRest';
 import { getMailboxSettingsServer } from '../../../../lib/mailboxConfigServer';
-import { buildEmailSignatureHtml, buildSignatureText, createSignatureRecord } from '../../../../lib/signatures';
+import {
+  buildFullEmailSignatureHtml,
+  buildSignatureText,
+  createSignatureRecord,
+  type SignatureRecord,
+} from '../../../../lib/signatures';
 import { sendPortalEmail } from '../../../../lib/smtp';
 
 export const runtime = 'nodejs';
 
 type SendDraftPayload = {
+  draft?: Record<string, unknown>;
   draftId?: string;
 };
 
@@ -36,6 +44,22 @@ function buildMailHeaderHtml(text: string) {
       <div style="font-size:14px;line-height:1.6;color:#6b4f2d;font-weight:600;">${encodeHtml(content)}</div>
     </div>
   `;
+}
+
+function wrapEmailHtmlDocument(innerHtml: string) {
+  const content = cleanText(innerHtml);
+  if (!content) return '';
+  return `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
+  <body style="margin:0;padding:0;background:#ffffff;">
+    ${content}
+  </body>
+</html>`;
 }
 
 function resolveFontSize(value: string, fallback: string) {
@@ -94,16 +118,78 @@ function stripTrailingSignature(body: string, signatureText: string) {
     : trimmedBody;
 }
 
-function buildShortClosingHtml(signature: ReturnType<typeof createSignatureRecord>) {
-  const lines = [
-    signature.closing || 'Mit freundlichen Grüßen',
-    signature.name,
-    signature.companyName,
-  ].filter(Boolean);
+function buildDraftSignatureRecord(value: unknown): SignatureRecord {
+  const fallback = createSignatureRecord(null);
+  if (!value || typeof value !== 'object') {
+    return fallback;
+  }
 
-  return lines
-    .map((line, index) => `<div style="margin:${index === 0 ? '14px' : '3px'} 0 0 0;">${encodeHtml(line)}</div>`)
-    .join('');
+  const raw = value as Record<string, unknown>;
+  const looksLikeFinalSignature =
+    Boolean(cleanText(raw.logoUrl)) ||
+    Boolean(cleanText(raw.companyName)) ||
+    Boolean(cleanText(raw.closing)) ||
+    Boolean(cleanText(raw.portalName));
+
+  if (looksLikeFinalSignature) {
+    return {
+      ...fallback,
+      ...(raw as Partial<SignatureRecord>),
+    };
+  }
+
+  return createSignatureRecord(raw);
+}
+
+async function resolveInlineLogoForEmail(logoUrl: string) {
+  const cleaned = cleanText(logoUrl);
+  if (!cleaned || cleaned.startsWith('data:') || cleaned.startsWith('cid:')) {
+    return null;
+  }
+  let localPath = cleaned;
+  if (/^https?:\/\//i.test(cleaned)) {
+    try {
+      const parsed = new URL(cleaned);
+      const knownOrigins = [
+        cleanText(process.env.NEXT_PUBLIC_APP_URL),
+        cleanText(process.env.APP_URL),
+        'http://localhost:3000',
+      ].filter(Boolean);
+      if (!knownOrigins.includes(`${parsed.protocol}//${parsed.host}`)) {
+        return null;
+      }
+      localPath = parsed.pathname;
+    } catch {
+      return null;
+    }
+  }
+  if (!localPath.startsWith('/')) {
+    return null;
+  }
+
+  const relativePath = localPath.replace(/^\/+/, '').split('/').filter(Boolean);
+  const absolutePath = path.join(process.cwd(), 'public', ...relativePath);
+  const fileBuffer = await readFile(absolutePath);
+  const extension = path.extname(absolutePath).toLowerCase();
+  const contentType =
+    extension === '.svg'
+      ? 'image/svg+xml'
+      : extension === '.webp'
+        ? 'image/webp'
+        : extension === '.jpg' || extension === '.jpeg'
+          ? 'image/jpeg'
+          : 'image/png';
+  const cid = `signature-logo-${Date.now()}@halbmann.local`;
+
+  return {
+    attachment: {
+      cid,
+      content: fileBuffer,
+      contentType,
+      filename: path.basename(absolutePath),
+    },
+    cidUrl: `cid:${cid}`,
+  };
 }
 
 export async function POST(request: Request) {
@@ -112,7 +198,8 @@ export async function POST(request: Request) {
     const authToken = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
     const payload = (await request.json()) as SendDraftPayload;
     const draftId = cleanText(payload.draftId);
-    if (!draftId) {
+    const inlineDraft = payload.draft && typeof payload.draft === 'object' ? payload.draft : null;
+    if (!draftId && !inlineDraft) {
       return NextResponse.json({ ok: false, error: 'draft_id_missing' }, { status: 400 });
     }
 
@@ -121,17 +208,22 @@ export async function POST(request: Request) {
     }
 
     const db = hasFirebaseAdminConfig() ? getAdminDb() : null;
-    const draftSnapshot = hasFirebaseAdminConfig()
-      ? await db!.collection('messageDrafts').doc(draftId).get()
-      : null;
-    if (hasFirebaseAdminConfig() && !draftSnapshot?.exists) {
-      return NextResponse.json({ ok: false, error: 'draft_not_found' }, { status: 404 });
-    }
+    let draft: Record<string, unknown> = {};
+    if (inlineDraft) {
+      draft = inlineDraft;
+    } else {
+      const draftSnapshot = hasFirebaseAdminConfig()
+        ? await db!.collection('messageDrafts').doc(draftId).get()
+        : null;
+      if (hasFirebaseAdminConfig() && !draftSnapshot?.exists) {
+        return NextResponse.json({ ok: false, error: 'draft_not_found' }, { status: 404 });
+      }
 
-    const draftRecord = hasFirebaseAdminConfig()
-      ? { data: draftSnapshot?.data() ?? {}, id: draftSnapshot?.id ?? draftId }
-      : await getFirestoreDocument('messageDrafts', draftId, authToken);
-    const draft = draftRecord.data ?? {};
+      const draftRecord = hasFirebaseAdminConfig()
+        ? { data: draftSnapshot?.data() ?? {}, id: draftSnapshot?.id ?? draftId }
+        : await getFirestoreDocument('messageDrafts', draftId, authToken);
+      draft = (draftRecord.data as Record<string, unknown>) ?? {};
+    }
     const recipientEmail = cleanText(draft.recipientEmail);
     const subject = cleanText(draft.subject);
     const body = cleanText(draft.body);
@@ -144,13 +236,17 @@ export async function POST(request: Request) {
     const mailboxSettings = await getMailboxSettingsServer();
     const senderEmail = cleanText(mailboxSettings.inboxEmail) || 'portal@halbmann-holding.de';
     const mailHeaderText = cleanText(mailboxSettings.mailHeaderText);
-    const signature = createSignatureRecord(
-      draft.signature && typeof draft.signature === 'object'
-        ? (draft.signature as Record<string, unknown>)
-        : null
-    );
+    const signature = buildDraftSignatureRecord(draft.signature);
+    const inlineLogo = await resolveInlineLogoForEmail(signature.logoUrl).catch(() => null);
+    const emailSignatureRecord = inlineLogo
+      ? {
+          ...signature,
+          logoUrl: inlineLogo.cidUrl,
+        }
+      : signature;
     const fullSignatureText = buildSignatureText(signature);
     const visibleBody = stripTrailingSignature(body, fullSignatureText);
+    const plainTextBody = [visibleBody, fullSignatureText].filter(Boolean).join('\n\n');
     const finalHtmlBody = [
       buildStyledTextHtml({
         align: mailboxSettings.mailHeaderTextAlign === 'left' ? 'left' : 'center',
@@ -163,9 +259,9 @@ export async function POST(request: Request) {
         underline: mailboxSettings.mailHeaderUnderline === true,
       }) || buildMailHeaderHtml(mailHeaderText),
       htmlBody ||
-        `<div style="white-space:pre-wrap;font-family:Segoe UI,Arial,sans-serif;">${encodeHtml(visibleBody)}</div>${buildShortClosingHtml(
-          signature
-        )}${buildEmailSignatureHtml(signature) || ''}${buildStyledTextHtml({
+        `<div style="white-space:pre-wrap;font-family:Segoe UI,Arial,sans-serif;">${encodeHtml(visibleBody)}</div>${
+          buildFullEmailSignatureHtml(emailSignatureRecord) || ''
+        }${buildStyledTextHtml({
           align: mailboxSettings.mailFooterTextAlign === 'left' ? 'left' : 'center',
           bold: mailboxSettings.mailFooterBold === true,
           divider: mailboxSettings.mailFooterDivider !== false,
@@ -179,25 +275,28 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join('');
     const sendInfo = await sendPortalEmail({
-      html: finalHtmlBody || undefined,
+      attachments: inlineLogo ? [inlineLogo.attachment] : undefined,
+      html: wrapEmailHtmlDocument(finalHtmlBody) || undefined,
       subject,
-      text: body,
+      text: plainTextBody,
       to: recipientEmail,
     });
 
     const nowValue = hasFirebaseAdminConfig() ? FieldValue.serverTimestamp() : new Date().toISOString();
-    const draftUpdate = {
-      ...draft,
-      sentAt: nowValue,
-      smtpMessageId: sendInfo.messageId,
-      status: 'sent',
-      updatedAt: nowValue,
-    };
+    if (draftId) {
+      const draftUpdate = {
+        ...draft,
+        sentAt: nowValue,
+        smtpMessageId: sendInfo.messageId,
+        status: 'sent',
+        updatedAt: nowValue,
+      };
 
-    if (hasFirebaseAdminConfig()) {
-      await db!.collection('messageDrafts').doc(draftId).set(draftUpdate, { merge: true });
-    } else {
-      await setFirestoreDocument('messageDrafts', draftId, draftUpdate, authToken);
+      if (hasFirebaseAdminConfig()) {
+        await db!.collection('messageDrafts').doc(draftId).set(draftUpdate, { merge: true });
+      } else {
+        await setFirestoreDocument('messageDrafts', draftId, draftUpdate, authToken);
+      }
     }
 
     const messageId = cleanText(draft.messageId);
@@ -210,11 +309,12 @@ export async function POST(request: Request) {
       channel: 'email',
       createdAt: nowValue,
       draftKind: cleanText(draft.kind),
+      deliveryMode: cleanText(draft.deliveryMode) || 'email',
       direction: 'outbound',
       externalMessageKey: cleanText(draft.externalMessageKey),
       fromEmail: senderEmail,
       fromName: 'Halbmann Holding',
-      inReplyToDraftId: draftId,
+      inReplyToDraftId: draftId || '',
       priority: 'normal',
       propertyId: cleanText(draft.propertyId),
       receivedAt: nowValue,
@@ -280,17 +380,21 @@ export async function POST(request: Request) {
           { merge: true }
         );
       } else {
-        const messageRecord = await getFirestoreDocument('messages', messageId, authToken);
-        await setFirestoreDocument(
-          'messages',
-          messageId,
-          {
-            ...messageRecord.data,
-            status: ticketId ? 'ticket_created' : 'done',
-            updatedAt: nowValue,
-          },
-          authToken
-        );
+        try {
+          const messageRecord = await getFirestoreDocument('messages', messageId, authToken);
+          await setFirestoreDocument(
+            'messages',
+            messageId,
+            {
+              ...messageRecord.data,
+              status: ticketId ? 'ticket_created' : 'done',
+              updatedAt: nowValue,
+            },
+            authToken
+          );
+        } catch {
+          // Lokale Themen koennen als relatedMessageId eine Themen-ID tragen, ohne bestehendes messages-Dokument.
+        }
       }
     }
 

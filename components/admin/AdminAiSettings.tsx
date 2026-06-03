@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
@@ -137,7 +137,7 @@ export default function AdminAiSettings() {
       <h2 className="mt-2 text-3xl text-slate-950">KI-Antwortstil</h2>
       <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
         Hier legst du fest, wie die KI grundsätzlich antworten soll. Diese Vorgaben gelten für
-        Nachrichten und Tickets. Zusätzlich kannst du im jeweiligen Composer weiter einen
+        Nachrichten und Themen. Zusätzlich kannst du im jeweiligen Composer weiter einen
         situationsbezogenen KI-Hinweis mitgeben.
       </p>
 
@@ -188,3 +188,4 @@ export default function AdminAiSettings() {
     </section>
   );
 }
+

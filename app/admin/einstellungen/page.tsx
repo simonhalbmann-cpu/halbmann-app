@@ -1,11 +1,11 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import AdminAiSettings from '../../../components/admin/AdminAiSettings';
-import AdminLetterSettings from '../../../components/admin/AdminLetterSettings';
+import AdminLetterTemplateSettings from '../../../components/admin/AdminLetterTemplateSettings';
 import AdminMailboxSettings from '../../../components/admin/AdminMailboxSettings';
+import AdminPortalInvitationSettings from '../../../components/admin/AdminPortalInvitationSettings';
 import AdminSignatureSettings from '../../../components/admin/AdminSignatureSettings';
 
-type SettingsTab = 'brief' | 'ki' | 'postfach' | 'signaturen';
-type BriefSubTab = 'abschluss' | 'anrede' | 'vorlage';
+type SettingsTab = 'brief' | 'ki' | 'portal' | 'postfach' | 'signaturen';
 
 function TabLink({
   active,
@@ -34,7 +34,7 @@ function TabLink({
 export default async function AdminSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sub?: BriefSubTab; tab?: SettingsTab }>;
+  searchParams: Promise<{ tab?: SettingsTab }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const currentTab: SettingsTab =
@@ -42,21 +42,17 @@ export default async function AdminSettingsPage({
       ? 'brief'
       : resolvedSearchParams.tab === 'signaturen'
       ? 'signaturen'
+      : resolvedSearchParams.tab === 'portal'
+      ? 'portal'
       : resolvedSearchParams.tab === 'ki'
         ? 'ki'
         : 'postfach';
-  const currentBriefSubTab: BriefSubTab =
-    resolvedSearchParams.sub === 'anrede'
-      ? 'anrede'
-      : resolvedSearchParams.sub === 'abschluss'
-        ? 'abschluss'
-        : 'vorlage';
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
         <TabLink active={currentTab === 'postfach'} href="/admin/einstellungen" label="Postfach-Zugang" />
         <TabLink active={currentTab === 'ki'} href="/admin/einstellungen?tab=ki" label="KI" />
+        <TabLink active={currentTab === 'portal'} href="/admin/einstellungen?tab=portal" label="Einladungsmail" />
         <TabLink active={currentTab === 'brief'} href="/admin/einstellungen?tab=brief" label="Brief" />
         <TabLink
           active={currentTab === 'signaturen'}
@@ -66,31 +62,14 @@ export default async function AdminSettingsPage({
       </div>
 
       {currentTab === 'brief' ? (
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-3">
-            <TabLink
-              active={currentBriefSubTab === 'vorlage'}
-              href="/admin/einstellungen?tab=brief&sub=vorlage"
-              label="Briefvorlage"
-            />
-            <TabLink
-              active={currentBriefSubTab === 'anrede'}
-              href="/admin/einstellungen?tab=brief&sub=anrede"
-              label="Anrede"
-            />
-            <TabLink
-              active={currentBriefSubTab === 'abschluss'}
-              href="/admin/einstellungen?tab=brief&sub=abschluss"
-              label="Abschluss"
-            />
-          </div>
-          <AdminLetterSettings view={currentBriefSubTab} />
-        </div>
+        <AdminLetterTemplateSettings />
       ) : currentTab === 'signaturen' ? (
         <div className="space-y-6">
           <AdminSignatureSettings />
           <AdminMailboxSettings mode="layout" />
         </div>
+      ) : currentTab === 'portal' ? (
+        <AdminPortalInvitationSettings />
       ) : currentTab === 'ki' ? (
         <AdminAiSettings />
       ) : (
@@ -99,3 +78,4 @@ export default async function AdminSettingsPage({
     </div>
   );
 }
+

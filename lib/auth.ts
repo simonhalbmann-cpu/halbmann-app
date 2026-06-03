@@ -6,12 +6,19 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import type { PortalTargetType } from './portalAccess';
 
-export type UserRole = 'admin' | 'tenant';
+export type UserRole = 'admin' | 'portal';
 
 export type UserProfile = {
+  authEmail?: string | null;
+  contactEmail?: string | null;
+  displayName?: string | null;
   email: string | null;
   role: UserRole;
+  targetId?: string | null;
+  targetType?: PortalTargetType | null;
+  username?: string | null;
 };
 
 const USER_PROFILES_COLLECTION = 'userProfiles';
@@ -21,13 +28,22 @@ function parseUserProfile(data: DocumentData | undefined): UserProfile | null {
     return null;
   }
 
-  if (data.role !== 'admin' && data.role !== 'tenant') {
+  if (data.role !== 'admin' && data.role !== 'portal') {
     return null;
   }
 
   return {
+    authEmail: typeof data.authEmail === 'string' ? data.authEmail : null,
+    contactEmail: typeof data.contactEmail === 'string' ? data.contactEmail : null,
+    displayName: typeof data.displayName === 'string' ? data.displayName : null,
     email: typeof data.email === 'string' ? data.email : null,
     role: data.role,
+    targetId: typeof data.targetId === 'string' ? data.targetId : null,
+    targetType:
+      data.targetType === 'tenant' || data.targetType === 'contact'
+        ? data.targetType
+        : null,
+    username: typeof data.username === 'string' ? data.username : null,
   };
 }
 
@@ -55,6 +71,7 @@ export async function ensureUserProfile({
     await setDoc(
       reference,
       {
+        authEmail: email,
         email,
         lastLoginAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -65,31 +82,11 @@ export async function ensureUserProfile({
     return existingProfile;
   }
 
-  if (intendedRole !== 'tenant') {
-    return null;
-  }
-
-  const createdProfile: UserProfile = {
-    email,
-    role: 'tenant',
-  };
-
-  await setDoc(
-    reference,
-    {
-      ...createdProfile,
-      createdAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
-
-  return createdProfile;
+  return null;
 }
 
 export function getDefaultRouteForRole(role: UserRole) {
-  return role === 'admin' ? '/admin' : '/mieterportal';
+  return role === 'admin' ? '/admin' : '/mieterportal/nachrichten';
 }
 
 export function getLoginRouteForRole(role: UserRole) {
@@ -97,5 +94,5 @@ export function getLoginRouteForRole(role: UserRole) {
 }
 
 export function getRoleLabel(role: UserRole) {
-  return role === 'admin' ? 'Verwalter' : 'Mieter';
+  return role === 'admin' ? 'Verwalter' : 'Portal';
 }

@@ -7,8 +7,9 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { formatDateTime, formatTimestampSort, type WorkflowRecord } from '../../lib/adminWorkflow';
 import { db } from '../../lib/firebase';
+import type { LocalMessageTheme } from '../../lib/localMessageThemes';
+import { buildMessageThemes, type MessageTheme } from '../../lib/messageThemes';
 import { buildRecipientGreeting, stripAiEnvelope } from '../../lib/draftComposer';
-import LetterComposeEditor from './LetterComposeEditor';
 import {
   buildLetterHtml,
   buildLetterText,
@@ -18,9 +19,12 @@ import {
   type SignatureRecord,
 } from '../../lib/signatures';
 import { buildExternalMessageKey } from '../../lib/mailIdentity';
-import { printLetterHtml } from './letterPrint';
+import { applyAdminSenderToSignature, resolveAdminSenderName } from './adminSenderSignature';
+import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
+import { appendDeliveryLabel } from './messageDeliveryLabel';
+import TenantDetailView from './TenantDetailView';
 
-type MailboxTab = 'archive' | 'compose' | 'inbox' | 'sent';
+type MailboxTab = 'archive' | 'compose' | 'inbox';
 type ComposeScope = 'all_tenants' | 'company_tenants' | 'manual' | 'property_tenants' | 'service_contacts';
 type DeliveryMode = 'both' | 'email' | 'letter';
 type ComposeRecipient = {
@@ -48,15 +52,16 @@ type MailboxSettingsResponse = {
   };
 };
 
-const tabs: Array<{ key: MailboxTab; label: string }> = [
-  { key: 'inbox', label: 'Posteingang' },
-  { key: 'archive', label: 'Alte Nachrichten' },
-  { key: 'compose', label: 'Mail senden' },
-  { key: 'sent', label: 'Gesendet' },
-];
-
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildMessageTargetHref(record: WorkflowRecord) {
+  const tenantId = cleanText(record.data.tenantId);
+  if (tenantId) {
+    return `/admin/mieter/${tenantId}?messageId=${record.id}`;
+  }
+  return `/admin/nachrichten/${record.id}`;
 }
 
 function readCollection(
@@ -240,6 +245,14 @@ function buildAddressBlock(lines: Array<unknown>) {
   return lines.map((entry) => cleanText(entry)).filter(Boolean).join('\n');
 }
 
+function buildLetterSubjectLine2(property: WorkflowRecord | null | undefined, unitLabel?: string) {
+  const address = buildAddressBlock([
+    buildAddressLine([property?.data.street, property?.data.houseNumber]),
+    buildAddressLine([property?.data.postalCode, property?.data.city]),
+  ]).replace(/\n/g, ', ');
+  return [address, cleanText(unitLabel)].filter(Boolean).join(' · ');
+}
+
 function normalizeText(value: string) {
   return value
     .toLocaleLowerCase('de-DE')
@@ -265,10 +278,12 @@ export default function MessagesWorkspace() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
   const currentTab = (searchParams.get('tab') as MailboxTab) || 'inbox';
 
-  const [messages, setMessages] = useState<WorkflowRecord[]>([]);
+  const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
+  const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
+  const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
@@ -291,12 +306,14 @@ export default function MessagesWorkspace() {
   const [senderEmail, setSenderEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [pendingDeleteThemeId, setPendingDeleteThemeId] = useState('');
   const [isGeneratingComposeAiDraft, setIsGeneratingComposeAiDraft] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const currentMailboxView: 'archive' | 'inbox' = currentTab === 'archive' ? 'archive' : 'inbox';
 
   useEffect(() => {
     const unsubscribers = [
-      readCollection('messages', setError, setMessages),
+      readCollection('messages', setError, setFirestoreMessages),
       readCollection('tenants', setError, setTenants),
       readCollection('properties', setError, setProperties),
       readCollection('people', setError, setPeople),
@@ -304,6 +321,79 @@ export default function MessagesWorkspace() {
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    async function loadLocalPortalMessages() {
+      try {
+        const response = await authorizedFetch('/api/admin/local-portal-messages');
+        const result = (await response.json()) as {
+          messages?: WorkflowRecord[];
+          ok?: boolean;
+        };
+
+        if (!cancelled && response.ok && result.ok) {
+          setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
+        }
+      } catch (caughtError) {
+        console.error('Fehler beim Laden der lokalen Portalnachrichten:', caughtError);
+      }
+    }
+
+    void loadLocalPortalMessages();
+    const intervalId = window.setInterval(() => {
+      void loadLocalPortalMessages();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    async function loadMessageThemes() {
+      try {
+        const response = await authorizedFetch('/api/admin/message-themes');
+        const result = (await response.json()) as {
+          ok?: boolean;
+          themes?: LocalMessageTheme[];
+        };
+
+        if (!cancelled && response.ok && result.ok) {
+          setMessageThemes(Array.isArray(result.themes) ? result.themes : []);
+        }
+      } catch (caughtError) {
+        console.error('Fehler beim Laden der Themen:', caughtError);
+      }
+    }
+
+    void loadMessageThemes();
+    const intervalId = window.setInterval(() => {
+      void loadMessageThemes();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
+
+  const messages = useMemo(() => {
+    const combined = [...firestoreMessages, ...localPortalMessages];
+    const unique = new Map<string, WorkflowRecord>();
+    combined.forEach((record) => {
+      unique.set(record.id, record);
+    });
+    return Array.from(unique.values());
+  }, [firestoreMessages, localPortalMessages]);
+
+  const themes = useMemo(() => buildMessageThemes(messages, messageThemes), [messageThemes, messages]);
 
   useEffect(() => {
     if (!user) return;
@@ -325,59 +415,58 @@ export default function MessagesWorkspace() {
     };
   }, [user]);
 
-  const inboxMessages = useMemo(
+  const inboxThemes = useMemo(
     () =>
-      messages
-        .filter((record) => cleanText(record.data.direction || 'inbound') === 'inbound')
-        .filter((record) => !['deleted', 'done', 'ticket_created'].includes(cleanText(record.data.status)))
-        .sort(
-          (left, right) =>
-            formatTimestampSort(right.data.receivedAt ?? right.data.createdAt) -
-            formatTimestampSort(left.data.receivedAt ?? left.data.createdAt)
-        ),
-    [messages]
+      themes.filter((theme) => !theme.archived && cleanText(theme.status) !== 'deleted'),
+    [themes]
   );
 
-  const sentMessages = useMemo(
-    () =>
-      messages
-        .filter((record) => cleanText(record.data.direction) === 'outbound')
-        .sort(
-          (left, right) =>
-            formatTimestampSort(right.data.sentAt ?? right.data.createdAt) -
-            formatTimestampSort(left.data.sentAt ?? left.data.createdAt)
-        ),
-    [messages]
-  );
-
-  const archivedMessages = useMemo(
-    () =>
-      messages
-        .filter((record) => cleanText(record.data.direction || 'inbound') === 'inbound')
-        .filter((record) => ['done', 'ticket_created'].includes(cleanText(record.data.status)))
-        .sort(
-          (left, right) =>
-            formatTimestampSort(right.data.receivedAt ?? right.data.createdAt) -
-            formatTimestampSort(left.data.receivedAt ?? left.data.createdAt)
-        ),
-    [messages]
+  const archivedThemes = useMemo(
+    () => themes.filter((theme) => theme.archived || cleanText(theme.status) === 'done'),
+    [themes]
   );
 
   const filteredInbox = useMemo(() => {
     const needle = search.toLocaleLowerCase('de-DE').trim();
-    if (!needle) return inboxMessages;
-    return inboxMessages.filter((record) =>
+    if (!needle) return inboxThemes;
+    return inboxThemes.filter((theme) =>
       [
-        cleanText(record.data.fromName),
-        cleanText(record.data.fromEmail),
-        cleanText(record.data.subject),
-        cleanText(record.data.bodyText),
+        cleanText(theme.latestInbound?.data.fromName),
+        cleanText(theme.latestInbound?.data.fromEmail),
+        cleanText(theme.subject),
+        cleanText(theme.latestEntry.data.bodyText),
       ]
         .join(' ')
         .toLocaleLowerCase('de-DE')
         .includes(needle)
     );
-  }, [inboxMessages, search]);
+  }, [inboxThemes, search]);
+
+  const filteredArchivedThemes = useMemo(() => {
+    const needle = search.toLocaleLowerCase('de-DE').trim();
+    if (!needle) return archivedThemes;
+    return archivedThemes.filter((theme) =>
+      [
+        cleanText(theme.latestInbound?.data.fromName),
+        cleanText(theme.latestInbound?.data.fromEmail),
+        cleanText(theme.subject),
+        cleanText(theme.latestEntry.data.bodyText),
+      ]
+        .join(' ')
+        .toLocaleLowerCase('de-DE')
+        .includes(needle)
+    );
+  }, [archivedThemes, search]);
+
+  const activeThemeList = currentTab === 'archive' ? filteredArchivedThemes : filteredInbox;
+  const selectedGlobalThemeId = cleanText(searchParams.get('themeId'));
+  const selectedGlobalTheme =
+    activeThemeList.find((theme) => theme.id === selectedGlobalThemeId) ?? activeThemeList[0] ?? null;
+  const selectedGlobalTenantId = cleanText(selectedGlobalTheme?.tenantId);
+  const pendingDeleteTheme =
+    themes.find((theme) => theme.id === pendingDeleteThemeId) ??
+    activeThemeList.find((theme) => theme.id === pendingDeleteThemeId) ??
+    null;
 
   const availableTenantsForProperty = useMemo(
     () => tenants.filter((tenant) => cleanText(tenant.data.propertyId) === composePropertyId),
@@ -408,35 +497,6 @@ export default function MessagesWorkspace() {
     [composeCompanyId, composeContactId, composeRecipientEmail, extraServiceRecipients]
   );
 
-  const manualRecipientSignature = useMemo(() => {
-    const selectedProperty = properties.find((property) => property.id === composePropertyId) ?? null;
-    const inferredCompanyId =
-      cleanText(selectedTenant?.data.companyId) ||
-      cleanText(selectedProperty?.data.ownerId) ||
-      composeCompanyId;
-    return buildRecipientSignature(companies, inferredCompanyId, composeCompanyId);
-  }, [companies, composeCompanyId, composePropertyId, composeTenantId, properties, selectedTenant]);
-  const composePreviewSignature = useMemo(() => {
-    if (composeScope === 'manual' || composeScope === 'service_contacts') {
-      return manualRecipientSignature;
-    }
-    if (composeScope === 'property_tenants') {
-      const propertyRecord = properties.find((property) => property.id === composePropertyId) ?? null;
-      return buildRecipientSignature(
-        companies,
-        cleanText(propertyRecord?.data.ownerId),
-        composeCompanyId
-      );
-    }
-    return buildRecipientSignature(companies, composeCompanyId, composeCompanyId);
-  }, [
-    companies,
-    composeCompanyId,
-    composePropertyId,
-    composeScope,
-    manualRecipientSignature,
-    properties,
-  ]);
   const selectedProperty = useMemo(
     () => properties.find((property) => property.id === composePropertyId) ?? null,
     [composePropertyId, properties]
@@ -449,6 +509,7 @@ export default function MessagesWorkspace() {
           buildAddressLine([selectedContact?.data.postalCode, selectedContact?.data.city]),
         ]),
         company: cleanText(selectedContact?.data.partnerCompanyName) || cleanText(selectedContact?.data.companyName),
+        salutation: cleanText(selectedContact?.data.salutation),
         name:
           [cleanText(selectedContact?.data.firstName), cleanText(selectedContact?.data.lastName)]
             .filter(Boolean)
@@ -462,6 +523,14 @@ export default function MessagesWorkspace() {
         buildAddressLine([selectedProperty?.data.postalCode, selectedProperty?.data.city]),
       ]),
       company: cleanText(selectedTenant?.data.companyName),
+      salutation:
+        cleanText(selectedTenant?.data.salutation) ||
+        cleanText(selectedTenant?.data.anrede) ||
+        (cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('w')
+          ? 'Frau'
+          : cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('m')
+            ? 'Herr'
+            : ''),
       name: selectedTenant ? buildTenantLabel(selectedTenant) : '',
     };
   }, [composeScope, selectedContact, selectedProperty, selectedTenant]);
@@ -477,6 +546,15 @@ export default function MessagesWorkspace() {
         buildAddressLine([selectedProperty?.data.postalCode, selectedProperty?.data.city]),
       ]),
       company: cleanText(selectedTenant?.data.companyName),
+      salutation:
+        cleanText(selectedTenant?.data.companyContactSalutation) ||
+        cleanText(selectedTenant?.data.salutation) ||
+        cleanText(selectedTenant?.data.anrede) ||
+        (cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('w')
+          ? 'Frau'
+          : cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('m')
+            ? 'Herr'
+            : ''),
       name: selectedTenant ? buildTenantLabel(selectedTenant) : '',
     };
 
@@ -486,6 +564,14 @@ export default function MessagesWorkspace() {
         buildAddressLine([selectedTenant?.data.companyPostalCode, selectedTenant?.data.companyCity]),
       ]),
       company: cleanText(selectedTenant?.data.companyName),
+      salutation:
+        cleanText(selectedTenant?.data.salutation) ||
+        cleanText(selectedTenant?.data.anrede) ||
+        (cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('w')
+          ? 'Frau'
+          : cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('m')
+            ? 'Herr'
+            : ''),
       name:
         cleanText(selectedTenant?.data.companyContactName) ||
         (selectedTenant ? buildTenantLabel(selectedTenant) : ''),
@@ -659,6 +745,24 @@ export default function MessagesWorkspace() {
     return tab === 'inbox' ? pathname : `${pathname}?tab=${tab}`;
   }
 
+  function buildInboxThemeHref(themeId: string) {
+    const tabParam = currentTab === 'archive' ? 'archive' : 'inbox';
+    return tabParam === 'inbox'
+      ? `${pathname}?themeId=${themeId}`
+      : `${pathname}?tab=${tabParam}&themeId=${themeId}`;
+  }
+
+  function handleMailboxViewChange(nextTab: 'archive' | 'inbox') {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('admin-mailbox-view', {
+          detail: { view: nextTab },
+        })
+      );
+    }
+    router.push(buildTabHref(nextTab));
+  }
+
   async function authorizedFetch(url: string, init?: RequestInit) {
     if (!user) {
       throw new Error('Du bist nicht angemeldet.');
@@ -672,6 +776,56 @@ export default function MessagesWorkspace() {
         Authorization: `Bearer ${token}`,
         ...(init?.headers ?? {}),
       },
+    });
+  }
+
+  async function updateThemeState(
+    themeId: string,
+    tenantId: string,
+    title: string,
+    messageIds: string[],
+    status: 'done' | 'in_progress' | 'needs_review' | 'new',
+    archived: boolean
+  ) {
+    const response = await authorizedFetch('/api/admin/message-themes', {
+      method: 'POST',
+      body: JSON.stringify({
+        archived,
+        id: themeId,
+        messageIds,
+        status,
+        tenantId,
+        title,
+      }),
+    });
+    const result = (await response.json()) as { ok?: boolean; error?: string };
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || 'Der Themenstatus konnte nicht aktualisiert werden.');
+    }
+
+    setMessageThemes((current) => {
+      const now = new Date().toISOString();
+      return current.some((theme) => theme.id === themeId)
+        ? current.map((theme) =>
+            theme.id === themeId
+              ? { ...theme, archived, lastActivityAt: now, messageIds, status, title, updatedAt: now }
+              : theme
+          )
+        : [
+            ...current,
+            {
+              archived,
+              createdAt: now,
+              id: themeId,
+              lastActivityAt: now,
+              messageIds,
+              sourceType: 'tenant_message',
+              status,
+              tenantId,
+              title,
+              updatedAt: now,
+            },
+          ];
     });
   }
 
@@ -743,12 +897,14 @@ export default function MessagesWorkspace() {
     signature,
     subject,
     unitId,
+    deliveryMode,
   }: {
     propertyId?: string;
     recipient: ComposeRecipient;
     signature: SignatureRecord;
     subject: string;
     unitId?: string;
+    deliveryMode?: DeliveryMode;
   }) {
     const baseBody = cleanText(composeBody);
     const portalBody = [baseBody, buildPortalSignatureText(signature)].filter(Boolean).join('\n\n');
@@ -759,6 +915,11 @@ export default function MessagesWorkspace() {
       ? people.find((entry) => entry.id === recipient.contactId) ?? null
       : null;
     const propertyRecord = properties.find((entry) => entry.id === cleanText(propertyId)) ?? null;
+    const subjectLine2 = buildLetterSubjectLine2(propertyRecord, cleanText(tenantRecord?.data.unitLabel));
+    const templateCompany =
+      companies.find((entry) => entry.id === cleanText(recipient.companyId)) ??
+      companies.find((entry) => entry.id === cleanText(composeCompanyId)) ??
+      null;
     const letterRecipient =
       recipient.recipientType === 'contact'
         ? {
@@ -768,6 +929,7 @@ export default function MessagesWorkspace() {
             ]),
             company:
               cleanText(contactRecord?.data.partnerCompanyName) || cleanText(contactRecord?.data.companyName),
+            salutation: cleanText(contactRecord?.data.salutation),
             name:
               [cleanText(contactRecord?.data.firstName), cleanText(contactRecord?.data.lastName)]
                 .filter(Boolean)
@@ -782,6 +944,15 @@ export default function MessagesWorkspace() {
               ]),
             company:
               selectedComposeLetterRecipient.company || cleanText(tenantRecord?.data.companyName),
+            salutation:
+              selectedComposeLetterRecipient.salutation ||
+              cleanText(tenantRecord?.data.salutation) ||
+              cleanText(tenantRecord?.data.anrede) ||
+              (cleanText(tenantRecord?.data.gender).toLocaleLowerCase('de-DE').startsWith('w')
+                ? 'Frau'
+                : cleanText(tenantRecord?.data.gender).toLocaleLowerCase('de-DE').startsWith('m')
+                  ? 'Herr'
+                  : ''),
             name:
               selectedComposeLetterRecipient.name || (tenantRecord ? buildTenantLabel(tenantRecord) : ''),
           };
@@ -790,6 +961,7 @@ export default function MessagesWorkspace() {
       body: baseBody,
       context: {
         propertyName: cleanText(propertyRecord?.data.name),
+        subjectLine2,
         unitLabel: cleanText(tenantRecord?.data.unitLabel),
       },
       recipient: letterRecipient,
@@ -804,6 +976,7 @@ export default function MessagesWorkspace() {
       category: '',
       channel: 'letter',
       createdAt: serverTimestamp(),
+      deliveryMode: deliveryMode || 'letter',
       draftKind: 'letter',
       direction: 'outbound',
       fromEmail: senderEmail || 'portal@halbmann-holding.de',
@@ -822,7 +995,24 @@ export default function MessagesWorkspace() {
       letterText: buildLetterText(baseBody, signature),
     });
 
-    printLetterHtml(letterHtml, subject || 'Brief');
+    await downloadFilledLetterTemplate({
+      fallbackHtml: letterHtml,
+      fileName: subject || 'Brief',
+      getAuthToken: user ? () => user.getIdToken() : undefined,
+      replacements: buildLetterTemplateReplacements({
+        body: baseBody,
+        closing: signature.letterClosing || signature.closing,
+        companyName: signature.companyName,
+        recipientAddress: letterRecipient.address,
+        recipientCompany: letterRecipient.company,
+        recipientName: letterRecipient.name,
+        recipientSalutation: letterRecipient.salutation,
+        senderName: signature.name,
+        subject,
+        subjectLine2,
+      }),
+      templateUrl: cleanText(templateCompany?.data.letterTemplateUrl),
+    });
   }
 
   async function createChatHistoryMessage({
@@ -894,6 +1084,61 @@ export default function MessagesWorkspace() {
     });
   }
 
+  function permanentlyDeleteTheme(theme: MessageTheme) {
+    runAction(async () => {
+      const response = await authorizedFetch('/api/admin/message-themes', {
+        method: 'POST',
+        body: JSON.stringify({
+          archived: true,
+          deleted: true,
+          id: theme.id,
+          lastActivityAt: new Date().toISOString(),
+          messageIds: theme.records.map((entry) => entry.id),
+          sourceType: theme.sourceType || 'manual',
+          status: 'done',
+          tenantId: theme.tenantId,
+          title: cleanText(theme.subject) || 'Geloeschte Nachricht',
+        }),
+      });
+      const result = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Die Nachricht konnte nicht geloescht werden.');
+      }
+
+      const now = new Date().toISOString();
+      setMessageThemes((current) =>
+        current.some((entry) => entry.id === theme.id)
+          ? current.map((entry) =>
+              entry.id === theme.id
+                ? { ...entry, archived: true, deleted: true, status: 'done', updatedAt: now }
+                : entry
+            )
+          : [
+              ...current,
+              {
+                archived: true,
+                createdAt: now,
+                deleted: true,
+                id: theme.id,
+                lastActivityAt: now,
+                messageIds: theme.records.map((entry) => entry.id),
+                sourceType: (theme.sourceType as 'admin_message' | 'manual' | 'tenant_message') || 'manual',
+                status: 'done',
+                tenantId: theme.tenantId,
+                title: cleanText(theme.subject) || 'Geloeschte Nachricht',
+                updatedAt: now,
+              },
+            ]
+      );
+
+      setPendingDeleteThemeId('');
+      if (selectedGlobalTheme?.id === theme.id) {
+        router.push(buildTabHref(currentTab === 'archive' ? 'archive' : 'inbox'));
+      }
+      setMessage('Nachricht wurde endgültig gelöscht.');
+    });
+  }
+
   async function sendMessageNow() {
     if (!composeRecipients.length || !cleanText(composeBody)) {
       setError('Bitte wähle Empfänger und Nachricht aus.');
@@ -919,17 +1164,20 @@ export default function MessagesWorkspace() {
     runAction(async () => {
       const bodyWithoutManualSignature = cleanText(composeBody);
       for (const recipient of composeRecipients) {
-        const recipientSignature = buildRecipientSignature(companies, recipient.companyId, composeCompanyId);
+        const recipientSignature = applyAdminSenderToSignature(
+          buildRecipientSignature(companies, recipient.companyId, composeCompanyId),
+          resolveAdminSenderName(profile, user)
+        );
         const tenantRecord = recipient.tenantId
           ? tenants.find((entry) => entry.id === recipient.tenantId) ?? null
           : null;
         const subject = cleanText(composeSubject) || 'Nachricht von Halbmann Holding';
 
         if (composeDeliveryMode === 'email' || composeDeliveryMode === 'both') {
-          const finalBody = mergeBodyWithSignature(bodyWithoutManualSignature, recipientSignature);
           const draftRef = await addDoc(collection(db, 'messageDrafts'), {
             attachments: [],
-            body: finalBody,
+            body: bodyWithoutManualSignature,
+            deliveryMode: composeDeliveryMode,
             createdAt: serverTimestamp(),
             kind: 'broadcast',
             messageId: null,
@@ -957,12 +1205,13 @@ export default function MessagesWorkspace() {
         }
 
         if (composeDeliveryMode === 'both') {
-          await createChatHistoryMessage({
+          await createLetterHistoryMessage({
             propertyId: cleanText(tenantRecord?.data.propertyId),
             recipient,
             signature: recipientSignature,
             subject,
             unitId: cleanText(tenantRecord?.data.unitId),
+            deliveryMode: composeDeliveryMode,
           });
         }
 
@@ -973,6 +1222,7 @@ export default function MessagesWorkspace() {
             signature: recipientSignature,
             subject,
             unitId: cleanText(tenantRecord?.data.unitId),
+            deliveryMode: composeDeliveryMode,
           });
         }
         if (cleanText(composeFollowUpDate) && (recipient.tenantId || recipient.contactId)) {
@@ -993,12 +1243,12 @@ export default function MessagesWorkspace() {
       resetCompose();
       setMessage(
         composeDeliveryMode === 'both'
-          ? 'Mail und Chat wurden verarbeitet.'
+          ? 'Brief und Mail wurden verarbeitet.'
           : composeDeliveryMode === 'letter'
             ? 'Brief wurde im Verlauf erfasst.'
             : 'Nachricht wurde versendet.'
       );
-      router.push(`${pathname}?tab=sent`);
+      router.push(pathname);
     });
   }
 
@@ -1034,6 +1284,7 @@ export default function MessagesWorkspace() {
         body: JSON.stringify({
           companyName: cleanText(selectedCompany?.data.name),
           currentBody: cleanText(composeBody),
+          deliveryMode: composeDeliveryMode,
           instruction: composeAiInstruction,
           meters: selectedMetersSummary,
           propertyName: cleanText(selectedProperty?.data.name),
@@ -1046,6 +1297,18 @@ export default function MessagesWorkspace() {
               : '',
           recipientName:
             composeScope === 'manual' && selectedTenant ? buildTenantLabel(selectedTenant) : '',
+          recipientSalutation:
+            composeScope === 'manual'
+              ? cleanText(selectedTenant?.data.salutation) ||
+                cleanText(selectedTenant?.data.anrede) ||
+                (cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('w')
+                  ? 'Frau'
+                  : cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('m')
+                    ? 'Herr'
+                    : '')
+              : composeScope === 'service_contacts'
+                ? cleanText(selectedContact?.data.salutation)
+                : '',
           senderEmail: senderEmail || 'portal@halbmann-holding.de',
           scope: composeScope,
           subject: cleanText(composeSubject),
@@ -1059,7 +1322,9 @@ export default function MessagesWorkspace() {
 
       let nextComposeBody = '';
 
-      if (composeScope === 'manual') {
+      if (composeDeliveryMode === 'letter') {
+        nextComposeBody = stripAiEnvelope(result.draftText);
+      } else if (composeScope === 'manual') {
         const greeting = buildRecipientGreeting({
           recipientName: selectedTenant ? buildTenantLabel(selectedTenant) : '',
           recipientSalutation:
@@ -1081,12 +1346,6 @@ export default function MessagesWorkspace() {
       } else {
         nextComposeBody = stripAiEnvelope(result.draftText);
       }
-
-      if (composeDeliveryMode === 'letter') {
-        nextComposeBody =
-          stripTrailingSignature(nextComposeBody, buildPortalSignatureText(composePreviewSignature)) ||
-          stripAiEnvelope(result.draftText);
-      }
       setComposeBody(nextComposeBody);
       setMessage('KI-Entwurf wurde erzeugt.');
     } catch (caughtError) {
@@ -1098,58 +1357,127 @@ export default function MessagesWorkspace() {
   }
 
   function renderInbox() {
-    return (
-      <section className="rounded-[28px] border border-stone-200 bg-white shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
-        <div className="flex flex-wrap items-center justify-end gap-4 border-b border-stone-200 px-6 py-4">
+    const globalThemesPanel = (
+      <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
+              Nachrichten
+            </p>
+            <span className="rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+              {activeThemeList.length}
+            </span>
+          </div>
+        </div>
+        <div className="mt-3">
           <input
-            className="w-full max-w-[360px] rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+            className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Nach Absender, Objekt oder Inhalt suchen"
+            placeholder="Nach Mieter, Objekt oder Inhalt suchen"
             type="search"
             value={search}
           />
         </div>
-
-        <div className="divide-y divide-stone-200">
-          {filteredInbox.length === 0 ? (
-            <div className="px-6 py-10">
-              <EmptyState text="Im Posteingang liegen aktuell keine offenen Nachrichten." />
+        <div className="mt-3 max-h-[72vh] space-y-2 overflow-y-auto pr-1">
+          {activeThemeList.length === 0 ? (
+            <div className="rounded-[16px] border border-dashed border-stone-300 bg-white px-3 py-6 text-sm text-slate-600">
+              {currentTab === 'archive'
+                ? 'Keine archivierten Nachrichten vorhanden.'
+                : 'Im Posteingang liegen aktuell keine offenen Nachrichten.'}
             </div>
           ) : (
-            filteredInbox.map((record) => {
-              const sender = cleanText(record.data.fromName || record.data.fromEmail) || 'Unbekannter Absender';
-              const subject = cleanText(record.data.subject) || 'Ohne Betreff';
-              const preview = cleanText(record.data.bodyText).replace(/\s+/g, ' ');
-              const status = cleanText(record.data.status);
+            activeThemeList.map((theme) => {
+              const isSelected = selectedGlobalTheme?.id === theme.id;
+              const linkedTenant =
+                tenants.find((tenant) => tenant.id === cleanText(theme.tenantId)) ?? null;
+              const sender =
+                buildTenantLabel(linkedTenant ?? ({ data: theme.latestInbound?.data ?? {}, id: cleanText(theme.tenantId) || theme.id } as WorkflowRecord)) ||
+                cleanText(theme.latestInbound?.data.fromName || theme.latestInbound?.data.fromEmail) ||
+                'Unbekannter Mieter';
               return (
                 <div
-                  className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto_auto] items-center gap-4 px-6 py-4 transition hover:bg-stone-50"
-                  key={record.id}
+                  className={`relative rounded-[16px] border border-l-4 px-3 py-3 transition ${
+                    isSelected
+                      ? 'border-l-amber-500 border-amber-300 bg-amber-50/70 ring-2 ring-amber-200 shadow-[0_18px_42px_-28px_rgba(148,119,77,0.4)]'
+                      : 'border-l-stone-200 border-stone-200 bg-white hover:border-stone-300'
+                  }`}
+                  key={theme.id}
                 >
-                  <Link className="min-w-0" href={`/admin/nachrichten/${record.id}`}>
-                    <p className="truncate text-sm font-semibold text-slate-950">{sender}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">
-                      {formatDateTime(record.data.receivedAt ?? record.data.createdAt)}
+                  <button
+                    aria-label="Nachricht löschen"
+                    className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-xs font-medium text-stone-500 transition hover:border-rose-300 hover:text-rose-600"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setPendingDeleteThemeId(theme.id);
+                    }}
+                    type="button"
+                  >
+                    x
+                  </button>
+                  <Link className="block pr-8" href={buildInboxThemeHref(theme.id)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className={`truncate text-sm font-medium ${isSelected ? 'text-amber-950' : 'text-slate-950'}`}>
+                          {sender}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-700">
+                          {appendDeliveryLabel(
+                            cleanText(theme.subject) || 'Nachricht ohne Betreff',
+                            theme.latestEntry.data as Record<string, unknown>
+                          )}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                        {currentTab === 'archive'
+                          ? 'Archiv'
+                          : cleanText(theme.status) === 'needs_review'
+                            ? 'Zu prüfen'
+                            : cleanText(theme.status) === 'new'
+                              ? 'Neu'
+                              : 'In Bearbeitung'}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-[11px] text-slate-500">
+                      {cleanText(theme.latestEntry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
                     </p>
+                    <p className="mt-2 text-[11px] text-slate-500">{formatDateTime(theme.latestActivityAt)}</p>
                   </Link>
-                  <Link className="min-w-0" href={`/admin/nachrichten/${record.id}`}>
-                    <p className="truncate text-sm text-slate-900">
-                      {subject}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-slate-500">
-                      {preview || 'Keine Vorschau vorhanden.'}
-                    </p>
-                  </Link>
-                  <span className="justify-self-end rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-slate-600">
-                    {status === 'needs_review' ? 'Zu prüfen' : 'Neu'}
-                  </span>
-                  <p className="whitespace-nowrap text-xs text-slate-500">{cleanText(record.data.channel) || 'Posteingang'}</p>
                 </div>
               );
             })
           )}
         </div>
-      </section>
+      </div>
+    );
+
+    return (
+      <div>
+        {selectedGlobalTheme && selectedGlobalTenantId ? (
+          <TenantDetailView
+            activeThemeListMode={currentTab === 'archive' ? 'archive' : 'open'}
+            detailLayout="messages"
+            externalThemesPanel={globalThemesPanel}
+            headerClassName="flex flex-wrap items-center justify-end gap-4 pl-64 pr-14 md:pl-80 xl:pr-16"
+            messageHrefBuilder={(_tenantId, messageId) =>
+              messageId ? `${pathname}?themeId=${messageId}` : pathname
+            }
+            selectedMessageId={selectedGlobalTheme.id}
+            showEditButton={false}
+            showInvitationButton={false}
+            showOverviewButton={false}
+            sectionTitle={buildTenantLabel(
+              tenants.find((tenant) => tenant.id === selectedGlobalTenantId) ??
+                ({ data: selectedGlobalTheme.latestInbound?.data ?? {}, id: selectedGlobalTenantId } as WorkflowRecord)
+            )}
+            tenantId={selectedGlobalTenantId}
+          />
+        ) : (
+          <section className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
+            {globalThemesPanel}
+          </section>
+        )}
+      </div>
     );
   }
 
@@ -1457,9 +1785,6 @@ export default function MessagesWorkspace() {
                 value={composeAiInstruction}
               />
             </div>
-            <ActionButton disabled={isPending || isGeneratingComposeAiDraft} onClick={generateComposeAiDraft}>
-                Anwenden
-            </ActionButton>
           </div>
 
           {selectedMetersSummary.length > 0 ? (
@@ -1471,43 +1796,20 @@ export default function MessagesWorkspace() {
             </div>
           ) : null}
 
-          {composeDeliveryMode === 'letter' ? (
-            <LetterComposeEditor
-              body={composeBody}
-              className="mt-5 rounded-2xl border border-stone-300 bg-stone-50"
-              onChange={setComposeBody}
-              onRecipientChange={setComposeLetterRecipientKey}
+          <label className="mt-5 block">
+            <textarea
+              className="min-h-[490px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-xs leading-6 text-slate-900 outline-none transition focus:border-amber-700/60"
+              lang="de"
+              onChange={(event) => setComposeBody(event.target.value)}
               placeholder={
                 composeScope === 'service_contacts'
                   ? 'Nachricht an den Dienstleister'
                   : 'Nachricht an den Mieter'
               }
-              context={{
-                propertyName: cleanText(selectedProperty?.data.name),
-                unitLabel: cleanText(selectedUnit?.label),
-              }}
-              recipient={selectedComposeLetterRecipient}
-              recipientOptions={composeScope === 'service_contacts' ? undefined : composeRecipientOptions}
-              selectedRecipientKey={composeLetterRecipientKey}
-              signature={composePreviewSignature}
-              subject={cleanText(composeSubject) || 'Vorschau Firmenbrief'}
+              spellCheck={false}
+              value={composeBody}
             />
-          ) : (
-            <label className="mt-5 block">
-              <textarea
-                className="min-h-[490px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-xs leading-6 text-slate-900 outline-none transition focus:border-amber-700/60"
-                lang="de"
-                onChange={(event) => setComposeBody(event.target.value)}
-                placeholder={
-                  composeScope === 'service_contacts'
-                    ? 'Nachricht an den Dienstleister'
-                    : 'Nachricht an den Mieter'
-                }
-                spellCheck={false}
-                value={composeBody}
-              />
-            </label>
-          )}
+          </label>
 
           <div className="mt-6 flex flex-wrap gap-2">
             {(composeRecipients.length > 0 || composeScope === 'manual') ? (
@@ -1531,107 +1833,37 @@ export default function MessagesWorkspace() {
     );
   }
 
-  function renderSimpleList(records: WorkflowRecord[], emptyText: string) {
-    return (
-      <section className="rounded-[28px] border border-stone-200 bg-white shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
-        <div className="divide-y divide-stone-200">
-          {records.length === 0 ? (
-            <div className="px-6 py-10">
-              <EmptyState text={emptyText} />
-            </div>
-          ) : (
-            records.map((record) => (
-              <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] items-center gap-4 px-6 py-4 transition hover:bg-stone-50" key={record.id}>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-950">
-                    {cleanText(record.data.toEmail || record.data.subject) || 'Gesendete Nachricht'}
-                  </p>
-                  <p className="mt-1 truncate text-xs text-slate-500">
-                    {formatDateTime(record.data.sentAt ?? record.data.receivedAt ?? record.data.createdAt)}
-                  </p>
-                </div>
-                <p className="truncate text-sm text-slate-600">
-                  {cleanText(record.data.subject || record.data.bodyText) || 'Ohne Inhalt'}
-                </p>
-                <span className="justify-self-end rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-slate-600">
-                  {cleanText(record.data.channel) === 'letter'
-                    ? 'Brief'
-                    : cleanText(record.data.channel) === 'portal'
-                      ? 'Chat'
-                      : 'Gesendet'}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-    );
-  }
-
-  function renderArchive() {
-    return (
-      <section className="rounded-[28px] border border-stone-200 bg-white shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
-        <div className="divide-y divide-stone-200">
-          {archivedMessages.length === 0 ? (
-            <div className="px-6 py-10">
-              <EmptyState text="Noch keine alten Nachrichten vorhanden." />
-            </div>
-          ) : (
-            archivedMessages.map((record) => {
-              const sender = cleanText(record.data.fromName || record.data.fromEmail) || 'Unbekannter Absender';
-              const subject = cleanText(record.data.subject) || 'Ohne Betreff';
-              const preview = cleanText(record.data.bodyText).replace(/\s+/g, ' ');
-              return (
-                <div
-                  className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto_auto] items-center gap-4 px-6 py-4 transition hover:bg-stone-50"
-                  key={record.id}
-                >
-                  <Link className="min-w-0" href={`/admin/nachrichten/${record.id}`}>
-                    <p className="truncate text-sm font-semibold text-slate-950">{sender}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">
-                      {formatDateTime(record.data.receivedAt ?? record.data.createdAt)}
-                    </p>
-                  </Link>
-                  <Link className="min-w-0" href={`/admin/nachrichten/${record.id}`}>
-                    <p className="truncate text-sm text-slate-900">
-                      {subject}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-slate-500">
-                      {preview || 'Keine Vorschau vorhanden.'}
-                    </p>
-                  </Link>
-                  <span className="justify-self-end rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-slate-600">
-                    Archiv
-                  </span>
-                  <button
-                    className="rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-400"
-                    onClick={() => permanentlyDeleteMessage(record)}
-                    type="button"
-                  >
-                    Endgültig löschen
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </section>
-    );
-  }
-
   function renderContent() {
     if (currentTab === 'compose') return renderCompose();
-    if (currentTab === 'archive') return renderArchive();
-    if (currentTab === 'sent') return renderSimpleList(sentMessages, 'Noch keine gesendeten Nachrichten vorhanden.');
     return renderInbox();
   }
 
   return (
     <div className="space-y-3 pt-1">
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
-          <TabButton active={currentTab === tab.key} href={buildTabHref(tab.key)} key={tab.key} label={tab.label} />
-        ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
+          <span>Ansicht</span>
+          <select
+            className="bg-transparent text-sm text-slate-900 outline-none"
+            onChange={(event) =>
+              handleMailboxViewChange(event.target.value as 'archive' | 'inbox')
+            }
+            value={currentMailboxView}
+          >
+            <option value="inbox">Posteingang</option>
+            <option value="archive">Archiv</option>
+          </select>
+        </label>
+        <Link
+          className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+            currentTab === 'compose'
+              ? 'border border-stone-200 bg-[linear-gradient(180deg,rgba(255,250,240,0.94)_0%,rgba(244,236,224,0.92)_100%)] text-slate-950 shadow-[0_18px_40px_-32px_rgba(148,119,77,0.45)]'
+              : 'border border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+          }`}
+          href={buildTabHref('compose')}
+        >
+          Neue Nachricht
+        </Link>
       </div>
 
       {renderContent()}
@@ -1644,6 +1876,29 @@ export default function MessagesWorkspace() {
       {error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
+        </div>
+      ) : null}
+      {pendingDeleteTheme ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
+          <div className="w-full max-w-md rounded-[20px] border border-stone-200 bg-white px-5 py-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
+            <p className="text-lg font-medium text-slate-950">Nachricht endgültig löschen?</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
+                onClick={() => setPendingDeleteThemeId('')}
+                type="button"
+              >
+                Abbruch
+              </button>
+              <button
+                className="rounded-full border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:border-rose-400"
+                onClick={() => void permanentlyDeleteTheme(pendingDeleteTheme)}
+                type="button"
+              >
+                Ja
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

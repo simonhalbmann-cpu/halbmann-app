@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import {
   addDoc,
@@ -14,17 +14,14 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import {
-  buildIssueSuggestionsFromText,
   formatDateTime,
   formatTimestampSort,
   inferMessageAnalysis,
-  type IssueSuggestion,
   type WorkflowAnalysis,
   type WorkflowRecord,
 } from '../../lib/adminWorkflow';
 import { db } from '../../lib/firebase';
 import { composePortalDraft, stripAiEnvelope } from '../../lib/draftComposer';
-import LetterComposeEditor from './LetterComposeEditor';
 import {
   buildLetterHtml,
   buildLetterText,
@@ -32,7 +29,9 @@ import {
   createSignatureRecord,
   mergeBodyWithSignature,
 } from '../../lib/signatures';
-import { printLetterHtml } from './letterPrint';
+import { applyAdminSenderToSignature, resolveAdminSenderName } from './adminSenderSignature';
+import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
+import { appendDeliveryLabel } from './messageDeliveryLabel';
 
 type DeliveryMode = 'both' | 'email' | 'letter';
 
@@ -77,6 +76,14 @@ function buildAddressLine(parts: Array<unknown>) {
 
 function buildAddressBlock(lines: Array<unknown>) {
   return lines.map((entry) => cleanText(entry)).filter(Boolean).join('\n');
+}
+
+function buildLetterSubjectLine2(property: WorkflowRecord | null | undefined, unitLabel?: string) {
+  const address = buildAddressBlock([
+    buildAddressLine([property?.data.street, property?.data.houseNumber]),
+    buildAddressLine([property?.data.postalCode, property?.data.city]),
+  ]).replace(/\n/g, ', ');
+  return [address, cleanText(unitLabel)].filter(Boolean).join(' · ');
 }
 
 function stripTrailingSignature(body: string, signatureText: string) {
@@ -130,8 +137,9 @@ function ActionButton({
 
 export default function MessageDetailWorkspace({ messageId }: { messageId: string }) {
   const router = useRouter();
-  const { user } = useAuth();
-  const [messages, setMessages] = useState<WorkflowRecord[]>([]);
+  const { profile, user } = useAuth();
+  const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
+  const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
   const [tickets, setTickets] = useState<WorkflowRecord[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
@@ -144,19 +152,14 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const [letterRecipientKey, setLetterRecipientKey] = useState('property');
   const [followUpDate, setFollowUpDate] = useState('');
   const [noteText, setNoteText] = useState('');
-  const [newTicketTitle, setNewTicketTitle] = useState('');
-  const [ticketAiInstruction, setTicketAiInstruction] = useState('');
-  const [ticketIssueFocus, setTicketIssueFocus] = useState('');
-  const [ticketSuggestions, setTicketSuggestions] = useState<IssueSuggestion[]>([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [isGeneratingTicketSuggestions, setIsGeneratingTicketSuggestions] = useState(false);
   const [isGeneratingAiReply, setIsGeneratingAiReply] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     const unsubscribers = [
-      readCollection('messages', setError, setMessages),
+      readCollection('messages', setError, setFirestoreMessages),
       readCollection('tickets', setError, setTickets),
       readCollection('tenants', setError, setTenants),
       readCollection('properties', setError, setProperties),
@@ -165,6 +168,46 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    async function loadLocalPortalMessages() {
+      try {
+        const response = await authorizedFetch('/api/admin/local-portal-messages');
+        const result = (await response.json()) as {
+          messages?: WorkflowRecord[];
+          ok?: boolean;
+        };
+
+        if (!cancelled && response.ok && result.ok) {
+          setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
+        }
+      } catch (caughtError) {
+        console.error('Fehler beim Laden der lokalen Portalnachrichten:', caughtError);
+      }
+    }
+
+    void loadLocalPortalMessages();
+    const intervalId = window.setInterval(() => {
+      void loadLocalPortalMessages();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
+
+  const messages = useMemo(() => {
+    const combined = [...firestoreMessages, ...localPortalMessages];
+    const unique = new Map<string, WorkflowRecord>();
+    combined.forEach((record) => {
+      unique.set(record.id, record);
+    });
+    return Array.from(unique.values());
+  }, [firestoreMessages, localPortalMessages]);
 
   const selectedMessage = messages.find((record) => record.id === messageId) ?? null;
   const analysis =
@@ -189,7 +232,10 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   }, [selectedMessage?.data.linkedTicketIds, selectedMessage?.data.ticketId]);
   const selectedTicket = tickets.find((record) => linkedTicketIds.includes(record.id)) ?? null;
   const portalSignature = buildPortalSignatureText(
-    createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null)
+    applyAdminSenderToSignature(
+      createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
+      resolveAdminSenderName(profile, user)
+    )
   );
   const letterRecipientOptions = useMemo(() => {
     const propertyRecipient = {
@@ -199,6 +245,14 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       ]),
       company: cleanText(selectedTenant?.data.companyName),
       name: cleanText(analysis?.tenantLabel),
+      salutation:
+        cleanText(selectedTenant?.data.salutation) ||
+        cleanText(selectedTenant?.data.anrede) ||
+        (cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('w')
+          ? 'Frau'
+          : cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('m')
+            ? 'Herr'
+            : ''),
     };
 
     const companyRecipient = {
@@ -208,6 +262,15 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       ]),
       company: cleanText(selectedTenant?.data.companyName),
       name: cleanText(selectedTenant?.data.companyContactName) || cleanText(analysis?.tenantLabel),
+      salutation:
+        cleanText(selectedTenant?.data.companyContactSalutation) ||
+        cleanText(selectedTenant?.data.salutation) ||
+        cleanText(selectedTenant?.data.anrede) ||
+        (cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('w')
+          ? 'Frau'
+          : cleanText(selectedTenant?.data.gender).toLocaleLowerCase('de-DE').startsWith('m')
+            ? 'Herr'
+            : ''),
     };
 
     const options = [
@@ -234,7 +297,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const letterRecipient =
     letterRecipientOptions.find((option) => option.key === letterRecipientKey)?.recipient ??
     letterRecipientOptions[0]?.recipient ??
-    { address: '', company: '', name: '' };
+    { address: '', company: '', name: '', salutation: '' };
 
   useEffect(() => {
     const defaultKey = letterRecipientOptions.some((option) => option.key === 'company')
@@ -268,18 +331,6 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         ),
     [messageEvents, messageId]
   );
-
-  useEffect(() => {
-    if (!selectedMessage) return;
-    const fallbackSuggestions = buildIssueSuggestionsFromText(cleanText(selectedMessage.data.bodyText));
-    setTicketSuggestions(fallbackSuggestions);
-    setNewTicketTitle(
-      cleanText(fallbackSuggestions[0]?.title) ||
-        cleanText(selectedMessage.data.subject) ||
-        `${cleanText(analysis?.tradeLabel) || 'Anliegen'} - ${cleanText(analysis?.propertyLabel) || 'ohne Objekt'}`
-    );
-    setTicketIssueFocus(cleanText(fallbackSuggestions[0]?.focus));
-  }, [analysis?.propertyLabel, analysis?.tradeLabel, selectedMessage?.id]);
 
   function runAction(action: () => Promise<void>) {
     setMessage('');
@@ -320,104 +371,6 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     });
   }
 
-  function chooseTicketSuggestion(suggestion: IssueSuggestion) {
-    setNewTicketTitle(cleanText(suggestion.title));
-    setTicketIssueFocus(cleanText(suggestion.focus));
-  }
-
-  async function generateTicketSuggestions() {
-    if (!selectedMessage) return;
-    setMessage('');
-    setError('');
-    setIsGeneratingTicketSuggestions(true);
-    try {
-      const response = await authorizedFetch('/api/ai/message-ticket-suggestions', {
-        method: 'POST',
-        body: JSON.stringify({
-          instruction: ticketAiInstruction,
-          messageText: cleanText(selectedMessage.data.bodyText),
-          subject: cleanText(selectedMessage.data.subject),
-        }),
-      });
-      const result = (await response.json()) as {
-        error?: string;
-        ok?: boolean;
-        suggestions?: IssueSuggestion[];
-      };
-      if (!response.ok || !result.ok || !Array.isArray(result.suggestions) || result.suggestions.length === 0) {
-        throw new Error(result.error || 'Es konnten keine Ticketvorschläge erzeugt werden.');
-      }
-      setTicketSuggestions(result.suggestions);
-      chooseTicketSuggestion(result.suggestions[0]);
-      setMessage('Ticketvorschläge wurden erzeugt.');
-    } catch (caughtError) {
-      console.error('Fehler bei Ticketvorschlägen:', caughtError);
-      setError(caughtError instanceof Error ? caughtError.message : 'Ticketvorschläge konnten nicht erzeugt werden.');
-    } finally {
-      setIsGeneratingTicketSuggestions(false);
-    }
-  }
-
-  function createTicketFromMessage() {
-    if (!selectedMessage || !analysis) return;
-
-    runAction(async () => {
-      const resolvedFocus =
-        cleanText(ticketIssueFocus) ||
-        ticketSuggestions.find((entry) => cleanText(entry.title) === cleanText(newTicketTitle))?.focus ||
-        cleanText(selectedMessage.data.bodyText);
-      const ticketRef = await addDoc(collection(db, 'tickets'), {
-        assignedCompanyIds: [],
-        assignedContactIds: [],
-        createdAt: serverTimestamp(),
-        issueFocus: resolvedFocus,
-        nextStep: 'Nachricht prüfen und weitere Bearbeitung festlegen',
-        priority: analysis.priority,
-        propertyId: analysis.propertyId || null,
-        sourceMessageId: selectedMessage.id,
-        status: 'new',
-        summary: cleanText(selectedMessage.data.bodyText).slice(0, 320),
-        tenantId: analysis.tenantId || null,
-        ticketNumber: `TK-${Date.now().toString().slice(-6)}`,
-        title:
-          cleanText(newTicketTitle) ||
-          cleanText(selectedMessage.data.subject) ||
-          `${analysis.tradeLabel} - ${analysis.propertyLabel || 'ohne Objekt'}`,
-        type: analysis.ticketType,
-        unitId: analysis.unitId || null,
-        updatedAt: serverTimestamp(),
-      });
-
-      await updateDoc(doc(db, 'messages', selectedMessage.id), {
-        linkedTicketIds: [...new Set([...linkedTicketIds, ticketRef.id])],
-        status: 'ticket_created',
-        ticketId: cleanText(selectedMessage.data.ticketId) || ticketRef.id,
-        updatedAt: serverTimestamp(),
-      });
-
-      await addDoc(collection(db, 'ticketEvents'), {
-        actorId: user?.uid || 'admin',
-        actorType: 'admin',
-        createdAt: serverTimestamp(),
-        kind: 'ticket_created',
-        messageId: selectedMessage.id,
-        text: `Ticket wurde aus dem Thema "${cleanText(newTicketTitle)}" erstellt.`,
-        ticketId: ticketRef.id,
-      });
-
-      await addMessageEvent('ticket_created', 'Aus dieser Nachricht wurde ein Ticket erstellt.');
-      const nextSuggestion = ticketSuggestions.find(
-        (entry) => cleanText(entry.title) !== cleanText(newTicketTitle)
-      );
-      if (nextSuggestion) {
-        chooseTicketSuggestion(nextSuggestion);
-      } else {
-        setNewTicketTitle('');
-        setTicketIssueFocus('');
-      }
-      setMessage('Ticket wurde erstellt.');
-    });
-  }
 
   async function generateAiReply() {
     if (!selectedMessage || !analysis) return;
@@ -435,6 +388,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           currentBody: cleanText(replyText).endsWith(portalSignature)
             ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
             : cleanText(replyText),
+          deliveryMode: replyDeliveryMode,
           historyText: thread
             .slice(0, 6)
             .reverse()
@@ -466,7 +420,10 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         throw new Error(result.error || 'Der KI-Entwurf konnte nicht erzeugt werden.');
       }
 
-      let nextReplyText = composePortalDraft({
+      let nextReplyText =
+        replyDeliveryMode === 'letter'
+          ? stripAiEnvelope(result.draftText)
+          : composePortalDraft({
           aiText: result.draftText,
           contextText: cleanText(selectedMessage.data.bodyText),
           portalSignature,
@@ -480,10 +437,6 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
                 ? 'Herr'
                 : ''),
         });
-      if (replyDeliveryMode === 'letter') {
-        nextReplyText =
-          stripTrailingSignature(nextReplyText, portalSignature) || stripAiEnvelope(result.draftText);
-      }
       setReplyText(nextReplyText);
       setMessage('KI-Entwurf wurde erzeugt.');
     } catch (caughtError) {
@@ -529,7 +482,10 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         throw new Error('Für diese Nachricht ist keine Empfängeradresse hinterlegt.');
       }
 
-      const signature = createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null);
+      const signature = applyAdminSenderToSignature(
+        createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
+        resolveAdminSenderName(profile, user)
+      );
       const baseBody = cleanText(replyText).endsWith(portalSignature)
         ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
         : cleanText(replyText);
@@ -538,7 +494,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       if (replyDeliveryMode === 'email' || replyDeliveryMode === 'both') {
         const draftRef = await addDoc(collection(db, 'messageDrafts'), {
           attachments: [],
-          body: mergeBodyWithSignature(baseBody, signature),
+          body: baseBody,
+          deliveryMode: replyDeliveryMode,
           createdAt: serverTimestamp(),
           kind: 'reply_to_sender',
           messageId,
@@ -565,34 +522,13 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         }
       }
 
-      if (replyDeliveryMode === 'both') {
-        await addDoc(collection(db, 'messages'), {
-          attachments: [],
-          bodyText: [baseBody, buildPortalSignatureText(signature)].filter(Boolean).join('\n\n'),
-          channel: 'portal',
-          createdAt: serverTimestamp(),
-          direction: 'outbound',
-          fromEmail: 'portal@halbmann-holding.de',
-          fromName: 'Halbmann Holding',
-          propertyId: cleanText(selectedProperty?.id),
-          receivedAt: serverTimestamp(),
-          relatedMessageId: messageId,
-          recipientId: cleanText(selectedTenant?.id) || null,
-          recipientType: 'tenant',
-          status: 'sent',
-          subject,
-          tenantId: cleanText(selectedTenant?.id),
-          toEmail: recipientEmail,
-          unitId: cleanText(analysis?.unitId),
-          updatedAt: serverTimestamp(),
-        });
-      }
-
-      if (replyDeliveryMode === 'letter') {
+      if (replyDeliveryMode === 'letter' || replyDeliveryMode === 'both') {
+        const subjectLine2 = buildLetterSubjectLine2(selectedProperty, cleanText(analysis?.unitLabel));
         const letterHtml = buildLetterHtml({
           body: baseBody,
           context: {
             propertyName: cleanText(selectedProperty?.data.name),
+            subjectLine2,
             unitLabel: cleanText(analysis?.unitLabel),
           },
           recipient: letterRecipient,
@@ -606,6 +542,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           bodyText: [baseBody, buildPortalSignatureText(signature)].filter(Boolean).join('\n\n'),
           channel: 'letter',
           createdAt: serverTimestamp(),
+          deliveryMode: replyDeliveryMode,
           direction: 'outbound',
           fromEmail: 'portal@halbmann-holding.de',
           fromName: 'Halbmann Holding',
@@ -623,7 +560,24 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           updatedAt: serverTimestamp(),
         });
 
-        printLetterHtml(letterHtml, subject || 'Brief');
+        await downloadFilledLetterTemplate({
+          fallbackHtml: letterHtml,
+          fileName: subject || 'Brief',
+          getAuthToken: user ? () => user.getIdToken() : undefined,
+          replacements: buildLetterTemplateReplacements({
+            body: baseBody,
+            closing: signature.letterClosing || signature.closing,
+            companyName: signature.companyName,
+            recipientAddress: letterRecipient.address,
+            recipientCompany: letterRecipient.company,
+            recipientName: letterRecipient.name,
+            recipientSalutation: letterRecipient.salutation,
+            senderName: signature.name,
+            subject,
+            subjectLine2,
+          }),
+          templateUrl: cleanText(selectedCompany?.data.letterTemplateUrl),
+        });
       }
       if (cleanText(followUpDate) && cleanText(selectedTenant?.id)) {
         await addDoc(collection(db, 'followUps'), {
@@ -647,7 +601,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       setFollowUpDate('');
       setMessage(
         replyDeliveryMode === 'both'
-          ? 'Mail und Chat wurden versendet.'
+          ? 'Brief und Mail wurden verarbeitet.'
           : replyDeliveryMode === 'letter'
               ? 'Brief wurde im Verlauf dokumentiert.'
               : 'Antwort wurde versendet.'
@@ -727,64 +681,19 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
                 <span className="font-medium text-slate-900">Priorität:</span>{' '}
                 {cleanText(analysis.priority) || '–'}
               </span>
-              {linkedTicketIds.length > 0 ? (
-                <span>
-                  <span className="font-medium text-slate-900">Tickets:</span>{' '}
-                  {linkedTicketIds.map((linkedId, index) => {
-                    const linkedTicket = tickets.find((record) => record.id === linkedId);
-                    return (
-                      <span key={linkedId}>
-                        {index > 0 ? ', ' : ''}
-                        <Link className="underline underline-offset-4" href={`/admin/tickets/${linkedId}`}>
-                          {cleanText(linkedTicket?.data.ticketNumber) || linkedId}
-                        </Link>
-                      </span>
-                    );
-                  })}
-                </span>
-              ) : null}
             </div>
           </div>
         </div>
 
         <div className="flex max-w-full flex-wrap items-center gap-2">
-          <input
-            className="min-w-[260px] rounded-full border border-stone-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-            onChange={(event) => setNewTicketTitle(event.target.value)}
-            placeholder="Neuer Tickettitel"
-            value={newTicketTitle}
-          />
-          <ActionButton disabled={isPending || !cleanText(newTicketTitle)} onClick={createTicketFromMessage}>
-            {linkedTicketIds.length > 0 ? 'Weiteres Ticket erstellen' : 'Ticket erstellen'}
-          </ActionButton>
           {!selectedTicket ? (
             <ActionButton disabled={isPending} onClick={toggleDoneState} tone="solid">
-              {currentStatus === 'done' ? 'Erledigt rückgängig' : 'Als erledigt markieren'}
+              {currentStatus === 'done' ? 'Erledigt rueckgaengig' : 'Als erledigt markieren'}
             </ActionButton>
           ) : null}
         </div>
-        {ticketSuggestions.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {ticketSuggestions.map((suggestion) => {
-              const active = cleanText(suggestion.title) === cleanText(newTicketTitle);
-              return (
-                <button
-                  className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                    active
-                      ? 'border-amber-300 bg-amber-50 text-slate-950'
-                      : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                  }`}
-                  key={`${suggestion.title}-${suggestion.focus}`}
-                  onClick={() => chooseTicketSuggestion(suggestion)}
-                  type="button"
-                >
-                  {suggestion.title}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
       </div>
+
 
       <section className="space-y-5 rounded-[32px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
         <div className="rounded-[26px] border border-stone-200 bg-stone-50 px-5 py-5">
@@ -823,33 +732,14 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
               <option value="both">Beides</option>
             </select>
           </label>
-          {replyDeliveryMode === 'letter' ? (
-            <LetterComposeEditor
-              body={replyText}
-              className="mt-4 rounded-2xl border border-stone-300 bg-stone-50"
-              onChange={setReplyText}
-              onRecipientChange={setLetterRecipientKey}
-              placeholder="Antwort an den Mieter"
-              context={{
-                propertyName: cleanText(selectedProperty?.data.name),
-                unitLabel: cleanText(analysis?.unitLabel),
-              }}
-              recipient={letterRecipient}
-              recipientOptions={letterRecipientOptions}
-              selectedRecipientKey={letterRecipientKey}
-              signature={createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null)}
-              subject={cleanText(selectedMessage?.data.subject) || 'Antwort von Halbmann Holding'}
-            />
-          ) : (
-            <textarea
-              className="mt-4 min-h-[320px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-              lang="de"
-              onChange={(event) => setReplyText(event.target.value)}
-              placeholder="Antwort an den Mieter"
-              spellCheck={false}
-              value={replyText}
-            />
-          )}
+          <textarea
+            className="mt-4 min-h-[320px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+            lang="de"
+            onChange={(event) => setReplyText(event.target.value)}
+            placeholder="Antwort an den Mieter"
+            spellCheck={false}
+            value={replyText}
+          />
           <div className="mt-4 flex flex-wrap gap-2">
             <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
               <span>Wiedervorlage</span>
@@ -885,13 +775,13 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-950">
-                      {isOutbound
+                      {appendDeliveryLabel(isOutbound
                         ? isLetter
                           ? 'Ausgehender Brief'
                           : isPortalChat
                             ? 'Ausgehende Chatnachricht'
                           : 'Ausgehende Nachricht'
-                        : cleanText(entry.data.fromName || entry.data.fromEmail) || 'Eingang'}
+                        : cleanText(entry.data.fromName || entry.data.fromEmail) || 'Eingang', entry.data as Record<string, unknown>)}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
                       {formatDateTime(entry.data.receivedAt ?? entry.data.createdAt)}

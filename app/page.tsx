@@ -126,7 +126,7 @@ export default function Home() {
               </div>
 
               <div className="rounded-[26px] border border-stone-200 bg-stone-50 p-5">
-                <LoginForm intendedRole="tenant" />
+                <LoginForm intendedRole="portal" />
               </div>
             </div>
           </div>

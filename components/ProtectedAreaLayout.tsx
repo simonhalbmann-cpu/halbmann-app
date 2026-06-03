@@ -10,7 +10,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { auth } from '../lib/firebase';
 import { persistInboundEmailsClient, type SyncedInboundEmail } from '../lib/clientWorkflow';
@@ -21,6 +21,7 @@ import {
   type UserRole,
 } from '../lib/auth';
 import { db } from '../lib/firebase';
+import { buildPortalDisplayName } from '../lib/portalAccess';
 
 type NavLink = {
   href: string;
@@ -72,14 +73,16 @@ function isCurrentPath(pathname: string, href: string) {
 }
 
 const unitDisplayLabel = (unit: DocumentData) =>
-  [
-    cleanText(unit.unitLabel),
-    cleanText(unit.floor),
-    cleanText(unit.unitPosition),
-    cleanText(unit.section),
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  Array.from(
+    new Set(
+      [
+        cleanText(unit.unitLabel),
+        cleanText(unit.floor),
+        cleanText(unit.unitPosition),
+        cleanText(unit.section),
+      ].filter(Boolean)
+    )
+  ).join(' · ');
 
 const unitMenuLabel = (floorValue?: unknown, positionValue?: unknown) => {
   const floor = cleanText(floorValue);
@@ -92,8 +95,6 @@ const unitMenuLabel = (floorValue?: unknown, positionValue?: unknown) => {
 
 function getHeaderContent(pathname: string, fallbackTitle: string) {
   if (
-    pathname === '/admin/tickets' ||
-    pathname.startsWith('/admin/tickets/') ||
     pathname === '/admin/nachrichten' ||
     pathname.startsWith('/admin/nachrichten/')
   ) {
@@ -115,14 +116,8 @@ function getHeaderContent(pathname: string, fallbackTitle: string) {
         'Hier laufen Nachrichten aus dem Portal und von portal@halbmann-holding.de zusammen. Sie werden zugeordnet, bewertet und direkt in bearbeitbare Vorgänge überführt.',
     },
     {
-      path: '/admin/tickets',
-      title: 'Vorgänge, Aufgaben und Kommunikation an einem Ort',
-      description:
-        'Jedes Thema bekommt hier seinen Arbeitsraum mit Status, Historie, Entwürfen und Verknüpfung zur Ursprungsnachricht.',
-    },
-    {
       path: '/admin',
-      title: 'Überblick für Kommunikation, Tickets und Bestand',
+      title: 'Überblick für Kommunikation, Themen und Bestand',
       description:
         'Das Dashboard bündelt Kommunikation, offene Vorgänge, Bestand und die nächsten operativen Schritte in einer kompakten Übersicht.',
     },
@@ -151,10 +146,10 @@ export default function ProtectedAreaLayout({
 }: ProtectedAreaLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { loading, role, user } = useAuth();
-  const locationSearch = typeof window === 'undefined' ? '' : window.location.search;
+  const [mailboxViewLabel, setMailboxViewLabel] = useState<'Archiv' | 'Posteingang'>('Posteingang');
+  const [tenantMailboxMode, setTenantMailboxMode] = useState(false);
+  const { loading, profile, role, user } = useAuth();
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-  const [tickets, setTickets] = useState<AdminRecord[]>([]);
   const [companies, setCompanies] = useState<AdminRecord[]>([]);
   const [properties, setProperties] = useState<AdminRecord[]>([]);
   const [tenants, setTenants] = useState<AdminRecord[]>([]);
@@ -165,34 +160,106 @@ export default function ProtectedAreaLayout({
   const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
   const [mailSyncNote, setMailSyncNote] = useState('');
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [portalSidebarName, setPortalSidebarName] = useState('');
+  const settingsMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navHrefs = useMemo(
     () => navSections.flatMap((section) => section.links.map((link) => link.href)),
     [navSections]
   );
   const activeNavHref = useMemo(() => resolveActiveNavHref(pathname, navHrefs), [navHrefs, pathname]);
   const headerContent = useMemo(() => getHeaderContent(pathname, title), [pathname, title]);
-  const isTicketRoute = pathname === '/admin/tickets' || pathname.startsWith('/admin/tickets/');
   const isMessageRoute = pathname === '/admin/nachrichten' || pathname.startsWith('/admin/nachrichten/');
+  const isTenantOverviewRoute = pathname === '/admin/mieter';
+  const isTenantDetailRoute = /^\/admin\/mieter\/[^/]+$/.test(pathname);
   const isBriefSettingsRoute = pathname === '/admin/einstellungen' && settingsTab === 'brief';
-  const isCompactHeaderRoute = isTicketRoute || isMessageRoute || isBriefSettingsRoute;
-  const ticketDetailId = useMemo(() => {
-    const match = pathname.match(/^\/admin\/tickets\/([^/]+)$/);
+  const isCompactHeaderRoute = isMessageRoute || isTenantOverviewRoute || isTenantDetailRoute || isBriefSettingsRoute;
+  const propertyDetailId = useMemo(() => {
+    const match = pathname.match(/^\/admin\/immobilie\/([^/]+)$/);
     return match ? match[1] : '';
-  }, [locationSearch, pathname]);
-  const currentTicketNumber = useMemo(() => {
-    if (!ticketDetailId) return '';
-    const currentTicket = tickets.find((record) => record.id === ticketDetailId) ?? null;
-    return cleanText(currentTicket?.data.ticketNumber);
-  }, [ticketDetailId, tickets]);
-  const sidebarTitle = ticketDetailId
-    ? currentTicketNumber || 'Ticket'
-    : activeNavHref === '/admin/tickets'
-      ? 'Tickets'
-      : activeNavHref === '/admin/nachrichten'
-        ? 'Nachrichten'
+  }, [pathname]);
+  const unitRouteMatch = useMemo(() => {
+    const match = pathname.match(/^\/admin\/einheit\/([^/]+)\/([^/]+)$/);
+    return match ? { propertyId: match[1], unitId: match[2] } : null;
+  }, [pathname]);
+  const currentPropertyName = useMemo(() => {
+    if (!propertyDetailId) return '';
+    const currentProperty = properties.find((record) => record.id === propertyDetailId) ?? null;
+    return cleanText(currentProperty?.data.name);
+  }, [properties, propertyDetailId]);
+  const currentUnitLabel = useMemo(() => {
+    if (!unitRouteMatch) return '';
+    const currentProperty = properties.find((record) => record.id === unitRouteMatch.propertyId) ?? null;
+    const currentUnit = Array.isArray(currentProperty?.data.units)
+      ? currentProperty.data.units.find(
+          (entry: DocumentData) =>
+            entry && typeof entry === 'object' && cleanText(entry.id) === unitRouteMatch.unitId
+        )
+      : null;
+    return currentUnit ? unitDisplayLabel(currentUnit) : '';
+  }, [properties, unitRouteMatch]);
+  const sidebarTitle = unitRouteMatch
+    ? 'Einheit'
+    : propertyDetailId
+      ? 'Objekt'
+    : requiredRole === 'portal'
+      ? cleanText(portalSidebarName) ||
+        cleanText(profile?.displayName) ||
+        cleanText(profile?.username) ||
+        title
+    : activeNavHref === '/admin/nachrichten' || tenantMailboxMode
+        ? mailboxViewLabel
+        : activeNavHref === '/admin/mieter'
+          ? 'Mieter'
         : isBriefSettingsRoute
           ? 'Brief'
         : title;
+  const resolvedHeaderContent = isTenantOverviewRoute
+    ? {
+        description: '',
+        title: '',
+      }
+    : propertyDetailId
+    ? {
+        description: '',
+        title: currentPropertyName || 'Objekt',
+      }
+    : unitRouteMatch
+      ? {
+          description: '',
+          title: currentUnitLabel || 'Einheit',
+        }
+    : headerContent;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isTenantMailboxPath = /^\/admin\/mieter\/[^/]+$/.test(pathname);
+    const isMailboxPath = pathname === '/admin/nachrichten' || pathname.startsWith('/admin/nachrichten/') || isTenantMailboxPath;
+
+    if (!isMailboxPath) {
+      setMailboxViewLabel('Posteingang');
+      setTenantMailboxMode(false);
+      return;
+    }
+
+    const applyLabelFromLocation = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextLabel = params.get('tab') === 'archive' ? 'Archiv' : 'Posteingang';
+      setMailboxViewLabel(nextLabel);
+      setTenantMailboxMode(isTenantMailboxPath);
+    };
+    const handleMailboxViewEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<{ tenantMailbox?: boolean; view?: string }>;
+      setMailboxViewLabel(customEvent.detail?.view === 'archive' ? 'Archiv' : 'Posteingang');
+      setTenantMailboxMode(Boolean(customEvent.detail?.tenantMailbox));
+    };
+    applyLabelFromLocation();
+    window.addEventListener('popstate', applyLabelFromLocation);
+    window.addEventListener('admin-mailbox-view', handleMailboxViewEvent as EventListener);
+    return () => {
+      window.removeEventListener('popstate', applyLabelFromLocation);
+      window.removeEventListener('admin-mailbox-view', handleMailboxViewEvent as EventListener);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -203,11 +270,54 @@ export default function ProtectedAreaLayout({
   }, [pathname]);
 
   useEffect(() => {
+    setSettingsMenuOpen(false);
+  }, [pathname, settingsTab]);
+
+  useEffect(() => {
+    if (requiredRole !== 'portal') {
+      setPortalSidebarName('');
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadPortalSidebarName() {
+      try {
+        const response = await fetch('/api/portal/context', { cache: 'no-store' });
+        const result = (await response.json()) as {
+          ok?: boolean;
+          targetData?: Record<string, unknown> | null;
+        };
+
+        if (!cancelled && response.ok && result.ok && result.targetData) {
+          const fallbackType = profile?.targetType === 'contact' ? 'contact' : 'tenant';
+          setPortalSidebarName(buildPortalDisplayName(fallbackType, result.targetData));
+        }
+      } catch (caughtError) {
+        console.error('Fehler beim Laden des Portalnamens:', caughtError);
+      }
+    }
+
+    void loadPortalSidebarName();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.targetType, requiredRole]);
+
+  useEffect(() => {
+    return () => {
+      if (settingsMenuCloseTimeoutRef.current) {
+        clearTimeout(settingsMenuCloseTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (loading) {
       return;
     }
 
-    if (!user || !role) {
+    if (!role) {
       router.replace(getLoginRouteForRole(requiredRole));
       return;
     }
@@ -223,14 +333,6 @@ export default function ProtectedAreaLayout({
     }
 
     const unsubscribers = [
-      onSnapshot(query(collection(db, 'tickets')), (snapshot) => {
-        setTickets(
-          snapshot.docs.map((documentSnapshot) => ({
-            data: documentSnapshot.data(),
-            id: documentSnapshot.id,
-          }))
-        );
-      }),
       onSnapshot(query(collection(db, 'companies')), (snapshot) => {
         setCompanies(
           snapshot.docs.map((documentSnapshot) => ({
@@ -324,7 +426,11 @@ export default function ProtectedAreaLayout({
   }, [loading, requiredRole, role, user]);
 
   async function handleLogout() {
-    await signOut(auth);
+    if (user) {
+      await signOut(auth);
+    } else if (requiredRole === 'portal') {
+      await fetch('/api/portal-local/logout', { method: 'POST' });
+    }
     router.replace(getLoginRouteForRole(requiredRole));
   }
 
@@ -610,6 +716,68 @@ export default function ProtectedAreaLayout({
     );
   }
 
+  function openSettingsMenu() {
+    if (settingsMenuCloseTimeoutRef.current) {
+      clearTimeout(settingsMenuCloseTimeoutRef.current);
+      settingsMenuCloseTimeoutRef.current = null;
+    }
+    setSettingsMenuOpen(true);
+  }
+
+  function closeSettingsMenuWithDelay() {
+    if (settingsMenuCloseTimeoutRef.current) {
+      clearTimeout(settingsMenuCloseTimeoutRef.current);
+    }
+    settingsMenuCloseTimeoutRef.current = setTimeout(() => {
+      setSettingsMenuOpen(false);
+      settingsMenuCloseTimeoutRef.current = null;
+    }, 260);
+  }
+
+  function renderSettingsMenu() {
+    return (
+      <div className="absolute -left-28 right-3 top-full pt-3">
+        <div className="ml-auto w-72 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_24px_60px_-34px_rgba(148,119,77,0.35)]">
+          <Link
+            className="block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
+            href="/admin/einstellungen"
+            onClick={() => setSettingsMenuOpen(false)}
+          >
+            E-Mail-Postfach
+          </Link>
+          <Link
+            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
+            href="/admin/einstellungen?tab=ki"
+            onClick={() => setSettingsMenuOpen(false)}
+          >
+            KI-Prompt
+          </Link>
+          <Link
+            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
+            href="/admin/einstellungen?tab=portal"
+            onClick={() => setSettingsMenuOpen(false)}
+          >
+            Einladungsmail
+          </Link>
+          <Link
+            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
+            href="/admin/einstellungen?tab=brief"
+            onClick={() => setSettingsMenuOpen(false)}
+          >
+            Brief
+          </Link>
+          <Link
+            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
+            href="/admin/einstellungen?tab=signaturen"
+            onClick={() => setSettingsMenuOpen(false)}
+          >
+            Signaturen
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.18),_transparent_30%),linear-gradient(180deg,_#f6f1ea_0%,_#f3ede4_100%)] px-6">
@@ -623,27 +791,38 @@ export default function ProtectedAreaLayout({
     );
   }
 
-  if (!user || role !== requiredRole) {
+  if (role !== requiredRole || (requiredRole === 'admin' && !user)) {
     return null;
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.18),_transparent_30%),linear-gradient(180deg,_#f6f1ea_0%,_#f3ede4_100%)] text-slate-900">
+    <div className="admin-shell min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.18),_transparent_30%),linear-gradient(180deg,_#f6f1ea_0%,_#f3ede4_100%)] text-slate-900">
       <div className="grid min-h-screen lg:grid-cols-[calc(320px-2cm)_minmax(0,1fr)]">
         <aside className="border-r border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.94)_0%,rgba(244,236,224,0.92)_100%)] px-6 py-8">
           <div className="flex h-full flex-col justify-between">
             <div>
-              <div className="-mt-5 rounded-[26px] border border-stone-200/80 bg-white/72 px-4 py-4 shadow-[0_20px_40px_-34px_rgba(148,119,77,0.4)]">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
-                  Interner Bereich
-                </p>
-                <p className="mt-2 font-serif text-2xl text-slate-950">{sidebarTitle}</p>
+              <div className="-mt-5 rounded-[26px] border border-stone-200/80 bg-white/72 px-4 py-3 shadow-[0_20px_40px_-34px_rgba(148,119,77,0.4)]">
+                {requiredRole === 'admin' ? (
+                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
+                    Interner Bereich
+                  </p>
+                ) : null}
+                  <p
+                    className={`font-serif text-slate-950 ${
+                      requiredRole === 'admin'
+                        ? 'mt-1.5 text-[1.55rem] leading-[1.1]'
+                        : 'truncate text-[1.15rem] leading-tight'
+                    }`}
+                    title={sidebarTitle}
+                  >
+                    {sidebarTitle}
+                  </p>
               </div>
 
-              <div className="mt-4 space-y-4">
+              <div className="mt-3 space-y-3">
                 <div className="p-0">
                   <input
-                    className="w-full rounded-2xl border border-stone-300 bg-transparent px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-amber-700/60"
+                    className="w-full rounded-2xl border border-stone-300 bg-transparent px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-amber-700/60"
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Suchen"
                     type="search"
@@ -863,7 +1042,7 @@ export default function ProtectedAreaLayout({
 
               </div>
 
-              <nav className="mt-6 space-y-6">
+              <nav className="mt-4 space-y-4">
                 {navSections.slice(1).map((section) => (
                   <div key={section.label ?? section.links.map((link) => link.href).join('|')}>
                     {section.label ? (
@@ -915,7 +1094,9 @@ export default function ProtectedAreaLayout({
                 />
               </Link>
               <div className="rounded-[28px] border border-stone-200/80 bg-white/72 px-4 py-2 shadow-[0_24px_50px_-36px_rgba(148,119,77,0.42)]">
-                <p className="break-words text-center text-[11px] leading-4 text-slate-700">{user.email}</p>
+                <p className="break-words text-center text-[11px] leading-4 text-slate-700">
+                  {user?.email || profile?.contactEmail || profile?.username || ''}
+                </p>
                 <button
                 className="mt-1 w-full rounded-full bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] px-4 py-2 text-sm font-medium text-stone-100 transition hover:brightness-105"
                 onClick={handleLogout}
@@ -929,115 +1110,70 @@ export default function ProtectedAreaLayout({
         </aside>
 
         <div className="flex min-h-screen flex-col">
-          {!isCompactHeaderRoute ? (
+          {!isCompactHeaderRoute && requiredRole === 'admin' ? (
           <header
             className={`relative z-30 border-b border-stone-200/80 bg-white/45 backdrop-blur xl:px-10 ${
-              headerContent.title || headerContent.description || (mailSyncNote && requiredRole === 'admin')
-                ? 'px-6 py-6'
+              resolvedHeaderContent.title || resolvedHeaderContent.description || (mailSyncNote && requiredRole === 'admin')
+                ? 'px-6 py-4'
                 : 'px-6 py-2'
             }`}
           >
             <div className="flex items-start justify-between gap-6">
               <div>
-                {headerContent.title ? <h1 className="font-serif text-3xl text-slate-950">{headerContent.title}</h1> : null}
-                {headerContent.description ? (
-                  <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">{headerContent.description}</p>
+                {resolvedHeaderContent.title ? <h1 className="font-serif text-3xl text-slate-950">{resolvedHeaderContent.title}</h1> : null}
+                {resolvedHeaderContent.description ? (
+                  <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">{resolvedHeaderContent.description}</p>
                 ) : null}
                 {mailSyncNote &&
                 requiredRole === 'admin' &&
-                pathname !== '/admin/tickets' &&
-                !pathname.startsWith('/admin/tickets/') &&
                 pathname !== '/admin/nachrichten' &&
                 !pathname.startsWith('/admin/nachrichten/') ? (
                   <p className="mt-3 text-sm text-emerald-700">{mailSyncNote}</p>
                 ) : null}
               </div>
               {requiredRole === 'admin' ? (
-                <div className="relative z-40">
+                <div
+                  className="relative z-40"
+                  onMouseEnter={openSettingsMenu}
+                  onMouseLeave={closeSettingsMenuWithDelay}
+                >
                   {renderSettingsTrigger()}
-                  {settingsMenuOpen ? (
-                    <div className="absolute right-0 top-14 w-72 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_24px_60px_-34px_rgba(148,119,77,0.35)]">
-                      <Link
-                        className="block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        E-Mail-Postfach
-                      </Link>
-                      <Link
-                        className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen?tab=ki"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        KI-Prompt
-                      </Link>
-                      <Link
-                        className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen?tab=brief"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        Brief
-                      </Link>
-                      <Link
-                        className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen?tab=signaturen"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        Signaturen
-                      </Link>
-                    </div>
-                  ) : null}
+                  {settingsMenuOpen ? renderSettingsMenu() : null}
                 </div>
               ) : null}
             </div>
           </header>
-          ) : (
-            <div className="pointer-events-none relative z-40 flex justify-end px-6 pt-3 -mb-11 xl:px-10">
+          ) : requiredRole === 'admin' ? (
+            <div
+              className={`pointer-events-none relative z-40 flex justify-end px-6 xl:px-10 ${
+                isTenantDetailRoute ? 'pt-2 mb-0' : 'pt-3 -mb-11'
+              }`}
+            >
               {requiredRole === 'admin' ? (
-                <div className="pointer-events-auto relative z-40">
+                <div
+                  className="pointer-events-auto relative z-40"
+                  onMouseEnter={openSettingsMenu}
+                  onMouseLeave={closeSettingsMenuWithDelay}
+                >
                   {renderSettingsTrigger()}
-                  {settingsMenuOpen ? (
-                    <div className="absolute right-0 top-14 w-72 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_24px_60px_-34px_rgba(148,119,77,0.35)]">
-                      <Link
-                        className="block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        E-Mail-Postfach
-                      </Link>
-                      <Link
-                        className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen?tab=ki"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        KI-Prompt
-                      </Link>
-                      <Link
-                        className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen?tab=brief"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        Brief
-                      </Link>
-                      <Link
-                        className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-stone-50 hover:text-slate-950"
-                        href="/admin/einstellungen?tab=signaturen"
-                        onClick={() => setSettingsMenuOpen(false)}
-                      >
-                        Signaturen
-                      </Link>
-                    </div>
-                  ) : null}
+                  {settingsMenuOpen ? renderSettingsMenu() : null}
                 </div>
               ) : null}
             </div>
-          )}
-          <main className={`flex-1 px-6 ${isCompactHeaderRoute ? 'py-2' : 'py-8'} xl:px-10`}>{children}</main>
+          ) : null}
+          <main
+            className={`flex-1 px-6 ${
+              isTenantDetailRoute ? 'pt-0 pb-2' : isCompactHeaderRoute ? 'py-2' : 'py-8'
+            } xl:px-10`}
+          >
+            {children}
+          </main>
         </div>
       </div>
     </div>
   );
 }
+
 
 
 

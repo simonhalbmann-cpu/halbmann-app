@@ -5,9 +5,11 @@ import Image from 'next/image';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { db } from '../../lib/firebase';
 import {
+  buildFullEmailSignatureHtml,
   buildSignatureAddress,
   cleanSignatureText,
   createSignatureRecord,
+  EMAIL_SIGNATURE_TOKENS,
   type SignatureRecord,
 } from '../../lib/signatures';
 
@@ -40,6 +42,28 @@ function Field({
       <input
         className="mt-2 w-full rounded-[18px] border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
         onChange={(event) => onChange(event.target.value)}
+        value={value}
+      />
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label className="block">
+      <p className="text-sm font-medium text-slate-700">{label}</p>
+      <textarea
+        className="mt-2 min-h-56 w-full rounded-[18px] border border-stone-300 bg-stone-50 px-4 py-3 font-mono text-xs leading-5 text-slate-900 outline-none transition focus:border-amber-700/60"
+        onChange={(event) => onChange(event.target.value)}
+        spellCheck={false}
         value={value}
       />
     </label>
@@ -188,6 +212,7 @@ export default function AdminSignatureSettings() {
       signatureCountry: cleanSignatureText(nextForm.country),
       signatureDepartment: cleanSignatureText(nextForm.department),
       signatureEmail: cleanSignatureText(nextForm.email),
+      signatureEmailTemplateHtml: cleanSignatureText(nextForm.emailTemplateHtml),
       signatureFontBold: nextForm.fontBold,
       signatureFontFamily: cleanSignatureText(nextForm.fontFamily),
       signatureFontItalic: nextForm.fontItalic,
@@ -232,6 +257,51 @@ export default function AdminSignatureSettings() {
     });
   }
 
+  function buildStarterEmailTemplate() {
+    return `<div style="font-family:Tahoma, Arial, sans-serif;font-size:13px;line-height:1.45;color:#475569;">
+  <p style="margin:0;">{{CLOSING}}</p>
+  <p style="margin:18px 0 0 0;color:#0f172a;">{{NAME}}</p>
+  <p style="margin:6px 0 0 0;color:#0f172a;">{{COMPANY_LINE}}</p>
+  <p style="margin:12px 0 0 0;">{{STREET_LINE}} · {{CITY_LINE}}</p>
+  <p style="margin:4px 0 0 0;">Telefon: {{PHONE}} · {{EMAIL}}</p>
+</div>`;
+  }
+
+  function insertEmailTemplateToken(token: string) {
+    updateField('emailTemplateHtml', `${form.emailTemplateHtml}${form.emailTemplateHtml ? ' ' : ''}${token}`);
+  }
+
+  function clearSignature() {
+    if (!selectedCompanyId) return;
+    setMessage('');
+    setError('');
+
+    startTransition(async () => {
+      try {
+        const blank = createSignatureRecord(selectedCompany?.data);
+        const nextForm = {
+          ...blank,
+          closing: '',
+          department: '',
+          emailTemplateHtml: '',
+          logoAlt: '',
+          logoUrl: '',
+          mobilePhone: '',
+          name: '',
+          portalClosing: '',
+          portalCompanyName: '',
+          portalName: '',
+        };
+        setForm(nextForm);
+        await persistSignature(nextForm);
+        setMessage('Signatur wurde gelöscht.');
+      } catch (caughtError) {
+        console.error('Fehler beim Löschen der Signatur:', caughtError);
+        setError('Die Signatur konnte nicht gelöscht werden.');
+      }
+    });
+  }
+
   async function handleLogoUpload(file?: File | null) {
     if (!selectedCompanyId || !file) return;
     setMessage('');
@@ -265,6 +335,7 @@ export default function AdminSignatureSettings() {
   }
 
   const address = buildSignatureAddress(form);
+  const emailPreviewHtml = buildFullEmailSignatureHtml(form);
   const previewStyle = {
     fontFamily: form.fontFamily,
     fontSize: `${form.fontSize || '14'}px`,
@@ -383,10 +454,55 @@ export default function AdminSignatureSettings() {
                 </div>
               </div>
 
+              <div className="rounded-[24px] border border-stone-200 bg-stone-50 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
+                      Freie E-Mail-Signatur
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Die Vorlage darf frei mit HTML und Platzhaltern aufgebaut werden.
+                    </p>
+                  </div>
+                  <button
+                    className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
+                    onClick={() => updateField('emailTemplateHtml', buildStarterEmailTemplate())}
+                    type="button"
+                  >
+                    Startvorlage einsetzen
+                  </button>
+                </div>
+
+                <div className="mt-4">
+                  <TextAreaField
+                    label="HTML-Vorlage"
+                    onChange={(value) => updateField('emailTemplateHtml', value)}
+                    value={form.emailTemplateHtml}
+                  />
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {EMAIL_SIGNATURE_TOKENS.map((token) => (
+                    <button
+                      className="rounded-full border border-stone-300 bg-white px-3 py-1.5 font-mono text-[11px] text-slate-700 transition hover:border-stone-400"
+                      key={token}
+                      onClick={() => insertEmailTemplateToken(token)}
+                      type="button"
+                    >
+                      {token}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="rounded-[24px] border border-stone-200 bg-white p-6">
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Vorschau</p>
 
                 <div className="mt-5 rounded-[20px] border border-stone-200 bg-stone-50 px-6 py-6 text-slate-700">
+                  {form.emailTemplateHtml && emailPreviewHtml ? (
+                    <div dangerouslySetInnerHTML={{ __html: emailPreviewHtml }} />
+                  ) : (
+                    <>
                   {form.logoUrl ? (
                     <div className="mb-5 flex justify-center">
                       <Image
@@ -423,6 +539,8 @@ export default function AdminSignatureSettings() {
                       {form.vatId ? <p style={{ margin: '2px 0 0 0' }}>USt-IdNr.: {form.vatId}</p> : null}
                     </div>
                   </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="mt-5 rounded-[20px] border border-stone-200 bg-white px-6 py-5 text-slate-700">
@@ -445,6 +563,14 @@ export default function AdminSignatureSettings() {
                   type="button"
                 >
                   {isPending ? 'Wird gespeichert...' : 'Signatur speichern'}
+                </button>
+                <button
+                  className="rounded-full border border-rose-200 bg-white px-5 py-3 text-sm font-medium text-rose-700 transition hover:border-rose-300 disabled:opacity-50"
+                  disabled={isPending || isUploading}
+                  onClick={clearSignature}
+                  type="button"
+                >
+                  Signatur löschen
                 </button>
               </div>
             </>

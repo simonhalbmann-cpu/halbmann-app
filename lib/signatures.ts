@@ -8,6 +8,7 @@
   country: string;
   department: string;
   email: string;
+  emailTemplateHtml: string;
   fontBold: boolean;
   fontFamily: string;
   fontItalic: boolean;
@@ -216,6 +217,8 @@ export const LETTER_TEMPLATE_TOKENS = [
   '{{REGISTERED_OFFICE}}',
   '{{RECIPIENT_COMPANY}}',
   '{{RECIPIENT_NAME}}',
+  '{{FORMAL_SALUTATION}}',
+  '{{GEEHRTE_SUFFIX}}',
   '{{RECIPIENT_ADDRESS}}',
   '{{RECIPIENT_BLOCK}}',
   '{{PROPERTY_NAME}}',
@@ -223,10 +226,43 @@ export const LETTER_TEMPLATE_TOKENS = [
   '{{SENDER_LINE}}',
   '{{CITY_DATE}}',
   '{{SUBJECT}}',
+  '{{SUBJECT_LINE_2}}',
+  '{{BETREFF_ZEILE_2}}',
   '{{GREETING}}',
   '{{SIGNATURE_NAME}}',
   '{{BODY_HTML}}',
   '{{CLOSING_BLOCK}}',
+  '{{LOGO_URL}}',
+  '{{LOGO_ALT}}',
+] as const;
+
+export const EMAIL_SIGNATURE_TOKENS = [
+  '{{CLOSING}}',
+  '{{NAME}}',
+  '{{SIGNATURE_NAME}}',
+  '{{COMPANY_NAME}}',
+  '{{LEGAL_FORM}}',
+  '{{COMPANY_LINE}}',
+  '{{DEPARTMENT}}',
+  '{{STREET_LINE}}',
+  '{{CITY_LINE}}',
+  '{{ADDRESS}}',
+  '{{MOBILE}}',
+  '{{PHONE}}',
+  '{{EMAIL}}',
+  '{{WEBSITE}}',
+  '{{REGISTERED_OFFICE}}',
+  '{{MANAGING_DIRECTOR}}',
+  '{{MANAGING_DIRECTOR_LINE}}',
+  '{{REGISTER_COURT}}',
+  '{{REGISTER_COURT_LINE}}',
+  '{{HRB}}',
+  '{{HRB_LINE}}',
+  '{{TAX_NUMBER}}',
+  '{{TAX_NUMBER_LINE}}',
+  '{{VAT_ID}}',
+  '{{VAT_ID_LINE}}',
+  '{{LOGO}}',
   '{{LOGO_URL}}',
   '{{LOGO_ALT}}',
 ] as const;
@@ -451,6 +487,25 @@ function normalizeGreetingTemplate(value: string) {
     .trim();
 }
 
+function normalizeRecipientSalutationValue(value: unknown) {
+  const normalized = cleanSignatureText(value).toLocaleLowerCase('de-DE');
+  if (['frau', 'ms', 'mrs', 'w', 'weiblich'].includes(normalized)) return 'female';
+  if (['herr', 'mr', 'm', 'männlich', 'maennlich'].includes(normalized)) return 'male';
+  if (['divers', 'diverse', 'd'].includes(normalized)) return 'diverse';
+  return '';
+}
+
+function buildGeehrteSuffix(value: unknown) {
+  return normalizeRecipientSalutationValue(value) === 'male' ? 'r' : '';
+}
+
+function buildFormalSalutation(value: unknown) {
+  const normalized = normalizeRecipientSalutationValue(value);
+  if (normalized === 'male') return 'Sehr geehrter Herr';
+  if (normalized === 'female') return 'Sehr geehrte Frau';
+  return 'Sehr geehrte';
+}
+
 function buildLetterTemplateTokenMap(
   signature: SignatureRecord,
   subject: string,
@@ -460,9 +515,11 @@ function buildLetterTemplateTokenMap(
     address?: string;
     company?: string;
     name?: string;
+    salutation?: string;
   },
   context?: {
     propertyName?: string;
+    subjectLine2?: string;
     unitLabel?: string;
   }
 ) {
@@ -476,7 +533,9 @@ function buildLetterTemplateTokenMap(
   const recipientCompany = normalizeCompanyDisplayName(recipient?.company) || 'Firma Empfänger';
   const recipientName = cleanSignatureText(recipient?.name) || 'Name EmpfÃ¤nger';
   const recipientAddress = cleanSignatureText(recipient?.address) || 'Adresse EmpfÃ¤nger';
+  const recipientSalutation = cleanSignatureText(recipient?.salutation);
   const propertyName = cleanSignatureText(context?.propertyName) || 'Immobilie';
+  const subjectLine2 = cleanSignatureText(context?.subjectLine2);
   const unitLabel = cleanSignatureText(context?.unitLabel) || 'Einheit';
   const registerCourtDisplay = formatRegisterCourtDisplay(signature.registerCourt);
   const commercialRegisterDisplay = formatCommercialRegisterDisplay(signature.commercialRegisterNumber);
@@ -487,6 +546,8 @@ function buildLetterTemplateTokenMap(
   const managingDirector2 = getManagingDirectorAt(signature.managingDirector, 1);
   const greeting = normalizeGreetingTemplate(
     renderRichTextTemplate(signature.letterGreeting, 'Guten Tag {{RECIPIENT_NAME}},', {
+      '{{FORMAL_SALUTATION}}': buildFormalSalutation(recipientSalutation),
+      '{{GEEHRTE_SUFFIX}}': buildGeehrteSuffix(recipientSalutation),
       '{{RECIPIENT_ADDRESS}}': recipientAddress,
       '{{RECIPIENT_COMPANY}}': recipientCompany,
       '{{RECIPIENT_NAME}}': recipientName,
@@ -522,6 +583,8 @@ function buildLetterTemplateTokenMap(
     '{{COMPANY_LINE}}': encodeHtml(buildCompanyLine(signature.companyName, signature.legalForm)),
     '{{COMPANY_NAME}}': encodeHtml(signature.companyName),
     '{{EMAIL}}': encodeHtml(signature.email),
+    '{{FORMAL_SALUTATION}}': encodeHtml(buildFormalSalutation(recipientSalutation)),
+    '{{GEEHRTE_SUFFIX}}': encodeHtml(buildGeehrteSuffix(recipientSalutation)),
     '{{GREETING}}': greeting,
     '{{HRB}}': encodeHtml(commercialRegisterDisplay),
     '{{HRB_LINE}}': encodeHtml(commercialRegisterDisplay),
@@ -556,6 +619,8 @@ function buildLetterTemplateTokenMap(
     ),
     '{{STREET_LINE}}': encodeHtml([signature.street, signature.houseNumber].filter(Boolean).join(' ')),
     '{{SUBJECT}}': encodeHtml(cleanSignatureText(subject) || 'Betreff'),
+    '{{SUBJECT_LINE_2}}': encodeHtml(subjectLine2),
+    '{{BETREFF_ZEILE_2}}': encodeHtml(subjectLine2),
     '{{SIGNATURE_NAME}}': encodeHtml(signature.name),
     '{{TAX_NUMBER}}': encodeHtml(cleanSignatureText(signature.taxNumber)),
     '{{TAX_NUMBER_LINE}}': encodeHtml(taxNumberDisplay),
@@ -678,9 +743,11 @@ function wrapTemplateWithFixedFooter(
 
   const firstLine = matches[0];
   const lastLine = matches[matches.length - 1];
-  const headerHtml = renderedTemplate.slice(0, firstLine.index ?? 0);
-  const middleHtml = renderedTemplate.slice(firstLine.index ?? 0, (lastLine.index ?? 0) + lastLine[0].length);
-  const footerHtml = renderedTemplate.slice((lastLine.index ?? 0) + lastLine[0].length).trim();
+  const firstIndex = firstLine.index ?? 0;
+  const lastIndex = lastLine.index ?? 0;
+  const headerHtml = renderedTemplate.slice(0, firstIndex);
+  const middleHtml = renderedTemplate.slice(firstIndex, lastIndex + lastLine[0].length);
+  const footerHtml = renderedTemplate.slice(lastIndex + lastLine[0].length).trim();
 
   const inner = footerHtml
     ? `${headerHtml}${middleHtml}<div style="position:absolute;left:0;right:0;bottom:0;">${footerHtml}</div>`
@@ -782,6 +849,25 @@ function sanitizeLetterBodyHtmlForTemplate(value: string) {
     }
   };
 
+  const resolveTextAlignLast = (styleValue: string) => {
+    const normalized = styleValue.toLowerCase();
+    const alignMatch = normalized.match(/text-align\s*:\s*(left|right|center|justify)/);
+    if (!alignMatch) return '';
+    if (/text-align-last\s*:/.test(normalized)) return '';
+    const align = alignMatch[1];
+    return align === 'justify' ? 'text-align-last:left' : `text-align-last:${align}`;
+  };
+
+  const ensureBlockTextAlignment = (styleValue: string, fallback = 'text-align:justify;text-align-last:left') => {
+    const normalized = styleValue.toLowerCase();
+    if (!/text-align\s*:|text-align-last\s*:/i.test(normalized)) {
+      return [styleValue, fallback].filter(Boolean).join(';');
+    }
+
+    const alignLast = resolveTextAlignLast(styleValue);
+    return [styleValue, alignLast].filter(Boolean).join(';');
+  };
+
   const sanitizeNode = (node: Node) => {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
 
@@ -809,11 +895,13 @@ function sanitizeLetterBodyHtmlForTemplate(value: string) {
     } else if (tag === 'td' || tag === 'th') {
       applyStyle(element, [
         'box-sizing:border-box',
+        'border:1px solid #111827',
+        'padding:6px 8px',
+        'vertical-align:top',
         pickStyle(existingStyle, allowedCellStyleProps),
       ]);
     } else if (tag === 'div' || tag === 'p') {
       const picked = pickStyle(existingStyle, allowedTextStyleProps);
-      const hasOwnAlign = /text-align\s*:|text-align-last\s*:/i.test(picked);
       applyStyle(element, [
         'margin:0 0 1em 0',
         'display:block',
@@ -823,14 +911,12 @@ function sanitizeLetterBodyHtmlForTemplate(value: string) {
         'font:inherit',
         'line-height:inherit',
         'color:inherit',
-        picked,
-        hasOwnAlign ? '' : 'text-align:justify;text-align-last:left',
+        ensureBlockTextAlignment(picked),
       ]);
     } else if (tag === 'span' || tag === 'strong' || tag === 'b' || tag === 'em' || tag === 'i' || tag === 'u') {
       applyStyle(element, [pickStyle(existingStyle, allowedTextStyleProps)]);
     } else if (tag === 'ul' || tag === 'ol' || tag === 'blockquote') {
       const picked = pickStyle(existingStyle, allowedTextStyleProps);
-      const hasOwnAlign = /text-align\s*:|text-align-last\s*:/i.test(picked);
       applyStyle(element, [
         'margin:0 0 1em 0',
         'width:100%',
@@ -839,8 +925,7 @@ function sanitizeLetterBodyHtmlForTemplate(value: string) {
         'font:inherit',
         'line-height:inherit',
         'color:inherit',
-        picked,
-        hasOwnAlign ? '' : 'text-align:justify;text-align-last:left',
+        ensureBlockTextAlignment(picked),
       ]);
     } else if (tag !== 'br') {
       applyStyle(element, [pickStyle(existingStyle, allowedTextStyleProps)]);
@@ -883,6 +968,23 @@ function htmlBlocksFromEditorHtml(value: string) {
       .join(';');
   };
 
+  const ensureBlockTextAlignment = (styleValue: string, fallback = 'text-align:justify;text-align-last:left') => {
+    const normalized = styleValue.toLowerCase();
+    if (!/text-align\s*:|text-align-last\s*:/i.test(normalized)) {
+      return [styleValue, fallback].filter(Boolean).join(';');
+    }
+
+    const alignMatch = normalized.match(/text-align\s*:\s*(left|right|center|justify)/);
+    if (!alignMatch || /text-align-last\s*:/.test(normalized)) {
+      return styleValue;
+    }
+
+    const align = alignMatch[1];
+    return [styleValue, align === 'justify' ? 'text-align-last:left' : `text-align-last:${align}`]
+      .filter(Boolean)
+      .join(';');
+  };
+
   const buildParagraphBlock = (content: string, styleValue = '') => {
     const supportedTextStyles = extractSupportedTextStyles(styleValue);
     const combinedStyle = [
@@ -894,16 +996,10 @@ function htmlBlocksFromEditorHtml(value: string) {
       'font:inherit',
       'line-height:inherit',
       'color:inherit',
-      supportedTextStyles,
-    ]
-      .filter(Boolean)
-      .join(';');
-    const normalizedStyle = combinedStyle.toLowerCase();
-    const finalStyle = /text-align\s*:/.test(normalizedStyle)
-      ? combinedStyle
-      : `${combinedStyle};text-align:justify;text-align-last:left`;
+      ensureBlockTextAlignment(supportedTextStyles),
+    ].filter(Boolean).join(';');
 
-    return `<div style="${finalStyle}">${content}</div>`;
+    return `<div style="${combinedStyle}">${content}</div>`;
   };
 
   const buildStyledBlockOuterHtml = (element: HTMLElement) => {
@@ -920,10 +1016,8 @@ function htmlBlocksFromEditorHtml(value: string) {
       'line-height:inherit',
       'color:inherit',
     ];
-    if (!/text-align\s*:/.test(normalizedStyle)) {
-      additions.push('text-align:justify', 'text-align-last:left');
-    }
-    clone.setAttribute('style', [existingStyle, additions.join(';')].filter(Boolean).join(';'));
+    const alignedStyle = ensureBlockTextAlignment(existingStyle);
+    clone.setAttribute('style', [alignedStyle, additions.join(';')].filter(Boolean).join(';'));
     return clone.outerHTML;
   };
 
@@ -979,6 +1073,7 @@ function htmlBlocksFromEditorHtml(value: string) {
     if (['div', 'p'].includes(tag)) {
       if (isEmptyEditorLine(element)) {
         flushParagraphParts();
+        blocks.push(buildParagraphBlock('<br />', cleanSignatureText(element.getAttribute('style'))));
         return;
       }
       if (hasNestedBlockContent(element)) {
@@ -986,7 +1081,8 @@ function htmlBlocksFromEditorHtml(value: string) {
         blocks.push(buildParagraphBlock(element.innerHTML, cleanSignatureText(element.getAttribute('style'))));
         return;
       }
-      paragraphParts.push(element.innerHTML.trim());
+      flushParagraphParts();
+      blocks.push(buildParagraphBlock(element.innerHTML.trim(), cleanSignatureText(element.getAttribute('style'))));
       return;
     }
 
@@ -1005,6 +1101,106 @@ function htmlBlocksFromEditorHtml(value: string) {
 
 function tokenizeLetterBodyText(value: string) {
   return value.match(/\S+|\s+/g) ?? [];
+}
+
+function splitHtmlBlockAtWordBoundary(
+  blockHtml: string,
+  fitsHtml: (candidateHtml: string) => boolean
+) {
+  if (typeof document === 'undefined') return null;
+  const template = document.createElement('template');
+  template.innerHTML = blockHtml.trim();
+  const element = template.content.firstElementChild as HTMLElement | null;
+  if (!element) return null;
+
+  const tag = element.tagName.toLowerCase();
+  if (!['div', 'p'].includes(tag)) return null;
+
+  const text = (element.textContent || '').replace(/\u00a0/g, ' ').trim();
+  if (!text) return null;
+
+  const tokens = tokenizeLetterBodyText(text);
+  const style = cleanSignatureText(element.getAttribute('style'));
+  const textNodes: Array<{ end: number; node: Text; start: number }> = [];
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let currentNode = walker.nextNode();
+  let offset = 0;
+  while (currentNode) {
+    const textNode = currentNode as Text;
+    const value = (textNode.textContent || '').replace(/\u00a0/g, ' ');
+    const length = value.length;
+    textNodes.push({ node: textNode, start: offset, end: offset + length });
+    offset += length;
+    currentNode = walker.nextNode();
+  }
+
+  const locateBoundary = (targetOffset: number) => {
+    for (const entry of textNodes) {
+      if (targetOffset <= entry.end) {
+        return {
+          node: entry.node,
+          offset: Math.max(0, targetOffset - entry.start),
+        };
+      }
+    }
+    const last = textNodes[textNodes.length - 1];
+    return last ? { node: last.node, offset: last.node.textContent?.length || 0 } : null;
+  };
+
+  const serializeFragment = (fragment: DocumentFragment) => {
+    const container = document.createElement('div');
+    container.appendChild(fragment.cloneNode(true));
+    return container.innerHTML;
+  };
+
+  const wrapChunkHtml = (innerHtml: string) =>
+    `<${tag}${style ? ` style="${encodeHtml(style)}"` : ''}>${innerHtml}</${tag}>`;
+
+  const sliceByTextLength = (length: number) => {
+    const boundary = locateBoundary(length);
+    if (!boundary) return null;
+
+    const consumedRange = document.createRange();
+    consumedRange.selectNodeContents(element);
+    consumedRange.setEnd(boundary.node, boundary.offset);
+
+    const remainingRange = document.createRange();
+    remainingRange.selectNodeContents(element);
+    remainingRange.setStart(boundary.node, boundary.offset);
+
+    const consumedHtml = serializeFragment(consumedRange.cloneContents()).trim();
+    const remainingHtml = serializeFragment(remainingRange.cloneContents()).trim();
+
+    return {
+      consumedHtml: consumedHtml ? wrapChunkHtml(consumedHtml) : '',
+      remainingHtml: remainingHtml ? wrapChunkHtml(remainingHtml) : '',
+    };
+  };
+
+  let bestLength = 0;
+  let candidateLength = 0;
+
+  for (const token of tokens) {
+    candidateLength += token.length;
+    const candidateText = text.slice(0, candidateLength).trimEnd();
+    if (!candidateText) {
+      bestLength = candidateLength;
+      continue;
+    }
+
+    const sliced = sliceByTextLength(candidateLength);
+    if (sliced?.consumedHtml && fitsHtml(sliced.consumedHtml)) {
+      bestLength = candidateLength;
+      continue;
+    }
+
+    break;
+  }
+
+  if (!bestLength) return null;
+  const result = sliceByTextLength(bestLength);
+  if (!result?.consumedHtml) return null;
+  return result;
 }
 
 function findPreferredSplitIndex(text: string, proposedIndex: number) {
@@ -1109,6 +1305,7 @@ function buildPaginatedLetterHtml({
   bodyIsHtml?: boolean;
   context?: {
     propertyName?: string;
+    subjectLine2?: string;
     unitLabel?: string;
   };
   customTemplate: string;
@@ -1118,6 +1315,7 @@ function buildPaginatedLetterHtml({
     address?: string;
     company?: string;
     name?: string;
+    salutation?: string;
   };
   signature: SignatureRecord;
   subject?: string;
@@ -1251,7 +1449,36 @@ function buildPaginatedLetterHtml({
     layout.append(header, bodySection, footer);
     page.appendChild(layout);
 
-    return { bodyPlaceholder, bodySection, closingTarget, page };
+    return { bodyPlaceholder, bodySection, closingTarget, footer, layout, page };
+  };
+
+  const applyPageNumber = (
+    page: NonNullable<ReturnType<typeof createPage>>,
+    pageNumber: number,
+    totalPages: number
+  ) => {
+    const marker = document.createElement('div');
+    marker.setAttribute('data-letter-page-number', 'true');
+    marker.innerHTML = `
+      <span style="display:inline-flex;align-items:center;gap:10px;">
+        <span style="display:block;width:54px;height:1px;background:linear-gradient(90deg, rgba(168,162,158,0) 0%, rgba(168,162,158,0.7) 100%);"></span>
+        <span style="display:inline-block;">Seite ${pageNumber} von ${totalPages}</span>
+        <span style="display:block;width:54px;height:1px;background:linear-gradient(90deg, rgba(168,162,158,0.7) 0%, rgba(168,162,158,0) 100%);"></span>
+      </span>
+    `;
+    marker.style.flex = '0 0 auto';
+    marker.style.margin = '10px 0 8px';
+    marker.style.textAlign = 'center';
+    marker.style.fontFamily = signature.fontFamily || 'Segoe UI, Arial, sans-serif';
+    marker.style.fontSize = '10px';
+    marker.style.fontWeight = '500';
+    marker.style.letterSpacing = '0.08em';
+    marker.style.color = '#a8a29e';
+    marker.style.opacity = '0.9';
+    marker.style.textTransform = 'none';
+    marker.style.fontStyle = 'normal';
+    marker.style.userSelect = 'none';
+    page.layout.insertBefore(marker, page.footer);
   };
 
   const fitsOnPage = (
@@ -1263,15 +1490,8 @@ function buildPaginatedLetterHtml({
     const page = createPage(isFirstPage, includeClosing, candidateText, candidateHtml);
     if (!page) return false;
     measurementHost.replaceChildren(page.page);
-    const sectionRect = page.bodySection.getBoundingClientRect();
-    const bodyRect = page.bodyPlaceholder.getBoundingClientRect();
-    const closingRect = page.closingTarget.getBoundingClientRect();
-    const contentBottom = Math.max(bodyRect.bottom, closingRect.bottom);
-    const sectionStyle = window.getComputedStyle(page.bodySection);
-    const paddingBottom = Number.parseFloat(sectionStyle.paddingBottom || '0') || 0;
-    const reservePx = isFirstPage ? 0 : 24;
-    const availableBottom = sectionRect.bottom - paddingBottom - reservePx;
-    return contentBottom <= availableBottom + 0.5;
+    const reservePx = 24;
+    return page.bodySection.scrollHeight <= page.bodySection.clientHeight - reservePx + 0.5;
   };
 
   const pages: Array<{ bodyText: string; isFirstPage: boolean; includeClosing: boolean }> = [];
@@ -1281,11 +1501,13 @@ function buildPaginatedLetterHtml({
       const joinedHtml = htmlBlocks.join('');
       if (!joinedHtml) {
         const singleEmptyPage = createPage(true, true, '', '');
+        if (singleEmptyPage) applyPageNumber(singleEmptyPage, 1, 1);
         return singleEmptyPage ? singleEmptyPage.page.outerHTML : null;
       }
 
       if (fitsOnPage('', true, true, joinedHtml)) {
         const singlePage = createPage(true, true, '', joinedHtml);
+        if (singlePage) applyPageNumber(singlePage, 1, 1);
         return singlePage ? singlePage.page.outerHTML : null;
       }
 
@@ -1310,8 +1532,52 @@ function buildPaginatedLetterHtml({
           break;
         }
 
+        const nextBlock = remainingBlocks[consumedCount] || remainingBlocks[0];
+        const canTrySplitNextBlock = Boolean(nextBlock);
+        const splitBlock =
+          canTrySplitNextBlock
+            ? splitHtmlBlockAtWordBoundary(nextBlock, (candidateHtml) =>
+                fitsOnPage('', isFirstPage, false, chunkHtml + candidateHtml)
+              )
+            : null;
+
         if (!chunkHtml || consumedCount === 0) {
-          return null;
+          if (!splitBlock) {
+            return null;
+          }
+          pages.push({ bodyText: splitBlock.consumedHtml, includeClosing: false, isFirstPage });
+          remainingBlocks = [
+            ...(splitBlock.remainingHtml ? [splitBlock.remainingHtml] : []),
+            ...remainingBlocks.slice(1),
+          ];
+          isFirstPage = false;
+          continue;
+        }
+
+        if (splitBlock?.consumedHtml) {
+          pages.push({ bodyText: chunkHtml + splitBlock.consumedHtml, includeClosing: false, isFirstPage });
+          remainingBlocks = [
+            ...(splitBlock.remainingHtml ? [splitBlock.remainingHtml] : []),
+            ...remainingBlocks.slice(consumedCount + 1),
+          ];
+          isFirstPage = false;
+          continue;
+        }
+
+        if (!chunkHtml || consumedCount === 0) {
+          const fallbackSplitBlock = splitHtmlBlockAtWordBoundary(remainingBlocks[0], (candidateHtml) =>
+            fitsOnPage('', isFirstPage, false, candidateHtml)
+          );
+          if (!fallbackSplitBlock) {
+            return null;
+          }
+          pages.push({ bodyText: fallbackSplitBlock.consumedHtml, includeClosing: false, isFirstPage });
+          remainingBlocks = [
+            ...(fallbackSplitBlock.remainingHtml ? [fallbackSplitBlock.remainingHtml] : []),
+            ...remainingBlocks.slice(1),
+          ];
+          isFirstPage = false;
+          continue;
         }
 
         pages.push({ bodyText: chunkHtml, includeClosing: false, isFirstPage });
@@ -1323,6 +1589,7 @@ function buildPaginatedLetterHtml({
         .map(({ bodyText, includeClosing, isFirstPage }, index) => {
           const page = createPage(isFirstPage, includeClosing, '', bodyText);
           if (!page) return '';
+          applyPageNumber(page, index + 1, pages.length);
           if (index === pages.length - 1) {
             page.page.style.breakAfter = 'auto';
             page.page.style.pageBreakAfter = 'auto';
@@ -1335,11 +1602,13 @@ function buildPaginatedLetterHtml({
 
     if (!normalizedBody) {
       const singleEmptyPage = createPage(true, true, '');
+      if (singleEmptyPage) applyPageNumber(singleEmptyPage, 1, 1);
       return singleEmptyPage ? singleEmptyPage.page.outerHTML : null;
     }
 
     if (fitsOnPage(normalizedBody, true, true)) {
       const singlePage = createPage(true, true, normalizedBody);
+      if (singlePage) applyPageNumber(singlePage, 1, 1);
       return singlePage ? singlePage.page.outerHTML : null;
     }
 
@@ -1387,6 +1656,7 @@ function buildPaginatedLetterHtml({
       .map(({ bodyText, includeClosing, isFirstPage }, index) => {
         const page = createPage(isFirstPage, includeClosing, bodyText);
         if (!page) return '';
+        applyPageNumber(page, index + 1, pages.length);
         if (index === pages.length - 1) {
           page.page.style.breakAfter = 'auto';
           page.page.style.pageBreakAfter = 'auto';
@@ -1395,6 +1665,387 @@ function buildPaginatedLetterHtml({
       })
       .filter(Boolean)
       .join('');
+  } finally {
+    measurementHost.remove();
+  }
+}
+
+export type LetterBodyPageFragment = {
+  bodyHtml: string;
+  includeClosing: boolean;
+  isFirstPage: boolean;
+};
+
+export type LetterEditorPageTemplates = {
+  closingHtml: string;
+  continuationPageHtml: string;
+  firstPageHtml: string;
+};
+
+export function buildLetterEditorPageTemplates({
+  context,
+  customTemplate,
+  emptyBodyPlaceholder,
+  pagePadding,
+  recipient,
+  signature,
+  subject,
+}: {
+  context?: {
+    propertyName?: string;
+    subjectLine2?: string;
+    unitLabel?: string;
+  };
+  customTemplate: string;
+  emptyBodyPlaceholder?: string;
+  pagePadding: string;
+  recipient?: {
+    address?: string;
+    company?: string;
+    name?: string;
+    salutation?: string;
+  };
+  signature: SignatureRecord;
+  subject?: string;
+}) {
+  if (typeof document === 'undefined') return null;
+
+  const baseTokenMap = buildLetterTemplateTokenMap(
+    signature,
+    cleanSignatureText(subject),
+    '',
+    emptyBodyPlaceholder,
+    recipient,
+    context
+  );
+  const closingHtml = baseTokenMap['{{CLOSING_BLOCK}}'] || '';
+  const bodyMarkerHtml =
+    '<div data-letter-body="true" style="min-height:28px;white-space:pre-wrap;outline:none;text-align:justify;text-align-last:left;line-height:inherit;font:inherit;color:inherit;"></div>';
+  const templateHtml = applyLetterTemplateTokens(customTemplate, {
+    ...baseTokenMap,
+    '{{BODY_HTML}}': bodyMarkerHtml,
+    '{{CLOSING_BLOCK}}': '<div data-letter-closing="true"></div>',
+  });
+
+  const template = document.createElement('template');
+  template.innerHTML = templateHtml;
+
+  const headerSource = template.content.querySelector('[data-letter-section="header"]') as HTMLElement | null;
+  const bodySource = template.content.querySelector('[data-letter-section="body"]') as HTMLElement | null;
+  const footerSource = template.content.querySelector('[data-letter-section="footer"]') as HTMLElement | null;
+  const bodyPlaceholderSource = bodySource?.querySelector('[data-letter-body="true"]') as HTMLElement | null;
+
+  if (!headerSource || !bodySource || !footerSource || !bodyPlaceholderSource) {
+    return null;
+  }
+
+  const paddingValues = pagePadding
+    .split(/\s+/)
+    .map((value) => Number.parseFloat(value.replace('px', '')))
+    .filter((value) => Number.isFinite(value));
+  const paddingTop = paddingValues[0] ?? 0;
+  const paddingRight = paddingValues[1] ?? paddingTop;
+  const paddingBottom = paddingValues[2] ?? paddingTop;
+  const paddingLeft = paddingValues[3] ?? paddingRight;
+  const contentWidth = LETTER_PAGE_WIDTH_PX - paddingLeft - paddingRight;
+  const contentHeight = LETTER_PAGE_HEIGHT_PX - paddingTop - paddingBottom;
+
+  const headerHeight = extractSectionMinHeight(templateHtml, 'header', 150);
+  const bodyHeight = extractSectionMinHeight(templateHtml, 'body', 520);
+  const footerHeight = extractSectionMinHeight(templateHtml, 'footer', 120);
+
+  const continuationTemplate = cloneBodyTemplateForContinuation(bodySource, bodyPlaceholderSource);
+
+  const createPageTemplate = (isFirstPage: boolean) => {
+    const page = document.createElement('div');
+    page.setAttribute('data-letter-page', 'true');
+    page.style.position = 'relative';
+    page.style.width = `${LETTER_PAGE_WIDTH_PX}px`;
+    page.style.maxWidth = '100%';
+    page.style.height = `${LETTER_PAGE_HEIGHT_PX}px`;
+    page.style.margin = '0 auto';
+    page.style.padding = pagePadding;
+    page.style.overflow = 'hidden';
+    page.style.background = '#ffffff';
+    page.style.boxSizing = 'border-box';
+
+    const layout = document.createElement('div');
+    layout.style.display = 'flex';
+    layout.style.width = `${contentWidth}px`;
+    layout.style.minHeight = `${contentHeight}px`;
+    layout.style.height = `${contentHeight}px`;
+    layout.style.flexDirection = 'column';
+    layout.style.boxSizing = 'border-box';
+
+    const header = headerSource.cloneNode(true) as HTMLElement;
+    header.style.position = 'relative';
+    header.style.flex = '0 0 auto';
+    header.style.minHeight = `${headerHeight}px`;
+
+    const bodySection = (isFirstPage ? bodySource : continuationTemplate.sectionClone).cloneNode(true) as HTMLElement;
+    bodySection.style.position = 'relative';
+    bodySection.style.flex = '1 1 auto';
+    bodySection.style.minHeight = `${bodyHeight}px`;
+    bodySection.style.display = 'flex';
+    bodySection.style.flexDirection = 'column';
+    bodySection.style.overflow = 'hidden';
+
+    const footer = footerSource.cloneNode(true) as HTMLElement;
+    footer.style.position = 'relative';
+    footer.style.flex = '0 0 auto';
+    footer.style.minHeight = `${footerHeight}px`;
+    footer.style.marginTop = 'auto';
+
+    const bodyPlaceholder = bodySection.querySelector('[data-letter-body="true"]') as HTMLElement | null;
+    if (!bodyPlaceholder) {
+      return '';
+    }
+    bodyPlaceholder.innerHTML =
+      '<div data-letter-flow-host="true" data-letter-editor-host="true" style="display:block;flex:1 1 auto;width:100%;max-width:none;min-height:28px;overflow:hidden;box-sizing:border-box;"></div>';
+    bodyPlaceholder.style.display = 'flex';
+    bodyPlaceholder.style.flexDirection = 'column';
+    bodyPlaceholder.style.flex = '1 1 auto';
+    bodyPlaceholder.style.minHeight = '28px';
+    bodyPlaceholder.style.overflow = 'hidden';
+
+    const closingTarget =
+      (bodySection.querySelector('[data-letter-closing="true"]') as HTMLElement | null) ||
+      (() => {
+        const element = document.createElement('div');
+        element.setAttribute('data-letter-closing', 'true');
+        bodySection.appendChild(element);
+        return element;
+      })();
+    closingTarget.innerHTML = '<div data-letter-closing-host="true" style="display:block;flex:0 0 auto;"></div>';
+    closingTarget.style.flex = '0 0 auto';
+
+    layout.append(header, bodySection, footer);
+    page.appendChild(layout);
+    return page.outerHTML;
+  };
+
+  return {
+    closingHtml,
+    continuationPageHtml: createPageTemplate(false),
+    firstPageHtml: createPageTemplate(true),
+  };
+}
+
+export function buildLetterBodyPageFragments({
+  body,
+  bodyHtml,
+  bodyIsHtml = false,
+  context,
+  customTemplate,
+  emptyBodyPlaceholder,
+  pagePadding,
+  recipient,
+  signature,
+  startOnFirstPage = true,
+  subject,
+}: {
+  body: string;
+  bodyHtml?: string;
+  bodyIsHtml?: boolean;
+  context?: {
+    propertyName?: string;
+    subjectLine2?: string;
+    unitLabel?: string;
+  };
+  customTemplate: string;
+  emptyBodyPlaceholder?: string;
+  pagePadding: string;
+  recipient?: {
+    address?: string;
+    company?: string;
+    name?: string;
+    salutation?: string;
+  };
+  signature: SignatureRecord;
+  startOnFirstPage?: boolean;
+  subject?: string;
+}) {
+  if (typeof document === 'undefined') return null;
+
+  const normalizedBody = normalizeLetterBodyText(body);
+  const htmlBlocks = bodyIsHtml
+    ? htmlBlocksFromEditorHtml(bodyHtml || body)
+    : normalizedBody
+      ? normalizedBody
+          .split(/\n{2,}/)
+          .map((entry) => cleanSignatureText(entry))
+          .filter(Boolean)
+          .map(
+            (entry) =>
+              `<div style="margin:0 0 1em 0;display:block;width:100%;max-width:none;box-sizing:border-box;font:inherit;line-height:inherit;color:inherit;text-align:justify;text-align-last:left;">${encodeLetterBodyText(
+                entry
+              )}</div>`
+          )
+      : [];
+  const editorTemplates = buildLetterEditorPageTemplates({
+    context,
+    customTemplate,
+    emptyBodyPlaceholder,
+    pagePadding,
+    recipient,
+    signature,
+    subject,
+  });
+
+  if (!editorTemplates) {
+    return null;
+  }
+
+  const { closingHtml } = editorTemplates;
+
+  const measurementHost = document.createElement('div');
+  measurementHost.style.position = 'fixed';
+  measurementHost.style.left = '-10000px';
+  measurementHost.style.top = '0';
+  measurementHost.style.width = '0';
+  measurementHost.style.height = '0';
+  measurementHost.style.overflow = 'hidden';
+  measurementHost.style.visibility = 'hidden';
+  measurementHost.style.pointerEvents = 'none';
+  document.body.appendChild(measurementHost);
+
+  try {
+    const createWorkingPage = (isFirstPage: boolean) => {
+      const template = document.createElement('template');
+      template.innerHTML = isFirstPage
+        ? editorTemplates.firstPageHtml
+        : editorTemplates.continuationPageHtml;
+      const page = template.content.firstElementChild as HTMLElement | null;
+      if (!page) return null;
+      measurementHost.replaceChildren(page);
+
+      const flowHost = page.querySelector('[data-letter-flow-host="true"]') as HTMLElement | null;
+      const bodyPlaceholder = page.querySelector('[data-letter-body="true"]') as HTMLElement | null;
+      const bodySection = page.querySelector('[data-letter-section="body"]') as HTMLElement | null;
+      const closingTarget = page.querySelector('[data-letter-closing-host="true"]') as HTMLElement | null;
+      if (!flowHost || !bodyPlaceholder || !bodySection || !closingTarget) {
+        return null;
+      }
+
+      flowHost.innerHTML = '';
+      closingTarget.innerHTML = '';
+      bodyPlaceholder.scrollTop = 0;
+      return {
+        bodyPlaceholder,
+        bodySection,
+        closingTarget,
+        flowHost,
+        page,
+        isFirstPage,
+      };
+    };
+
+    const hasVisibleBodyContent = (page: NonNullable<ReturnType<typeof createWorkingPage>>) =>
+      cleanSignatureText(page.flowHost.textContent || '').length > 0 ||
+      page.flowHost.querySelector('table,ul,ol,blockquote,img') !== null;
+
+    const pageFits = (page: NonNullable<ReturnType<typeof createWorkingPage>>) => {
+      const reservePx = 24;
+      return page.bodySection.scrollHeight <= page.bodySection.clientHeight - reservePx + 0.5;
+    };
+
+    const tryAppendBlock = (page: NonNullable<ReturnType<typeof createWorkingPage>>, blockHtml: string) => {
+      const snapshot = page.flowHost.innerHTML;
+      const blockTemplate = document.createElement('template');
+      blockTemplate.innerHTML = blockHtml;
+      page.flowHost.appendChild(blockTemplate.content);
+      if (pageFits(page)) {
+        return true;
+      }
+      page.flowHost.innerHTML = snapshot;
+      return false;
+    };
+
+    const tryApplyClosing = (page: NonNullable<ReturnType<typeof createWorkingPage>>) => {
+      const previousClosing = page.closingTarget.innerHTML;
+      page.closingTarget.innerHTML = closingHtml;
+      if (pageFits(page)) {
+        return true;
+      }
+      page.closingTarget.innerHTML = previousClosing;
+      return false;
+    };
+
+    const splitBlockForPage = (page: NonNullable<ReturnType<typeof createWorkingPage>>, blockHtml: string) =>
+      splitHtmlBlockAtWordBoundary(blockHtml, (candidateHtml) => {
+        const snapshot = page.flowHost.innerHTML;
+        const blockTemplate = document.createElement('template');
+        blockTemplate.innerHTML = candidateHtml;
+        page.flowHost.appendChild(blockTemplate.content);
+        const fits = pageFits(page);
+        page.flowHost.innerHTML = snapshot;
+        return fits;
+      });
+
+    const finalizePage = (
+      page: NonNullable<ReturnType<typeof createWorkingPage>>,
+      includeClosing: boolean
+    ): LetterBodyPageFragment => ({
+      bodyHtml: page.flowHost.innerHTML,
+      includeClosing,
+      isFirstPage: page.isFirstPage,
+    });
+
+    if (htmlBlocks.length === 0) {
+      return [{ bodyHtml: '', includeClosing: true, isFirstPage: startOnFirstPage }];
+    }
+
+    const fragments: LetterBodyPageFragment[] = [];
+    let remainingBlocks = [...htmlBlocks];
+    let currentPage = createWorkingPage(startOnFirstPage);
+    if (!currentPage) return null;
+
+    while (remainingBlocks.length > 0) {
+      const nextBlock = remainingBlocks[0];
+
+      if (tryAppendBlock(currentPage, nextBlock)) {
+        remainingBlocks.shift();
+        continue;
+      }
+
+      const splitBlock = splitBlockForPage(currentPage, nextBlock);
+
+      if (splitBlock?.consumedHtml) {
+        const appendTemplate = document.createElement('template');
+        appendTemplate.innerHTML = splitBlock.consumedHtml;
+        currentPage.flowHost.appendChild(appendTemplate.content);
+        remainingBlocks[0] = splitBlock.remainingHtml || '';
+        if (!remainingBlocks[0]) {
+          remainingBlocks.shift();
+        }
+      } else if (!hasVisibleBodyContent(currentPage)) {
+        // If a single block cannot be split further (e.g. a tall table), place it on its own page.
+        currentPage.flowHost.innerHTML = nextBlock;
+        remainingBlocks.shift();
+      }
+
+      fragments.push(finalizePage(currentPage, false));
+      currentPage = createWorkingPage(false);
+      if (!currentPage) return null;
+    }
+
+    if (tryApplyClosing(currentPage)) {
+      fragments.push(finalizePage(currentPage, true));
+      return fragments;
+    }
+
+    if (hasVisibleBodyContent(currentPage)) {
+      fragments.push(finalizePage(currentPage, false));
+      const closingPage = createWorkingPage(false);
+      if (!closingPage) return fragments;
+      closingPage.closingTarget.innerHTML = closingHtml;
+      fragments.push(finalizePage(closingPage, true));
+      return fragments;
+    }
+
+    currentPage.closingTarget.innerHTML = closingHtml;
+    fragments.push(finalizePage(currentPage, true));
+    return fragments;
   } finally {
     measurementHost.remove();
   }
@@ -1412,6 +2063,7 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
     country: firstRecordText(data?.country),
     department: cleanSignatureText(data?.signatureDepartment),
     email: firstRecordText(data?.email),
+    emailTemplateHtml: cleanSignatureText(data?.signatureEmailTemplateHtml),
     fontBold: data?.signatureFontBold === true,
     fontFamily: cleanSignatureText(data?.signatureFontFamily) || 'Segoe UI, Arial, sans-serif',
     fontItalic: data?.signatureFontItalic === true,
@@ -1449,10 +2101,10 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
     letterClosingBlock: cleanSignatureText(data?.signatureLetterClosingBlock),
     letterFooter: cleanSignatureText(data?.signatureLetterFooter),
     letterGreeting: cleanSignatureText(data?.signatureLetterGreeting),
-    letterMarginBottom: Number(data?.signatureLetterMarginBottom ?? 64) || 64,
-    letterMarginLeft: Number(data?.signatureLetterMarginLeft ?? 56) || 56,
-    letterMarginRight: Number(data?.signatureLetterMarginRight ?? 56) || 56,
-    letterMarginTop: Number(data?.signatureLetterMarginTop ?? 48) || 48,
+    letterMarginBottom: Number(data?.signatureLetterMarginBottom) || 64,
+    letterMarginLeft: Number(data?.signatureLetterMarginLeft) || 56,
+    letterMarginRight: Number(data?.signatureLetterMarginRight) || 56,
+    letterMarginTop: Number(data?.signatureLetterMarginTop) || 48,
     letterFooterFontFamily:
       cleanSignatureText(data?.signatureLetterFooterFontFamily) ||
       cleanSignatureText(data?.signatureFontFamily) ||
@@ -1524,7 +2176,99 @@ export function buildSignatureAddress(signature: SignatureRecord) {
   return [firstLine, secondLine, countryLine].filter(Boolean).join('\n');
 }
 
+function normalizeEmailSignatureTokens(template: string) {
+  return EMAIL_SIGNATURE_TOKENS.reduce((current, token) => {
+    const core = token.slice(2, -2).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return current
+      .replace(new RegExp(`(?<!\\{)\\{${core}\\}\\}`, 'g'), token)
+      .replace(new RegExp(`\\{\\{${core}\\}(?!\\})`, 'g'), token)
+      .replace(new RegExp(`(?<!\\{)\\{${core}\\}(?!\\})`, 'g'), token);
+  }, template);
+}
+
+function sanitizeEmailSignatureHtml(value: string) {
+  return value
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/\sjavascript:/gi, '');
+}
+
+function buildEmailSignatureTokenMap(signature: SignatureRecord) {
+  const address = buildSignatureAddress(signature);
+  const companyLine = buildCompanyLine(signature.companyName, signature.legalForm);
+  const registerCourtDisplay = formatRegisterCourtDisplay(signature.registerCourt);
+  const commercialRegisterDisplay = formatCommercialRegisterDisplay(signature.commercialRegisterNumber);
+  const managingDirectorDisplay = formatManagingDirectorDisplay(signature.managingDirector);
+  const taxNumberDisplay = formatTaxNumberDisplay(signature.taxNumber);
+  const vatIdDisplay = formatVatIdDisplay(signature.vatId);
+  const resolvedLogoUrl = resolveSignatureLogoUrl(signature.logoUrl);
+
+  return {
+    '{{ADDRESS}}': encodeHtml(address).replace(/\n/g, '<br />'),
+    '{{CITY_LINE}}': encodeHtml([signature.postalCode, signature.city].filter(Boolean).join(' ')),
+    '{{CLOSING}}': encodeHtml(signature.closing || 'Mit freundlichen Grüßen'),
+    '{{COMPANY_LINE}}': encodeHtml(companyLine),
+    '{{COMPANY_NAME}}': encodeHtml(signature.companyName),
+    '{{DEPARTMENT}}': encodeHtml(signature.department),
+    '{{EMAIL}}': encodeHtml(signature.email),
+    '{{HRB}}': encodeHtml(commercialRegisterDisplay),
+    '{{HRB_LINE}}': encodeHtml(commercialRegisterDisplay),
+    '{{LEGAL_FORM}}': encodeHtml(normalizeLegalFormDisplay(signature.legalForm)),
+    '{{LOGO}}': resolvedLogoUrl
+      ? `<img src="${encodeHtml(resolvedLogoUrl)}" alt="${encodeHtml(
+          signature.logoAlt || signature.companyName || 'Logo'
+        )}" style="display:block;max-width:100%;height:auto;object-fit:contain;" />`
+      : '',
+    '{{LOGO_ALT}}': encodeHtml(signature.logoAlt || signature.companyName || 'Logo'),
+    '{{LOGO_URL}}': encodeHtml(resolvedLogoUrl),
+    '{{MANAGING_DIRECTOR}}': encodeHtml(signature.managingDirector),
+    '{{MANAGING_DIRECTOR_LINE}}': encodeHtml(managingDirectorDisplay),
+    '{{MOBILE}}': encodeHtml(signature.mobilePhone),
+    '{{NAME}}': encodeHtml(signature.name),
+    '{{PHONE}}': encodeHtml(signature.phone),
+    '{{REGISTERED_OFFICE}}': encodeHtml(signature.registeredOffice),
+    '{{REGISTER_COURT}}': encodeHtml(registerCourtDisplay),
+    '{{REGISTER_COURT_LINE}}': encodeHtml(registerCourtDisplay),
+    '{{SIGNATURE_NAME}}': encodeHtml(signature.name),
+    '{{STREET_LINE}}': encodeHtml([signature.street, signature.houseNumber].filter(Boolean).join(' ')),
+    '{{TAX_NUMBER}}': encodeHtml(cleanSignatureText(signature.taxNumber)),
+    '{{TAX_NUMBER_LINE}}': encodeHtml(taxNumberDisplay),
+    '{{VAT_ID}}': encodeHtml(cleanSignatureText(signature.vatId)),
+    '{{VAT_ID_LINE}}': encodeHtml(vatIdDisplay),
+    '{{WEBSITE}}': encodeHtml(signature.website),
+  };
+}
+
+function renderEmailSignatureTemplate(signature: SignatureRecord) {
+  const template = cleanSignatureText(signature.emailTemplateHtml);
+  if (!template) return '';
+  const tokenMap = buildEmailSignatureTokenMap(signature);
+  let rendered = normalizeEmailSignatureTokens(template);
+  Object.entries(tokenMap).forEach(([token, value]) => {
+    rendered = rendered.replace(new RegExp(token.replace(/[{}]/g, '\\$&'), 'g'), value);
+  });
+  return sanitizeEmailSignatureHtml(rendered);
+}
+
+function emailSignatureHtmlToText(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|tr|table)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function buildSignatureText(signature: SignatureRecord) {
+  const customTemplate = renderEmailSignatureTemplate(signature);
+  if (customTemplate) return emailSignatureHtmlToText(customTemplate);
+
   const address = buildSignatureAddress(signature);
   return [
     signature.closing || 'Mit freundlichen GrÃ¼ÃŸen',
@@ -1606,6 +2350,9 @@ function resolveFontSize(value: string, fallback: string) {
 }
 
 export function buildEmailSignatureHtml(signature: SignatureRecord) {
+  const customTemplate = renderEmailSignatureTemplate(signature);
+  if (customTemplate) return customTemplate;
+
   const line1 = [
     [signature.street, signature.houseNumber].filter(Boolean).join(' '),
     [signature.postalCode, signature.city].filter(Boolean).join(' '),
@@ -1658,6 +2405,84 @@ export function buildEmailSignatureHtml(signature: SignatureRecord) {
   `;
 }
 
+export function buildFullEmailSignatureHtml(signature: SignatureRecord) {
+  const customTemplate = renderEmailSignatureTemplate(signature);
+  if (customTemplate) return customTemplate;
+
+  const address = buildSignatureAddress(signature);
+  const resolvedLogoUrl = resolveSignatureLogoUrl(signature.logoUrl);
+  const companyLine = [signature.companyName, signature.legalForm].filter(Boolean).join(' · ');
+  const signatureStyle = [
+    `text-align:${signature.textAlign === 'left' ? 'left' : 'center'}`,
+    `font-family:${signature.fontFamily || 'Segoe UI, Arial, sans-serif'}`,
+    `font-size:${resolveFontSize(signature.fontSize, '14px')}`,
+    `font-weight:${signature.fontBold ? '700' : '500'}`,
+    `font-style:${signature.fontItalic ? 'italic' : 'normal'}`,
+    `text-decoration:${signature.fontUnderline ? 'underline' : 'none'}`,
+    'line-height:1.45',
+    'color:#475569',
+  ].join(';');
+
+  const details = [
+    signature.registeredOffice ? `Sitz: ${signature.registeredOffice}` : '',
+    signature.managingDirector ? `Geschäftsführung: ${signature.managingDirector}` : '',
+    signature.mobilePhone ? `Mobilfunk: ${signature.mobilePhone}` : '',
+    signature.phone ? `Telefon: ${signature.phone}` : '',
+    signature.email,
+    signature.website,
+    signature.registerCourt ? `Registergericht: ${signature.registerCourt}` : '',
+    signature.commercialRegisterNumber ? `Handelsregister: ${signature.commercialRegisterNumber}` : '',
+    signature.taxNumber ? `Steuernummer: ${signature.taxNumber}` : '',
+    signature.vatId ? `USt-IdNr.: ${signature.vatId}` : '',
+  ].filter(Boolean);
+
+  if (
+    !resolvedLogoUrl &&
+    !signature.closing &&
+    !signature.name &&
+    !companyLine &&
+    !signature.department &&
+    !address &&
+    details.length === 0
+  ) {
+    return '';
+  }
+
+  return `
+    <div style="margin-top:18px;color:#57534e;${signatureStyle}">
+      ${
+        resolvedLogoUrl
+          ? `<div style="margin:0 0 20px 0;text-align:center;"><img src="${encodeHtml(
+              resolvedLogoUrl
+            )}" alt="${encodeHtml(signature.logoAlt || signature.companyName || 'Logo')}" style="max-height:128px;max-width:420px;object-fit:contain;" /></div>`
+          : ''
+      }
+      <div style="${signature.useDivider === false ? '' : 'border-top:1px solid #d6d3d1;padding-top:14px;'}">
+        <p style="margin:0;">${encodeHtml(signature.closing || 'Mit freundlichen Grüßen')}</p>
+        ${signature.name ? `<p style="margin:14px 0 0 0;color:#0f172a;">${encodeHtml(signature.name)}</p>` : ''}
+        ${
+          companyLine
+            ? `<p style="margin:${signature.name ? '6px' : '14px'} 0 0 0;color:#0f172a;">${encodeHtml(companyLine)}</p>`
+            : ''
+        }
+        ${signature.department ? `<p style="margin:4px 0 0 0;">${encodeHtml(signature.department)}</p>` : ''}
+        ${
+          address
+            ? `<div style="margin:12px 0 0 0;white-space:pre-line;">${encodeHtml(address)}</div>`
+            : ''
+        }
+        ${
+          details.length > 0
+            ? `<div style="margin-top:12px;color:#57534e;">${details
+                .map((line, index) => `<p style="margin:${index === 0 ? '0' : '2px 0 0 0'};">${encodeHtml(line)}</p>`)
+                .join('')}</div>`
+            : ''
+        }
+      </div>
+    </div>
+  `;
+}
+
 export function buildLetterHtml({
   body,
   bodyIsHtml = false,
@@ -1672,6 +2497,7 @@ export function buildLetterHtml({
   bodyIsHtml?: boolean;
   context?: {
     propertyName?: string;
+    subjectLine2?: string;
     unitLabel?: string;
   };
   emptyBodyPlaceholder?: string;
@@ -1680,6 +2506,7 @@ export function buildLetterHtml({
     address?: string;
     company?: string;
     name?: string;
+    salutation?: string;
   };
   signature: SignatureRecord;
   subject?: string;
@@ -1748,9 +2575,16 @@ export function buildLetterHtml({
     'color:#57534e',
   ].join(';');
   const subjectHtml = cleanSignatureText(subject)
-    ? `<div style="margin:0 0 20px 0;font-size:18px;font-weight:600;color:#1f2937;">${encodeHtml(
-        cleanSignatureText(subject)
-      )}</div>`
+    ? `<div style="margin:0 0 20px 0;color:#1f2937;">
+        <div style="font-size:18px;font-weight:600;">${encodeHtml(cleanSignatureText(subject))}</div>
+        ${
+          cleanSignatureText(context?.subjectLine2)
+            ? `<div style="margin-top:4px;font-size:13px;font-weight:500;color:#57534e;">${encodeHtml(
+                cleanSignatureText(context?.subjectLine2)
+              )}</div>`
+            : ''
+        }
+      </div>`
     : '';
   const footerHtml = cleanSignatureText(signature.letterFooter)
     ? `<div style="margin-top:28px;${signature.letterFooterDivider === false ? '' : 'padding-top:14px;border-top:1px solid #d6d3d1;'}${footerStyle}">${encodeHtml(
@@ -1833,6 +2667,7 @@ export function buildLetterTemplatePreviewHtml({
   bodyIsHtml?: boolean;
   context?: {
     propertyName?: string;
+    subjectLine2?: string;
     unitLabel?: string;
   };
   emptyBodyPlaceholder?: string;
@@ -1841,6 +2676,7 @@ export function buildLetterTemplatePreviewHtml({
     address?: string;
     company?: string;
     name?: string;
+    salutation?: string;
   };
   signature: SignatureRecord;
   subject?: string;
@@ -1900,6 +2736,7 @@ export function buildLetterComposeLayout({
   bodyIsHtml?: boolean;
   context?: {
     propertyName?: string;
+    subjectLine2?: string;
     unitLabel?: string;
   };
   emptyBodyPlaceholder?: string;
@@ -1912,7 +2749,7 @@ export function buildLetterComposeLayout({
   subject?: string;
 }) {
   const customTemplate = cleanSignatureText(signature.letterTemplateHtml);
-  if (!customTemplate) {
+  if (!customTemplate || typeof document === 'undefined') {
     return null;
   }
 
@@ -1929,25 +2766,31 @@ export function buildLetterComposeLayout({
     )
   );
 
-  const hasStructuredSections =
-    renderedTemplate.includes('data-letter-section="header"') &&
-    renderedTemplate.includes('data-letter-section="body"') &&
-    renderedTemplate.includes('data-letter-section="footer"');
-  if (!hasStructuredSections) {
+  const template = document.createElement('template');
+  template.innerHTML = renderedTemplate;
+
+  const headerSection = template.content.querySelector('[data-letter-section="header"]') as HTMLElement | null;
+  const bodySection = template.content.querySelector('[data-letter-section="body"]') as HTMLElement | null;
+  const footerSection = template.content.querySelector('[data-letter-section="footer"]') as HTMLElement | null;
+  const bodySource = template.content.querySelector('[data-letter-body="true"]') as HTMLElement | null;
+
+  if (!headerSection || !bodySection || !footerSection || !bodySource) {
     return null;
   }
 
-  const headerHtml = extractSectionInnerHtml(renderedTemplate, 'header', 'body');
-  const bodySectionHtml = extractSectionInnerHtml(renderedTemplate, 'body', 'footer');
-  const footerHtml = extractSectionInnerHtml(renderedTemplate, 'footer');
-  const [bodyBeforeHtml, ...bodyAfterParts] = bodySectionHtml.split(bodyMarker);
+  const bodySourceHtml = bodySource.outerHTML;
+  const [bodyInnerBeforeHtml, ...bodyInnerAfterParts] = bodySection.innerHTML.split(bodySourceHtml);
 
   return {
-    bodyAfterHtml: bodyAfterParts.join(bodyMarker),
-    bodyBeforeHtml,
+    bodyContainerClassName: bodySource.getAttribute('class') || '',
+    bodyContainerStyle: bodySource.getAttribute('style') || '',
     bodyHeight: extractSectionMinHeight(customTemplate, 'body', 520),
-    footerHtml,
-    headerHtml,
+    bodyInnerAfterHtml: bodyInnerAfterParts.join(bodySourceHtml),
+    bodyInnerBeforeHtml,
+    bodySectionClassName: bodySection.getAttribute('class') || '',
+    bodySectionStyle: bodySection.getAttribute('style') || '',
+    footerSectionHtml: footerSection.outerHTML,
+    headerSectionHtml: headerSection.outerHTML,
   };
 }
 

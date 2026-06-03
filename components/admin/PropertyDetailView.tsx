@@ -38,10 +38,47 @@ const servicePartnerFields = [
 
 const cleanText = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
 
+const usageTypeLabels: Record<string, string> = {
+  commercial: 'Gewerbe',
+  logistics: 'Lager / Logistik',
+  mixed_use: 'Mischnutzung',
+  parking: 'Stellplatz',
+  residential: 'Wohnen',
+};
+
+const ownershipTypeLabels: Record<string, string> = {
+  full_ownership: 'Volleigentum',
+  partial_ownership: 'Teileigentum',
+};
+
+const heatingTypeLabels: Record<string, string> = {
+  district_heating: 'Fernwaerme',
+  electric: 'Elektro',
+  gas: 'Gas',
+  heat_pump_air: 'Waermepumpe Luft',
+  heat_pump_ground: 'Waermepumpe Erde',
+  oil: 'Oel',
+};
+
 const unitDisplayLabel = (unit: DocumentData) =>
   [cleanText(unit.unitLabel), cleanText(unit.floor), cleanText(unit.unitPosition), cleanText(unit.section)]
     .filter(Boolean)
     .join(' · ');
+
+function translateUsageType(value: unknown) {
+  const normalized = cleanText(value);
+  return usageTypeLabels[normalized] || normalized;
+}
+
+function translateOwnershipType(value: unknown) {
+  const normalized = cleanText(value);
+  return ownershipTypeLabels[normalized] || normalized;
+}
+
+function translateHeatingType(value: unknown) {
+  const normalized = cleanText(value);
+  return heatingTypeLabels[normalized] || normalized;
+}
 
 function formatValue(value?: unknown) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -211,16 +248,15 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
+    <div className="admin-page space-y-4">
+      <section className="admin-hero rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Immobilie ansehen</p>
         <div className="mt-2 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
-            <h2 className="text-3xl text-slate-950">{formatValue(property.name)}</h2>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <MiniStat label="Objektnummer" value={property.propertyNumber} />
-              <MiniStat label="Nutzungsart" value={property.usageType} />
-              <MiniStat label="Eigentumsart" value={property.ownershipType} />
+              <MiniStat label="Nutzungsart" value={translateUsageType(property.usageType)} />
+              <MiniStat label="Eigentumsart" value={translateOwnershipType(property.ownershipType)} />
               <MiniStat label="Eigentuemer" value={ownerLabel} />
             </div>
           </div>
@@ -241,8 +277,7 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-        <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Zaehleruebersicht</p>
           {objectMeters.length === 0 ? (
             <div className="mt-4 rounded-[20px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-slate-600">
@@ -275,83 +310,14 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
               </div>
             </div>
           )}
-        </section>
+      </section>
 
-        <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dienstleister</p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Feste Ansprechpartner pro Gewerk direkt diesem Objekt zuordnen.
-              </p>
-            </div>
-            <button
-              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-              onClick={saveServiceAssignments}
-              type="button"
-            >
-              Speichern
-            </button>
-          </div>
-          <div className="mt-4 grid gap-3">
-            {servicePartnerFields.map((field) => (
-              <label className="block" key={field.idField}>
-                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{field.label}</p>
-                <select
-                  className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-                  onChange={(event) =>
-                    setServiceAssignments((current) => ({
-                      ...current,
-                      [field.idField]: event.target.value,
-                    }))
-                  }
-                  value={serviceAssignments[field.idField] || ''}
-                >
-                  <option value="">Nicht zugeordnet</option>
-                  {serviceOptions.map((option) => (
-                    <option key={`${field.idField}-${option.value}`} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-          {saveMessage ? (
-            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {saveMessage}
-            </div>
-          ) : null}
-        </section>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        <DetailCard title="Adresse und Eckdaten">
+      <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
+        <DetailCard title="Adresse und Bestand">
           <DetailRow label="Strasse" value={[property.street, property.houseNumber].filter(Boolean).join(' ')} />
           <DetailRow label="PLZ / Ort" value={[property.postalCode, property.city].filter(Boolean).join(' ')} />
           <DetailRow label="Baujahr" value={property.yearBuilt} />
-          <DetailRow label="Kaufpreis" value={property.purchasePrice} />
-          <DetailRow label="Anfangsrendite" value={property.initialYieldPercent} />
-        </DetailCard>
-
-        <DetailCard title="Technik">
-          <DetailRow label="Zentralheizung" value={property.hasCentralHeating === 'no' ? 'Nein' : 'Ja'} />
-          <DetailRow
-            label="Heizungsarten"
-            value={
-              heatingEntries.length > 0
-                ? heatingEntries
-                    .map((entry) =>
-                      [cleanText(entry.type), cleanText(entry.buildYear), cleanText(entry.lastMaintenance)]
-                        .filter(Boolean)
-                        .join(' · ')
-                    )
-                    .join(', ')
-                : Array.isArray(property.heatingSystems)
-                  ? property.heatingSystems.filter(Boolean).join(', ')
-                  : property.heatingSystems
-            }
-          />
+          <DetailRow label="Nutzungsart" value={translateUsageType(property.usageType)} />
           <DetailRow label="Einheiten" value={String(Array.isArray(property.units) ? property.units.length : 0)} />
           <DetailRow
             label="Leerstand"
@@ -363,16 +329,45 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
           />
         </DetailCard>
 
+        <DetailCard title="Eigentum und Wirtschaftlichkeit">
+          <DetailRow label="Kaufdatum" value={property.purchaseDate} />
+          <DetailRow label="Eigentum seit" value={property.ownershipSince} />
+          <DetailRow label="Kaufpreis" value={property.purchasePrice} />
+          <DetailRow label="Anfangsrendite" value={property.initialYieldPercent} />
+        </DetailCard>
+
+        <DetailCard title="Technik">
+          <DetailRow label="Objektnummer" value={property.propertyNumber} />
+          <DetailRow label="Zentralheizung" value={property.hasCentralHeating === 'no' ? 'Nein' : 'Ja'} />
+          <DetailRow
+            label="Heizungsarten"
+            value={
+              heatingEntries.length > 0
+                ? heatingEntries
+                    .map((entry) =>
+                      [translateHeatingType(entry.type), cleanText(entry.buildYear), cleanText(entry.lastMaintenance)]
+                        .filter(Boolean)
+                        .join(' · ')
+                    )
+                    .join(', ')
+                : Array.isArray(property.heatingSystems)
+                  ? property.heatingSystems
+                      .map((entry) => translateHeatingType(entry))
+                      .filter(Boolean)
+                      .join(', ')
+                  : translateHeatingType(property.heatingSystems)
+            }
+          />
+        </DetailCard>
+
         <DetailCard title="Wartung">
           <DetailRow label="Letzte Heizungswartung" value={property.lastHeatingMaintenance} />
           <DetailRow label="Letzte Dachwartung" value={property.roofMaintenanceLastMaintenance} />
           <DetailRow label="Letzte Regenrinnenreinigung" value={property.gutterCleaningLastMaintenance} />
-          <DetailRow label="Kaufdatum" value={property.purchaseDate} />
-          <DetailRow label="Eigentum seit" value={property.ownershipSince} />
         </DetailCard>
       </div>
 
-      <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Einheiten</p>
         <div className="mt-4 grid gap-3 xl:grid-cols-2">
           {unitCards.length === 0 ? (
@@ -428,6 +423,53 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </div>
       </section>
 
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dienstleister</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Feste Ansprechpartner pro Gewerk direkt diesem Objekt zuordnen.
+            </p>
+          </div>
+          <button
+            className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+            onClick={saveServiceAssignments}
+            type="button"
+          >
+            Speichern
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {servicePartnerFields.map((field) => (
+            <label className="block" key={field.idField}>
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{field.label}</p>
+              <select
+                className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                onChange={(event) =>
+                  setServiceAssignments((current) => ({
+                    ...current,
+                    [field.idField]: event.target.value,
+                  }))
+                }
+                value={serviceAssignments[field.idField] || ''}
+              >
+                <option value="">Nicht zugeordnet</option>
+                {serviceOptions.map((option) => (
+                  <option key={`${field.idField}-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+        {saveMessage ? (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {saveMessage}
+          </div>
+        ) : null}
+      </section>
+
       {error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
@@ -445,36 +487,42 @@ function DetailCard({
   title: string;
 }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+    <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">{title}</p>
-      <div className="mt-4 grid gap-2.5">{children}</div>
+      <div className="admin-card-body mt-4 grid gap-2.5">{children}</div>
     </section>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value?: unknown }) {
   return (
-    <div className="grid grid-cols-1 gap-1.5 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)] md:gap-4">
+    <div className="admin-detail-row grid grid-cols-1 gap-1 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)] md:gap-3">
       <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</dt>
-      <dd className="min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
+      <dd className="admin-detail-value min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
     </div>
   );
 }
 
 function Field({ label, value }: { label: string; value?: unknown }) {
   return (
-    <div className="rounded-[14px] border border-stone-200 bg-white px-3 py-2">
+    <div className="admin-field rounded-[14px] border border-stone-200 bg-white px-3 py-2">
       <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</p>
-      <p className="mt-1 min-w-0 whitespace-normal break-words text-sm leading-6 text-slate-900">{formatValue(value)}</p>
+      <p className="admin-field-value mt-1 min-w-0 whitespace-normal break-words text-sm leading-6 text-slate-900">{formatValue(value)}</p>
     </div>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value?: unknown }) {
+  const formattedValue = formatValue(value);
   return (
-    <div className="rounded-[14px] border border-stone-200 bg-white/72 px-3 py-2">
+    <div className="admin-field rounded-[14px] border border-stone-200 bg-white/72 px-3 py-2">
       <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</p>
-      <p className="mt-1 min-w-0 whitespace-normal break-words text-sm leading-6 text-slate-900">{formatValue(value)}</p>
+      <p
+        className="admin-field-value mt-1 min-w-0 truncate whitespace-nowrap text-sm leading-6 text-slate-900"
+        title={formattedValue}
+      >
+        {formattedValue}
+      </p>
     </div>
   );
 }

@@ -71,6 +71,21 @@ export const personFields: AdminField[] = [
     kind: 'credential_email',
     type: 'email',
   },
+  {
+    label: 'Portal-Benutzername',
+    name: 'portalUsername',
+    placeholder: 'z. B. firma.mustermann',
+    helpText: 'Optional. Nur nötig, wenn der Kontakt einen Portalzugang erhalten soll.',
+  },
+  {
+    label: 'Portal-Passwort',
+    name: 'portalPassword',
+    placeholder: 'Passwort festlegen',
+    helpText:
+      'Optional. Wird für den Versand der Einladung im Kontakt gespeichert, damit die Zugangsdaten erneut versendet werden können.',
+    kind: 'credential_password',
+    type: 'password',
+  },
   { label: 'Telefon', name: 'phone', placeholder: '+49 30 1234567', type: 'tel' },
   { label: 'Mobil', name: 'mobile', placeholder: '+49 171 1234567', type: 'tel' },
   {

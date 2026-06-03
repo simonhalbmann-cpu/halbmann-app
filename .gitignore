@@ -29,9 +29,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.next-dev.*
 
 # env files (can opt-in for committing if needed)
 .env*
+
+# local app state and agent backups
+.codex-backups/
+.message-themes.local.json
+.portal-*.local.json
 
 # vercel
 .vercel

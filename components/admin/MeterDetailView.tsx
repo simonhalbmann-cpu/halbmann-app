@@ -26,6 +26,52 @@ type ExchangeForm = {
 
 const cleanText = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
 
+function buildReadingHistoryEntries(meter: DocumentData | null) {
+  if (!meter || typeof meter !== 'object') return [];
+
+  const entries: Array<{ date: string; note: string; value: string }> = [];
+  const seen = new Set<string>();
+
+  const pushEntry = (dateValue: unknown, valueValue: unknown, noteValue?: unknown) => {
+    const date = cleanText(dateValue);
+    const value = cleanText(valueValue);
+    const note = cleanText(noteValue);
+    if (!date || !value) return;
+    const key = `${date}__${value}__${note}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({ date, note, value });
+  };
+
+  if (Array.isArray(meter.readingHistory)) {
+    meter.readingHistory.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      pushEntry((entry as DocumentData).date, (entry as DocumentData).value, (entry as DocumentData).note);
+    });
+  }
+
+  pushEntry(meter.initialReadingDate, meter.initialReading, 'Erster Stand');
+  pushEntry(meter.latestReadingDate, meter.latestReading);
+
+  return entries.sort((left, right) => right.date.localeCompare(left.date, 'de'));
+}
+
+function appendReadingHistoryEntry(
+  meter: DocumentData,
+  nextEntry: { date: string; note: string; value: string }
+) {
+  const history = buildReadingHistoryEntries(meter);
+  const duplicate = history.some(
+    (entry) =>
+      entry.date === nextEntry.date &&
+      entry.value === nextEntry.value &&
+      entry.note === nextEntry.note
+  );
+
+  if (duplicate) return history;
+  return [...history, nextEntry];
+}
+
 function formatValue(value?: unknown) {
   const text = typeof value === 'string' ? value.trim() : '';
   return text.length > 0 ? text : '–';
@@ -89,15 +135,7 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
     );
   }, [meterId, property, unit, unitId]);
 
-  const readingHistory = useMemo(
-    () =>
-      Array.isArray(meter?.readingHistory)
-        ? [...meter.readingHistory].sort((left, right) =>
-            cleanText((right as DocumentData).date).localeCompare(cleanText((left as DocumentData).date), 'de')
-          )
-        : [],
-    [meter]
-  );
+  const readingHistory = useMemo(() => buildReadingHistoryEntries(meter), [meter]);
 
   const exchanges = useMemo(
     () =>
@@ -108,6 +146,21 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
         : [],
     [meter]
   );
+
+  useEffect(() => {
+    if (!meter) return;
+    const currentMeterNumber = cleanText(meter.meterNumber);
+    if (!currentMeterNumber) return;
+
+    setExchangeForm((current) =>
+      cleanText(current.oldMeterNumber)
+        ? current
+        : {
+            ...current,
+            oldMeterNumber: currentMeterNumber,
+          }
+    );
+  }, [meter]);
 
   function updateMeterInProperty(nextMeter: Record<string, unknown>) {
     if (!property) return null;
@@ -147,14 +200,11 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
           ...meter,
           latestReading: cleanText(readingForm.value),
           latestReadingDate: readingForm.date,
-          readingHistory: [
-            ...(Array.isArray(meter.readingHistory) ? meter.readingHistory : []),
-            {
-              date: readingForm.date,
-              note: cleanText(readingForm.note),
-              value: cleanText(readingForm.value),
-            },
-          ],
+          readingHistory: appendReadingHistoryEntry(meter, {
+            date: readingForm.date,
+            note: cleanText(readingForm.note),
+            value: cleanText(readingForm.value),
+          }),
         };
         const nextProperty = updateMeterInProperty(nextMeter);
         if (!nextProperty) return;
@@ -212,7 +262,12 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
           updatedAt: serverTimestamp(),
         });
 
-        setExchangeForm({ date: '', newMeterNumber: '', note: '', oldMeterNumber: '' });
+        setExchangeForm({
+          date: '',
+          newMeterNumber: '',
+          note: '',
+          oldMeterNumber: cleanText(exchangeForm.newMeterNumber),
+        });
         setMessage('Zählerwechsel wurde dokumentiert.');
       } catch (caughtError) {
         console.error(`Fehler beim Dokumentieren des Zählerwechsels ${meterId}:`, caughtError);
@@ -244,8 +299,8 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
   const backHref = unitId ? `/admin/einheit/${propertyId}/${unitId}` : `/admin/immobilie/${propertyId}`;
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
+    <div className="admin-page space-y-4">
+      <section className="admin-hero rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Zähler ansehen</p>
         <h2 className="mt-2 text-3xl text-slate-950">{formatValue(meter.label || meter.type)}</h2>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -258,7 +313,7 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
         <DetailCard title="Grunddaten">
           <DetailRow label="Objekt" value={property.name} />
           <DetailRow label="Einheit" value={unit ? unit.unitLabel || unit.floor : 'Objekt-Zähler'} />
@@ -284,7 +339,7 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
         </DetailCard>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-3 xl:grid-cols-2">
         <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Neuer Zählerstand</p>
           <div className="mt-4 grid gap-3">
@@ -356,7 +411,7 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
         </section>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-3 xl:grid-cols-2">
         <DetailCard title="Historie Zählerstände">
           {readingHistory.length === 0 ? (
             <p className="text-sm text-slate-600">Noch keine Historie vorhanden.</p>
@@ -394,27 +449,27 @@ export default function MeterDetailView({ meterId, propertyId, unitId }: MeterDe
 
 function DetailCard({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+    <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">{title}</p>
-      <div className="mt-4 grid gap-2.5">{children}</div>
+      <div className="admin-card-body mt-4 grid gap-2.5">{children}</div>
     </section>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value?: unknown }) {
   return (
-    <div className="grid grid-cols-1 gap-1.5 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)] md:gap-4">
+    <div className="admin-detail-row grid grid-cols-1 gap-1 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)] md:gap-3">
       <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</dt>
-      <dd className="min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
+      <dd className="admin-detail-value min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
     </div>
   );
 }
 
 function Field({ label, value }: { label: string; value?: unknown }) {
   return (
-    <div className="rounded-[14px] border border-stone-200 bg-stone-50 px-3 py-2">
+    <div className="admin-field rounded-[14px] border border-stone-200 bg-stone-50 px-3 py-2">
       <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</p>
-      <p className="mt-1 min-w-0 whitespace-normal break-words text-sm leading-6 text-slate-900">{formatValue(value)}</p>
+      <p className="admin-field-value mt-1 min-w-0 whitespace-normal break-words text-sm leading-6 text-slate-900">{formatValue(value)}</p>
     </div>
   );
 }

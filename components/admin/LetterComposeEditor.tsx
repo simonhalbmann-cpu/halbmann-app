@@ -1,9 +1,31 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
+import { Extension } from '@tiptap/core';
+import { StarterKit } from '@tiptap/starter-kit';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import { Highlight } from '@tiptap/extension-highlight';
+import { TextAlign } from '@tiptap/extension-text-align';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { Underline } from '@tiptap/extension-underline';
+import { FontFamily } from '@tiptap/extension-font-family';
 import {
-  buildLetterHtml,
-  buildLetterTemplatePreviewHtml,
+  buildLetterBodyPageFragments,
+  buildLetterComposeLayout,
+  buildLetterEditorPageTemplates,
+  buildCompanyLine,
+  buildSignatureAddress,
+  cleanSignatureText,
+  formatCommercialRegisterDisplay,
+  formatRegisterCourtDisplay,
+  formatTaxNumberDisplay,
+  formatVatIdDisplay,
+  type LetterBodyPageFragment,
   type SignatureRecord,
 } from '../../lib/signatures';
 
@@ -11,6 +33,50 @@ const LETTER_PAGE_WIDTH = 794;
 const LETTER_PAGE_HEIGHT = 1123;
 const FONT_FAMILIES = ['Arial', 'Georgia', 'Times New Roman', 'Verdana'];
 const FONT_SIZES = ['10', '11', '12', '13', '14', '15', '16', '18'];
+
+const FontSize = Extension.create({
+  name: 'fontSize',
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['textStyle'],
+        attributes: {
+          fontSize: {
+            default: null,
+            parseHTML: (element) => element.style.fontSize || null,
+            renderHTML: (attributes) => {
+              if (!attributes.fontSize) return {};
+              return { style: `font-size:${attributes.fontSize}` };
+            },
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      setFontSize:
+        (fontSize: string) =>
+        ({ chain }) =>
+          chain().setMark('textStyle', { fontSize }).run(),
+    };
+  },
+});
+
+const LETTER_EDITOR_EXTENSIONS = [
+  StarterKit.configure({ heading: false }),
+  TextStyle,
+  Color,
+  Highlight.configure({ multicolor: true }),
+  TextAlign.configure({ types: ['paragraph'] }),
+  Table.configure({ resizable: true }),
+  TableRow,
+  TableHeader,
+  TableCell,
+  Underline,
+  FontFamily,
+  FontSize,
+];
 
 type LetterComposeEditorProps = {
   body: string;
@@ -25,6 +91,7 @@ type LetterComposeEditorProps = {
     address?: string;
     company?: string;
     name?: string;
+    salutation?: string;
   };
   recipientOptions?: Array<{
     description?: string;
@@ -50,229 +117,109 @@ function escapeHtml(value: string) {
 }
 
 function textToHtml(value: string) {
-  return escapeHtml(value).replace(/\n/g, '<br />');
+  const normalized = value.replace(/\r\n?/g, '\n').trimEnd();
+  if (!normalized) return '<p></p>';
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br />')}</p>`)
+    .join('');
 }
 
 function htmlToText(value: string) {
   if (typeof document === 'undefined') {
     return value.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trimEnd();
   }
+
   const container = document.createElement('div');
   container.innerHTML = value;
-
-  const blockTags = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'BLOCKQUOTE', 'TABLE', 'TR']);
-  const parts: string[] = [];
-
-  const visit = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = (node.textContent || '').replace(/\u00a0/g, ' ');
-      if (text) parts.push(text);
-      return;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-    const element = node as HTMLElement;
-    const tag = element.tagName.toUpperCase();
-
-    if (tag === 'BR') {
-      parts.push('\n');
-      return;
-    }
-
-    const isBlock = blockTags.has(tag);
-    if (isBlock && parts.length > 0 && !parts[parts.length - 1]?.endsWith('\n')) {
-      parts.push('\n');
-    }
-
-    Array.from(element.childNodes).forEach(visit);
-
-    if (isBlock && parts.length > 0 && !parts[parts.length - 1]?.endsWith('\n')) {
-      parts.push('\n');
-    }
-  };
-
-  Array.from(container.childNodes).forEach(visit);
-
-  return parts
-    .join('')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n[ \t]+/g, '\n')
-    .trimEnd();
+  return (container.textContent || '').replace(/\u00a0/g, ' ').trimEnd();
 }
 
-function cleanEditorHtml(value: string) {
-  if (typeof document === 'undefined') {
-    return value.replace(/\u200b/g, '').trim();
-  }
-
-  const template = document.createElement('template');
-  template.innerHTML = value;
-
-  const unwrapElement = (element: HTMLElement) => {
-    const parent = element.parentNode;
-    if (!parent) return;
-    while (element.firstChild) {
-      parent.insertBefore(element.firstChild, element);
+function renderEditorSurfaceStyles() {
+  return `
+    .letter-compose-editor .ProseMirror {
+      min-height: 320px;
+      outline: none;
+      color: #1f2937;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.65;
+      white-space: normal;
+      overflow-wrap: break-word;
     }
-    parent.removeChild(element);
-  };
-
-  const normalizeNode = (node: Node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      node.textContent = (node.textContent || '').replace(/\u200b/g, '');
-      return;
+    .letter-compose-editor .ProseMirror p {
+      margin: 0 0 1em 0;
     }
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-
-    const element = node as HTMLElement;
-    Array.from(element.childNodes).forEach(normalizeNode);
-
-    if (element.tagName === 'SPAN') {
-      const style = (element.getAttribute('style') || '').trim();
-      if (!style && element.attributes.length === 0) {
-        unwrapElement(element);
-        return;
-      }
+    .letter-compose-editor .ProseMirror table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin: 8px 0 16px;
     }
-
-    if (element.tagName === 'DIV') {
-      const inner = element.innerHTML
-        .replace(/\u200b/g, '')
-        .replace(/&nbsp;/gi, '')
-        .replace(/<br\s*\/?>/gi, '')
-        .trim();
-      if (!inner) {
-        element.innerHTML = '<br />';
-      }
+    .letter-compose-editor .ProseMirror td,
+    .letter-compose-editor .ProseMirror th {
+      border: 1px solid #111827;
+      padding: 6px 8px;
+      vertical-align: top;
     }
-  };
-
-  Array.from(template.content.childNodes).forEach(normalizeNode);
-  return template.innerHTML.replace(/\u200b/g, '').trim();
+  `;
 }
 
-function takeFirstLines(value: string, count: number) {
-  return value.split('\n').slice(0, count).join('\n');
-}
-
-function stripSecondPageLeadContent(
-  html: string,
-  options: {
-    address?: string;
-    company?: string;
-    name?: string;
-    subject?: string;
-  }
-) {
-  let result = html;
-
-  const removableTexts = [
-    options.company,
-    options.name,
-    options.address,
-    options.subject ? `Betreff:${options.subject}` : '',
-    options.subject ? `Betreff: ${options.subject}` : '',
-    'Objekt:',
-  ]
-    .map((value) => normalizeLetterBodyText(value || ''))
+function inlineStyleStringToObject(value: string) {
+  return value
+    .split(';')
+    .map((entry) => entry.trim())
     .filter(Boolean)
-    .map((value) => escapeHtml(value).replace(/\s+/g, '\\s*'));
-
-  removableTexts.forEach((pattern) => {
-    result = result.replace(new RegExp(`<div[^>]*>[\\s\\S]*?${pattern}[\\s\\S]*?<\\/div>`, 'gi'), '');
-  });
-
-  result = result.replace(
-    /<div[^>]*>\s*(?:[A-Za-zÄÖÜäöüß.\-]+\s*,\s*)?\d{1,2}\.\s*[A-Za-zÄÖÜäöüß]+\s*\d{4}\s*<\/div>/gi,
-    ''
-  );
-
-  return result;
+    .reduce<Record<string, string>>((acc, entry) => {
+      const [property, ...rest] = entry.split(':');
+      if (!property || rest.length === 0) return acc;
+      const camelKey = property
+        .trim()
+        .replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+      acc[camelKey] = rest.join(':').trim();
+      return acc;
+    }, {});
 }
 
-function renderPreviewPage({
-  bodyHtml,
-  fontPx,
-  lineHeightRatio,
-  pagePadding,
-  signature,
-  layout,
+function buildStaticLetterPageHtml({
+  closingHtml,
+  fragment,
+  hideHeader,
+  inlineClosing,
+  templateHtml,
 }: {
-  bodyHtml: string;
-  fontPx: number;
-  lineHeightRatio: number;
-  pagePadding: string;
-  signature: SignatureRecord;
-  layout: {
-    headerHtml: string;
-    footerHtml: string;
-  };
+  closingHtml: string;
+  fragment: LetterBodyPageFragment;
+  hideHeader: boolean;
+  inlineClosing?: boolean;
+  templateHtml: string;
 }) {
-  return (
-    <div
-      className="box-border rounded-[2px] border border-stone-300 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.25)]"
-      style={{
-        color: '#1f2937',
-        fontFamily: signature.fontFamily || 'Georgia, Times New Roman, serif',
-        fontSize: `${fontPx}px`,
-        lineHeight: String(lineHeightRatio),
-        minHeight: `${LETTER_PAGE_HEIGHT}px`,
-        padding: pagePadding,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: `${LETTER_PAGE_HEIGHT - signature.letterMarginTop - signature.letterMarginBottom}px`,
-        }}
-      >
-        <div dangerouslySetInnerHTML={{ __html: layout.headerHtml }} />
-        <div
-          style={{
-            flex: '1 1 auto',
-            minHeight: 0,
-            overflow: 'hidden',
-          }}
-          dangerouslySetInnerHTML={{ __html: bodyHtml }}
-        />
-        <div style={{ marginTop: 'auto' }} dangerouslySetInnerHTML={{ __html: layout.footerHtml }} />
-      </div>
-    </div>
-  );
-}
+  if (typeof document === 'undefined') return '';
 
-function renderPreviewHtmlPage(html: string) {
-  return (
-    <div
-      className="box-border rounded-[2px] border border-stone-300 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.25)]"
-      style={{
-        width: `${LETTER_PAGE_WIDTH}px`,
-        minHeight: `${LETTER_PAGE_HEIGHT}px`,
-        overflow: 'visible',
-      }}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
-
-function splitPreviewPages(html: string) {
-  if (typeof document === 'undefined') return [html];
   const template = document.createElement('template');
-  template.innerHTML = html;
-  const pages = Array.from(template.content.querySelectorAll('[data-letter-page="true"]'))
-    .map((node) => (node as HTMLElement).outerHTML)
-    .filter(Boolean);
-  return pages.length ? pages : [html];
-}
+  template.innerHTML = templateHtml;
 
-function hasMeaningfulRichText(value: string) {
-  const normalized = value.trim();
-  if (!normalized) return false;
-  return /<(table|thead|tbody|tfoot|tr|td|th|ul|ol|li|blockquote|span|strong|b|em|i|u|font)\b/i.test(normalized)
-    || /style\s*=|class\s*=|align\s*=|data-[a-z-]+\s*=|<img\b/i.test(normalized);
+  const page = template.content.firstElementChild as HTMLElement | null;
+  if (!page) return '';
+
+  const headerSection = page.querySelector('[data-letter-section="header"]') as HTMLElement | null;
+  const flowHost = page.querySelector('[data-letter-flow-host="true"]') as HTMLElement | null;
+  const closingHost = page.querySelector('[data-letter-closing-host="true"]') as HTMLElement | null;
+
+  if (!flowHost || !closingHost) return '';
+
+  if (hideHeader && headerSection) {
+    headerSection.remove();
+  }
+
+  flowHost.innerHTML = fragment.bodyHtml || '';
+  if (inlineClosing && fragment.includeClosing && closingHtml) {
+    flowHost.innerHTML += closingHtml;
+    closingHost.innerHTML = '';
+  } else {
+    closingHost.innerHTML = fragment.includeClosing ? closingHtml : '';
+  }
+  return page.outerHTML;
 }
 
 export default function LetterComposeEditor({
@@ -289,222 +236,275 @@ export default function LetterComposeEditor({
   subject,
 }: LetterComposeEditorProps) {
   const normalizedBody = normalizeLetterBodyText(body);
-  const editorRef = useRef<HTMLDivElement | null>(null);
-  const editorInitializedRef = useRef(false);
-  const editorFocusedRef = useRef(false);
   const internalBodyRef = useRef(normalizedBody);
-  const [draftBody, setDraftBody] = useState(normalizedBody);
   const [draftHtml, setDraftHtml] = useState(textToHtml(normalizedBody));
   const [fontFamily, setFontFamily] = useState('Arial');
   const [fontSize, setFontSize] = useState('14');
+  const sheetViewportRef = useRef<HTMLDivElement | null>(null);
+  const [sheetViewportWidth, setSheetViewportWidth] = useState(0);
 
-  const previewBody = useMemo(() => normalizeLetterBodyText(draftBody), [draftBody]);
-  const previewBodyHtml = useMemo(() => draftHtml || textToHtml(previewBody || placeholder || ''), [draftHtml, placeholder, previewBody]);
-  const previewUsesRichHtmlPagination = useMemo(() => hasMeaningfulRichText(previewBodyHtml), [previewBodyHtml]);
-  const renderedRichPreviewHtml = useMemo(
-    () =>
-      buildLetterTemplatePreviewHtml({
-        body: previewBodyHtml,
-        bodyIsHtml: true,
-        context,
-        emptyBodyPlaceholder: placeholder,
-        includePageFrame: true,
-        recipient,
-        signature,
-        subject,
-      }),
-    [context, placeholder, previewBodyHtml, recipient, signature, subject]
-  );
-  const renderedPagedPreviewHtml = useMemo(
-    () =>
-      buildLetterHtml({
-        body: previewUsesRichHtmlPagination ? previewBodyHtml : previewBody,
-        bodyIsHtml: previewUsesRichHtmlPagination,
-        context,
-        emptyBodyPlaceholder: placeholder,
-        includePageFrame: true,
-        recipient,
-        signature,
-        subject,
-      }),
-    [context, placeholder, previewBody, previewBodyHtml, previewUsesRichHtmlPagination, recipient, signature, subject]
-  );
-  const renderedPreviewHtml = useMemo(() => {
-    const pagedPages = splitPreviewPages(renderedPagedPreviewHtml);
-    return pagedPages.length > 1 ? renderedPagedPreviewHtml : renderedRichPreviewHtml;
-  }, [renderedPagedPreviewHtml, renderedRichPreviewHtml]);
-  const renderedPreviewPages = useMemo(() => splitPreviewPages(renderedPreviewHtml), [renderedPreviewHtml]);
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: LETTER_EDITOR_EXTENSIONS,
+    content: cleanSignatureText(draftHtml) || '<p></p>',
+    editorProps: {
+      attributes: {
+        class: 'outline-none',
+        spellcheck: 'false',
+      },
+    },
+    onUpdate: ({ editor: nextEditor }) => {
+      const nextHtml = cleanSignatureText(nextEditor.getHTML()) || '<p></p>';
+      const nextText = htmlToText(nextHtml);
+      internalBodyRef.current = nextText;
+      setDraftHtml(nextHtml);
+      onChange(nextText);
+    },
+  });
+
+  const editorState = useEditorState({
+    editor,
+    selector: ({ editor: currentEditor }) => ({
+      fontFamily: (currentEditor?.getAttributes('textStyle').fontFamily as string | undefined) || '',
+      fontSize: (currentEditor?.getAttributes('textStyle').fontSize as string | undefined) || '',
+      isBold: currentEditor?.isActive('bold') || false,
+      isItalic: currentEditor?.isActive('italic') || false,
+      isUnderline: currentEditor?.isActive('underline') || false,
+      isLeft: currentEditor?.isActive({ textAlign: 'left' }) || false,
+      isCenter: currentEditor?.isActive({ textAlign: 'center' }) || false,
+      isRight: currentEditor?.isActive({ textAlign: 'right' }) || false,
+      isJustify: currentEditor?.isActive({ textAlign: 'justify' }) || false,
+    }),
+  });
 
   useEffect(() => {
-    if (!editorRef.current) return;
-    if (editorInitializedRef.current && normalizedBody === internalBodyRef.current) return;
+    if (!editor) return;
+    const currentEditorText = htmlToText(editor.getHTML());
+    if (normalizedBody === currentEditorText && normalizedBody === internalBodyRef.current) return;
 
     const nextHtml = textToHtml(normalizedBody);
     internalBodyRef.current = normalizedBody;
-    editorInitializedRef.current = true;
-    setDraftBody(normalizedBody);
     setDraftHtml(nextHtml);
-    if (!editorFocusedRef.current) {
-      editorRef.current.innerHTML = nextHtml;
+    editor.commands.setContent(nextHtml || '<p></p>', { emitUpdate: false });
+  }, [editor, normalizedBody]);
+
+  useEffect(() => {
+    const nextFontFamily = editorState?.fontFamily || 'Arial';
+    const nextFontSize = (editorState?.fontSize || '14px').replace('px', '');
+    setFontFamily(nextFontFamily);
+    setFontSize(nextFontSize);
+  }, [editorState?.fontFamily, editorState?.fontSize]);
+
+  useEffect(() => {
+    const node = sheetViewportRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+
+    const updateWidth = () => setSheetViewportWidth(node.clientWidth);
+    updateWidth();
+
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const recipientLines = useMemo(() => {
+    return [recipient?.company, recipient?.name, recipient?.address]
+      .map((entry) => cleanSignatureText(entry))
+      .filter(Boolean);
+  }, [recipient?.address, recipient?.company, recipient?.name]);
+
+  const senderLine = useMemo(
+    () => cleanSignatureText(signature.letterSenderLine),
+    [signature.letterSenderLine]
+  );
+
+  const addressBlock = useMemo(() => buildSignatureAddress(signature), [signature]);
+  const companyLine = useMemo(
+    () => buildCompanyLine(signature.companyName, signature.legalForm),
+    [signature.companyName, signature.legalForm]
+  );
+  const footerLines = useMemo(
+    () =>
+      [
+        addressBlock,
+        signature.registeredOffice ? `Sitz: ${signature.registeredOffice}` : '',
+        formatRegisterCourtDisplay(signature.registerCourt),
+        formatCommercialRegisterDisplay(signature.commercialRegisterNumber),
+        signature.managingDirector ? `Geschäftsführung: ${signature.managingDirector}` : '',
+        signature.mobilePhone ? `Mobilfunk: ${signature.mobilePhone}` : '',
+        signature.phone ? `Telefon: ${signature.phone}` : '',
+        signature.email,
+        signature.website,
+        formatTaxNumberDisplay(signature.taxNumber),
+        formatVatIdDisplay(signature.vatId),
+      ].filter(Boolean),
+    [
+      addressBlock,
+      signature.commercialRegisterNumber,
+      signature.email,
+      signature.managingDirector,
+      signature.mobilePhone,
+      signature.phone,
+      signature.registerCourt,
+      signature.registeredOffice,
+      signature.taxNumber,
+      signature.vatId,
+      signature.website,
+    ]
+  );
+
+  const pagePaddingStyle = useMemo(
+    () => ({
+      paddingBottom: `${signature.letterMarginBottom || 64}px`,
+      paddingLeft: `${signature.letterMarginLeft || 56}px`,
+      paddingRight: `${signature.letterMarginRight || 56}px`,
+      paddingTop: `${signature.letterMarginTop || 48}px`,
+    }),
+    [
+      signature.letterMarginBottom,
+      signature.letterMarginLeft,
+      signature.letterMarginRight,
+      signature.letterMarginTop,
+    ]
+  );
+  const pagePadding = useMemo(
+    () =>
+      `${signature.letterMarginTop || 48}px ${signature.letterMarginRight || 56}px ${
+        signature.letterMarginBottom || 64
+      }px ${signature.letterMarginLeft || 56}px`,
+    [
+      signature.letterMarginBottom,
+      signature.letterMarginLeft,
+      signature.letterMarginRight,
+      signature.letterMarginTop,
+    ]
+  );
+
+  const todayLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat('de-DE', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(new Date()),
+    []
+  );
+
+  const cityDate = [cleanSignatureText(signature.city), todayLabel].filter(Boolean).join(', ');
+  const sheetScale = useMemo(() => {
+    if (!sheetViewportWidth) return 1;
+    return Math.min(1, sheetViewportWidth / LETTER_PAGE_WIDTH);
+  }, [sheetViewportWidth]);
+  const composeLayout = useMemo(
+    () =>
+      buildLetterComposeLayout({
+        body: '',
+        context,
+        placeholder,
+        recipient,
+        signature,
+        subject,
+      } as never),
+    [context, placeholder, recipient, signature, subject]
+  );
+  const editorPageTemplates = useMemo(
+    () =>
+      cleanSignatureText(signature.letterTemplateHtml)
+        ? buildLetterEditorPageTemplates({
+            context,
+            customTemplate: cleanSignatureText(signature.letterTemplateHtml),
+            emptyBodyPlaceholder: placeholder,
+            pagePadding,
+            recipient,
+            signature,
+            subject,
+          })
+        : null,
+    [context, pagePadding, placeholder, recipient, signature, subject]
+  );
+  const hasBodyContent = normalizedBody.trim().length > 0;
+  const bodyPageFragments = useMemo(
+    () =>
+      cleanSignatureText(signature.letterTemplateHtml)
+        ? buildLetterBodyPageFragments({
+            body: normalizedBody,
+            bodyHtml: draftHtml,
+            bodyIsHtml: true,
+            context,
+            customTemplate: cleanSignatureText(signature.letterTemplateHtml),
+            emptyBodyPlaceholder: placeholder,
+            pagePadding,
+            recipient,
+            signature,
+            startOnFirstPage: true,
+            subject,
+          })
+        : null,
+    [
+      context,
+      draftHtml,
+      normalizedBody,
+      pagePadding,
+      placeholder,
+      recipient,
+      signature,
+      subject,
+    ]
+  );
+  const continuationPages = useMemo(() => {
+    if (!editorPageTemplates || !bodyPageFragments || bodyPageFragments.length <= 1 || !hasBodyContent) {
+      return [];
     }
-  }, [normalizedBody]);
 
-  function syncFromEditor() {
-    const nextHtml = cleanEditorHtml(editorRef.current?.innerHTML || '');
-    const nextText = htmlToText(nextHtml);
-    internalBodyRef.current = nextText;
-    setDraftHtml(nextHtml);
-    setDraftBody(nextText);
-    onChange(nextText);
-  }
-
-  function runCommand(command: string, value?: string) {
-    editorRef.current?.focus();
-    document.execCommand(command, false, value);
-    syncFromEditor();
-  }
+    return bodyPageFragments
+      .slice(1)
+      .map((fragment) =>
+        buildStaticLetterPageHtml({
+          closingHtml: editorPageTemplates.closingHtml,
+          fragment,
+          hideHeader: true,
+          inlineClosing: true,
+          templateHtml: editorPageTemplates.continuationPageHtml,
+        })
+      )
+      .filter(Boolean);
+  }, [bodyPageFragments, editorPageTemplates, hasBodyContent]);
+  const showClosingOnFirstPage = continuationPages.length === 0;
 
   function insertTable() {
-    const editor = editorRef.current;
     if (!editor) return;
-    editor.focus();
-
-    const rows = Array.from({ length: 3 })
-      .map(
-        () =>
-          `<tr>${Array.from({ length: 3 })
-            .map(
-              () =>
-                '<td style="border:1px solid #000000;padding:6px 8px;min-width:80px;">&nbsp;</td>'
-            )
-            .join('')}</tr>`
-      )
-      .join('');
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-      document.execCommand(
-        'insertHTML',
-        false,
-        `<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin:8px 0;color:inherit;"><tbody>${rows}</tbody></table><div><br /></div>`
-      );
-      syncFromEditor();
-      return;
-    }
-
-    const range = selection.getRangeAt(0);
-    if (!editor.contains(range.commonAncestorContainer)) return;
-
-    range.deleteContents();
-
-    const table = document.createElement('table');
-    table.setAttribute(
-      'style',
-      'border-collapse:collapse;width:100%;table-layout:fixed;margin:8px 0;color:inherit;'
-    );
-    const tbody = document.createElement('tbody');
-    table.appendChild(tbody);
-
-    for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
-      const tr = document.createElement('tr');
-      for (let colIndex = 0; colIndex < 3; colIndex += 1) {
-        const td = document.createElement('td');
-        td.setAttribute('style', 'border:1px solid #000000;padding:6px 8px;min-width:80px;');
-        td.innerHTML = '&nbsp;';
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-
-    const afterTableParagraph = document.createElement('div');
-    afterTableParagraph.innerHTML = '<br />';
-
-    const fragment = document.createDocumentFragment();
-    fragment.appendChild(table);
-    fragment.appendChild(afterTableParagraph);
-    range.insertNode(fragment);
-
-    const nextRange = document.createRange();
-    nextRange.selectNodeContents(afterTableParagraph);
-    nextRange.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(nextRange);
-
-    syncFromEditor();
-  }
-
-  function getActiveTableCell() {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || !editorRef.current) return null;
-    const node = selection.anchorNode;
-    const element = node?.nodeType === Node.ELEMENT_NODE ? (node as Element) : node?.parentElement;
-    const cell = element?.closest('td,th') as HTMLTableCellElement | null;
-    return cell && editorRef.current.contains(cell) ? cell : null;
+    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: false }).createParagraphNear().run();
   }
 
   function editTable(action: 'add-row' | 'add-column' | 'delete-row' | 'delete-column' | 'delete-table') {
-    const cell = getActiveTableCell();
-    const row = cell?.parentElement as HTMLTableRowElement | null;
-    const table = cell?.closest('table') as HTMLTableElement | null;
-    if (!cell || !row || !table) return;
-
-    if (action === 'delete-table') {
-      table.remove();
-    } else if (action === 'add-row') {
-      const newRow = row.cloneNode(true) as HTMLTableRowElement;
-      newRow.querySelectorAll('td,th').forEach((entry) => {
-        entry.innerHTML = '&nbsp;';
-      });
-      row.after(newRow);
-    } else if (action === 'delete-row') {
-      if (table.rows.length > 1) row.remove();
-    } else {
-      const cellIndex = cell.cellIndex;
-      Array.from(table.rows).forEach((entry) => {
-        if (action === 'add-column') {
-          const newCell = entry.insertCell(cellIndex + 1);
-          newCell.innerHTML = '&nbsp;';
-          newCell.setAttribute('style', 'border:1px solid #000000;padding:6px 8px;min-width:80px;');
-        } else if (entry.cells.length > 1) {
-          entry.deleteCell(cellIndex);
-        }
-      });
-    }
-    syncFromEditor();
+    if (!editor) return;
+    const chain = editor.chain().focus();
+    if (action === 'add-row') chain.addRowAfter().run();
+    if (action === 'add-column') chain.addColumnAfter().run();
+    if (action === 'delete-row') chain.deleteRow().run();
+    if (action === 'delete-column') chain.deleteColumn().run();
+    if (action === 'delete-table') chain.deleteTable().run();
   }
 
   function wrapSelectionWithStyle(style: Partial<CSSStyleDeclaration>) {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    if (!editorRef.current?.contains(range.commonAncestorContainer)) return;
-    const span = document.createElement('span');
-    Object.assign(span.style, style);
-    if (range.collapsed) {
-      span.appendChild(document.createTextNode('\u200b'));
-      range.insertNode(span);
-      range.setStart(span.firstChild || span, 1);
-      range.collapse(true);
-    } else {
-      span.appendChild(range.extractContents());
-      range.insertNode(span);
-      range.selectNodeContents(span);
-    }
-    selection.removeAllRanges();
-    selection.addRange(range);
-    syncFromEditor();
+    if (!editor) return;
+    const chain = editor.chain().focus();
+    if (style.color) chain.setColor(style.color).run();
+    if (style.backgroundColor) chain.setHighlight({ color: style.backgroundColor }).run();
+    if (style.fontFamily) chain.setFontFamily(style.fontFamily).run();
+    if (style.fontSize) chain.setFontSize(style.fontSize).run();
   }
 
   return (
     <div className={`${className ?? ''} rounded-[18px] border border-stone-200 bg-[#f5f1ea] p-5`}>
-      <div className="mb-5">
+      <div className="mb-4">
         {recipientOptions && recipientOptions.length > 1 && onRecipientChange ? (
           <label className="mb-3 block max-w-[340px]">
             <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">
               Empfängeradresse
             </p>
             <select
-              className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-1.5 text-sm leading-5 text-slate-900 outline-none transition focus:border-amber-700/60"
               onChange={(event) => onRecipientChange(event.target.value)}
               value={selectedRecipientKey}
             >
@@ -521,40 +521,45 @@ export default function LetterComposeEditor({
             ) : null}
           </label>
         ) : null}
-        <div className="mb-2 flex flex-wrap items-center gap-2">
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <select
             className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700"
-            value={fontFamily}
             onChange={(event) => {
               const nextValue = event.target.value;
               setFontFamily(nextValue);
               wrapSelectionWithStyle({ fontFamily: nextValue });
             }}
+            value={fontFamily}
           >
             {FONT_FAMILIES.map((option) => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option} value={option}>
+                {option}
+              </option>
             ))}
           </select>
           <select
             className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700"
-            value={fontSize}
             onChange={(event) => {
               const nextValue = event.target.value;
               setFontSize(nextValue);
               wrapSelectionWithStyle({ fontSize: `${nextValue}px` });
             }}
+            value={fontSize}
           >
             {FONT_SIZES.map((option) => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option} value={option}>
+                {option}
+              </option>
             ))}
           </select>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-bold" type="button" onClick={() => runCommand('bold')}>B</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs italic" type="button" onClick={() => runCommand('italic')}>I</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs underline" type="button" onClick={() => runCommand('underline')}>U</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => runCommand('justifyLeft')}>L</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => runCommand('justifyCenter')}>C</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => runCommand('justifyRight')}>R</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => runCommand('justifyFull')}>J</button>
+          <button className={`rounded-full border px-3 py-1.5 text-xs font-bold ${editorState?.isBold ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-stone-300 bg-white text-stone-700'}`} onClick={() => editor?.chain().focus().toggleBold().run()} type="button">B</button>
+          <button className={`rounded-full border px-3 py-1.5 text-xs italic ${editorState?.isItalic ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-stone-300 bg-white text-stone-700'}`} onClick={() => editor?.chain().focus().toggleItalic().run()} type="button">I</button>
+          <button className={`rounded-full border px-3 py-1.5 text-xs underline ${editorState?.isUnderline ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-stone-300 bg-white text-stone-700'}`} onClick={() => editor?.chain().focus().toggleUnderline().run()} type="button">U</button>
+          <button className={`rounded-full border px-3 py-1.5 text-xs ${editorState?.isLeft ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-stone-300 bg-white text-stone-700'}`} onClick={() => editor?.chain().focus().setTextAlign('left').run()} type="button">L</button>
+          <button className={`rounded-full border px-3 py-1.5 text-xs ${editorState?.isCenter ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-stone-300 bg-white text-stone-700'}`} onClick={() => editor?.chain().focus().setTextAlign('center').run()} type="button">C</button>
+          <button className={`rounded-full border px-3 py-1.5 text-xs ${editorState?.isRight ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-stone-300 bg-white text-stone-700'}`} onClick={() => editor?.chain().focus().setTextAlign('right').run()} type="button">R</button>
+          <button className={`rounded-full border px-3 py-1.5 text-xs ${editorState?.isJustify ? 'border-amber-700 bg-amber-100 text-amber-900' : 'border-stone-300 bg-white text-stone-700'}`} onClick={() => editor?.chain().focus().setTextAlign('justify').run()} type="button">J</button>
           <label className="inline-flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs text-stone-700">
             A
             <input className="h-5 w-6 border-0 bg-transparent p-0" onChange={(event) => wrapSelectionWithStyle({ color: event.target.value })} title="Textfarbe" type="color" />
@@ -563,37 +568,167 @@ export default function LetterComposeEditor({
             Marker
             <input className="h-5 w-6 border-0 bg-transparent p-0" defaultValue="#fff2a8" onChange={(event) => wrapSelectionWithStyle({ backgroundColor: event.target.value })} title="Text markieren" type="color" />
           </label>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={insertTable}>Tabelle</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => editTable('add-row')}>Z+</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => editTable('add-column')}>S+</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => editTable('delete-row')}>Z-</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => editTable('delete-column')}>S-</button>
-          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" type="button" onClick={() => editTable('delete-table')}>Tab-</button>
+          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" onClick={insertTable} type="button">Tabelle</button>
+          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" onClick={() => editTable('add-row')} type="button">Z+</button>
+          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" onClick={() => editTable('add-column')} type="button">S+</button>
+          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" onClick={() => editTable('delete-row')} type="button">Z-</button>
+          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" onClick={() => editTable('delete-column')} type="button">S-</button>
+          <button className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs" onClick={() => editTable('delete-table')} type="button">Tab-</button>
         </div>
-        <div
-          ref={editorRef}
-          className="min-h-[180px] max-h-[260px] w-full overflow-y-auto rounded-[18px] border border-stone-200 bg-white px-5 py-4 text-[15px] leading-7 text-stone-800 outline-none transition focus:border-stone-400"
-          contentEditable
-          data-placeholder={placeholder || 'Nachricht'}
-          onBlur={() => {
-            editorFocusedRef.current = false;
-          }}
-          onFocus={() => {
-            editorFocusedRef.current = true;
-          }}
-          onInput={syncFromEditor}
-          role="textbox"
-          suppressContentEditableWarning
-        />
+
       </div>
 
-      <div className="mx-auto overflow-auto" style={{ width: `${LETTER_PAGE_WIDTH}px` }}>
-        <div className="flex flex-col gap-8">
-          {renderedPreviewPages.map((pageHtml, index) => (
-            <div key={index}>{renderPreviewHtmlPage(pageHtml)}</div>
-          ))}
+      <div className="mx-auto max-w-full" ref={sheetViewportRef}>
+        <div
+          className="mx-auto flex max-w-full items-start justify-center overflow-hidden"
+        >
+          <div
+            style={{
+              transform: `scale(${sheetScale})`,
+              transformOrigin: 'top center',
+            }}
+          >
+            {composeLayout ? (
+              <div className="space-y-8">
+                <div
+                  className="relative mx-auto box-border rounded-[2px] border border-stone-300 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.25)]"
+                  style={{
+                    width: `${LETTER_PAGE_WIDTH}px`,
+                    height: `${LETTER_PAGE_HEIGHT}px`,
+                    ...pagePaddingStyle,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div dangerouslySetInnerHTML={{ __html: composeLayout.headerSectionHtml }} />
+                  <div
+                    className={composeLayout.bodySectionClassName || undefined}
+                    data-letter-section="body"
+                    style={{
+                      height: `${composeLayout.bodyHeight}px`,
+                      minHeight: `${composeLayout.bodyHeight}px`,
+                      maxHeight: `${composeLayout.bodyHeight}px`,
+                      overflow: 'hidden',
+                      ...inlineStyleStringToObject(composeLayout.bodySectionStyle),
+                    }}
+                  >
+                    {composeLayout.bodyInnerBeforeHtml ? (
+                      <div dangerouslySetInnerHTML={{ __html: composeLayout.bodyInnerBeforeHtml }} />
+                    ) : null}
+                    <style>{renderEditorSurfaceStyles()}</style>
+                    <div
+                      className={`letter-compose-editor ${composeLayout.bodyContainerClassName || ''}`.trim()}
+                      data-letter-body="true"
+                      style={{
+                        width: '100%',
+                        minHeight: `${composeLayout.bodyHeight}px`,
+                        maxHeight: `${composeLayout.bodyHeight}px`,
+                        overflow: 'auto',
+                        boxSizing: 'border-box',
+                        ...inlineStyleStringToObject(composeLayout.bodyContainerStyle),
+                      }}
+                    >
+                      <EditorContent editor={editor} />
+                    </div>
+                    {showClosingOnFirstPage && composeLayout.bodyInnerAfterHtml ? (
+                      <div dangerouslySetInnerHTML={{ __html: composeLayout.bodyInnerAfterHtml }} />
+                    ) : null}
+                  </div>
+                  <div dangerouslySetInnerHTML={{ __html: composeLayout.footerSectionHtml }} />
+                </div>
+                {continuationPages.map((pageHtml, index) => (
+                  <div
+                    className="relative mx-auto box-border rounded-[2px] border border-stone-300 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.25)]"
+                    dangerouslySetInnerHTML={{ __html: pageHtml }}
+                    key={`continuation-page-${index}`}
+                    style={{
+                      width: `${LETTER_PAGE_WIDTH}px`,
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div
+                className="mx-auto box-border rounded-[2px] border border-stone-300 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.25)]"
+                style={{
+                  width: `${LETTER_PAGE_WIDTH}px`,
+                  minHeight: `${LETTER_PAGE_HEIGHT}px`,
+                  ...pagePaddingStyle,
+                }}
+              >
+                <div className="flex min-h-full flex-col text-[12pt] leading-[1.6] text-slate-900">
+                  <div className="flex items-start justify-between gap-8">
+                    <div className="min-w-0 flex-1">
+                      {signature.logoUrl && signature.letterShowLogo ? (
+                        <img
+                          alt={signature.logoAlt || signature.companyName || 'Logo'}
+                          className="mb-3 max-h-[78px] max-w-[220px] object-contain"
+                          src={signature.logoUrl}
+                        />
+                      ) : null}
+                      <div className="text-[8pt] font-bold underline">
+                        {senderLine || companyLine}
+                      </div>
+                    </div>
+                    <div
+                      className="max-w-[280px] whitespace-pre-line text-right text-[10pt] leading-[1.45] text-slate-700"
+                      style={{
+                        fontFamily: signature.letterRightBlockFontFamily || signature.fontFamily || 'Segoe UI, Arial, sans-serif',
+                        fontSize: signature.letterRightBlockFontSize
+                          ? `${String(signature.letterRightBlockFontSize).replace(/px$/i, '')}px`
+                          : undefined,
+                        fontStyle: signature.letterRightBlockItalic ? 'italic' : 'normal',
+                        fontWeight: signature.letterRightBlockBold ? 700 : 500,
+                        textAlign: signature.letterRightBlockTextAlign === 'left' ? 'left' : 'right',
+                        textDecoration: signature.letterRightBlockUnderline ? 'underline' : 'none',
+                      }}
+                    >
+                      {cleanSignatureText(signature.letterRightBlock)}
+                    </div>
+                  </div>
+
+                  <div className="mt-8 min-h-[70px] whitespace-pre-line font-[Arial] text-[11pt] leading-[1.45] text-slate-900">
+                    {recipientLines.join('\n') || 'Empfänger'}
+                  </div>
+
+                  <div className="mt-3 text-right text-[11pt]">{cityDate}</div>
+
+                  <div className="mt-8 font-[Arial] text-[11pt]">
+                    <span className="font-bold italic">Betreff:</span>
+                    <span className="font-bold italic"> {subject || 'Nachricht von Halbmann Holding'}</span>
+                  </div>
+                  {context?.propertyName || context?.unitLabel ? (
+                    <div className="mt-1 font-[Arial] text-[11pt] italic">
+                      Objekt: {[cleanSignatureText(context?.propertyName), cleanSignatureText(context?.unitLabel)]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
+                  ) : null}
+
+                  <style>{renderEditorSurfaceStyles()}</style>
+                  <div className="letter-compose-editor mt-6 flex-1">
+                    <EditorContent editor={editor} />
+                  </div>
+
+                  <div className="mt-8 whitespace-pre-line text-[12pt] leading-[1.6]">
+                    {cleanSignatureText(signature.letterClosing || signature.closing || 'Mit freundlichen Grüßen')}
+                    {signature.name ? `\n\n${signature.name}` : ''}
+                    {companyLine ? `\n${companyLine}` : ''}
+                  </div>
+
+                  <div className="mt-10 border-t border-stone-400 pt-4 text-center font-[Arial] text-[8pt] leading-[1.5] text-stone-600">
+                    {footerLines.map((line) => (
+                      <div key={line} className="whitespace-pre-line">
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
+

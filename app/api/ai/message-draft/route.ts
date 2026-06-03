@@ -8,12 +8,14 @@ export const runtime = 'nodejs';
 type MessageDraftPayload = {
   companyName?: string;
   currentBody?: string;
+  deliveryMode?: 'both' | 'email' | 'letter';
   instruction?: string;
   meters?: string[];
   propertyName?: string;
   recipientCount?: number;
   recipientEmail?: string;
   recipientName?: string;
+  recipientSalutation?: string;
   scope?: 'all_tenants' | 'company_tenants' | 'manual' | 'property_tenants';
   senderEmail?: string;
   subject?: string;
@@ -54,26 +56,35 @@ function buildScopeLabel(scope: MessageDraftPayload['scope']) {
   return 'Nachricht an einen einzelnen Empfänger';
 }
 
-function buildSystemPrompt() {
+function buildSystemPrompt(deliveryMode: MessageDraftPayload['deliveryMode']) {
   return [
     'Du schreibst individuelle, professionelle deutschsprachige E-Mails für eine Immobilienverwaltung.',
+    'Die zusätzliche Anweisung des Nutzers ist verbindlich und hat immer höchste Priorität vor Stilvorgaben und Standardformulierungen.',
     'Erzeuge nur den Nachrichtentext ohne Betreff und ohne Signatur.',
     'Keine Schlussformel mit Namen oder Firmennamen ergänzen.',
+    deliveryMode === 'letter'
+      ? 'Wenn die Nachricht in eine Briefvorlage eingefügt wird, darfst du keine Anrede und keine Abschlussformel schreiben.'
+      : '',
     'Wenn bereits ein Entwurf vorhanden ist, überarbeite genau diesen Entwurf statt neu zu beginnen.',
     'Die neueste Nutzeranweisung hat Vorrang.',
     'Verwende nur vorhandene Informationen und erfinde keine Fakten.',
     'Wenn es um Zählerablesung oder Zählertausch geht und Zählerdaten vorhanden sind, nenne sie konkret.',
     'Nenne eine Absenderadresse nur, wenn die Nutzeranweisung ausdrücklich eine Antwort per E-Mail verlangt.',
-  ].join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 function buildUserPrompt(payload: MessageDraftPayload) {
+  const instruction = cleanText(payload.instruction);
   return [
     `Kontext: ${buildScopeLabel(payload.scope)}`,
     `Firma: ${cleanText(payload.companyName) || '–'}`,
     `Objekt: ${cleanText(payload.propertyName) || '–'}`,
     `Empfängername: ${cleanText(payload.recipientName) || '–'}`,
+    `Anredehinweis: ${cleanText(payload.recipientSalutation) || '–'}`,
     `Empfänger E-Mail: ${cleanText(payload.recipientEmail) || '–'}`,
+    `Zielkanal: ${payload.deliveryMode === 'letter' ? 'Briefvorlage' : 'E-Mail / Standard'}`,
     `Absenderadresse: ${cleanText(payload.senderEmail) || 'portal@halbmann-holding.de'}`,
     `Anzahl Empfänger: ${typeof payload.recipientCount === 'number' ? String(payload.recipientCount) : '–'}`,
     `Betreff: ${cleanText(payload.subject) || '–'}`,
@@ -85,10 +96,13 @@ function buildUserPrompt(payload: MessageDraftPayload) {
     cleanText(payload.currentBody) || '–',
     '',
     'Zusätzliche Anweisung:',
-    cleanText(payload.instruction) || 'Keine',
+    instruction || 'Keine',
+    instruction ? 'Diese zusätzliche Anweisung ist verbindlich. Setze sie exakt um.' : '',
     '',
     'Schreibe jetzt den passenden Nachrichtentext.',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export async function POST(request: Request) {
@@ -116,7 +130,7 @@ export async function POST(request: Request) {
       input: [
         {
           role: 'system',
-          content: [buildSystemPrompt(), settingsBlock ? `Zusätzliche Vorgabe:\n${settingsBlock}` : '']
+          content: [buildSystemPrompt(payload.deliveryMode), settingsBlock ? `Zusätzliche Vorgabe:\n${settingsBlock}` : '']
             .filter(Boolean)
             .join('\n\n'),
         },

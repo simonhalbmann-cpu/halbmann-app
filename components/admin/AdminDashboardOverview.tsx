@@ -3,21 +3,24 @@
 import Link from 'next/link';
 import { collection, onSnapshot, query, type DocumentData } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 import {
   formatDateTime,
   formatTimestampSort,
   getStatusLabel,
-  getTicketTypeLabel,
   type WorkflowRecord,
 } from '../../lib/adminWorkflow';
 import { db } from '../../lib/firebase';
+import type { LocalMessageTheme } from '../../lib/localMessageThemes';
+import { buildMessageThemes } from '../../lib/messageThemes';
+import RentHistoryChart, { type RentHistoryChartPoint } from './RentHistoryChart';
 
 type ReminderItem = {
   dateValue: string;
   href: string;
   label: string;
   meta: string;
-  type: 'message' | 'tenant' | 'ticket';
+  type: 'message' | 'tenant' | 'theme';
 };
 
 type StatCard = {
@@ -28,8 +31,18 @@ type StatCard = {
   value: number;
 };
 
+type RentFilterScope = 'all' | 'companies' | 'properties' | 'tenants';
+
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildDashboardMessageHref(record: WorkflowRecord) {
+  const tenantId = cleanText(record.data.tenantId);
+  if (tenantId) {
+    return `/admin/mieter/${tenantId}?messageId=${record.id}`;
+  }
+  return `/admin/nachrichten/${record.id}`;
 }
 
 function readCollection(
@@ -73,6 +86,14 @@ function buildTenantLabel(record?: WorkflowRecord | null) {
   );
 }
 
+function parseMoney(value: unknown) {
+  const text = cleanText(value);
+  if (!text) return 0;
+  const normalized = text.replace(/\./g, '').replace(/EUR/gi, '').replace(/\s/g, '').replace(',', '.');
+  const numeric = Number.parseFloat(normalized);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function EmptyList({ text }: { text: string }) {
   return (
     <div className="rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-slate-500">
@@ -96,18 +117,23 @@ function PriorityStat({ accentClassName, href, label, sublabel, value }: StatCar
 }
 
 export default function AdminDashboardOverview() {
-  const [tickets, setTickets] = useState<WorkflowRecord[]>([]);
-  const [messages, setMessages] = useState<WorkflowRecord[]>([]);
+  const { user } = useAuth();
+  const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
+  const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
+  const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
   const [loadError, setLoadError] = useState('');
+  const [rentFilterScope, setRentFilterScope] = useState<RentFilterScope>('all');
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
+  const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
+  const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
 
   useEffect(() => {
     const unsubscribers = [
-      readCollection('tickets', setLoadError, setTickets),
-      readCollection('messages', setLoadError, setMessages),
+      readCollection('messages', setLoadError, setFirestoreMessages),
       readCollection('tenants', setLoadError, setTenants),
       readCollection('properties', setLoadError, setProperties),
       readCollection('companies', setLoadError, setCompanies),
@@ -116,6 +142,103 @@ export default function AdminDashboardOverview() {
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const currentUser = user;
+    let cancelled = false;
+
+    async function loadLocalPortalMessages() {
+      try {
+        const token = await currentUser.getIdToken();
+        const response = await fetch('/api/admin/local-portal-messages', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const result = (await response.json()) as {
+          messages?: WorkflowRecord[];
+          ok?: boolean;
+        };
+
+        if (!cancelled && response.ok && result.ok) {
+          setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
+        }
+      } catch (caughtError) {
+        console.error('Fehler beim Laden lokaler Portalnachrichten im Dashboard:', caughtError);
+      }
+    }
+
+    void loadLocalPortalMessages();
+    const intervalId = window.setInterval(() => {
+      void loadLocalPortalMessages();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const currentUser = user;
+    let cancelled = false;
+
+    async function loadMessageThemes() {
+      try {
+        const token = await currentUser.getIdToken();
+        const response = await fetch('/api/admin/message-themes', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const result = (await response.json()) as {
+          ok?: boolean;
+          themes?: LocalMessageTheme[];
+        };
+
+        if (!cancelled && response.ok && result.ok) {
+          setMessageThemes(Array.isArray(result.themes) ? result.themes : []);
+        }
+      } catch (caughtError) {
+        console.error('Fehler beim Laden der Themen im Dashboard:', caughtError);
+      }
+    }
+
+    void loadMessageThemes();
+    const intervalId = window.setInterval(() => {
+      void loadMessageThemes();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
+
+  const messages = useMemo(() => {
+    const combined = [...firestoreMessages, ...localPortalMessages];
+    const unique = new Map<string, WorkflowRecord>();
+    combined.forEach((record) => {
+      unique.set(record.id, record);
+    });
+    return Array.from(unique.values());
+  }, [firestoreMessages, localPortalMessages]);
+
+  useEffect(() => {
+    setSelectedPropertyIds((current) =>
+      current.length > 0 ? current.filter((id) => properties.some((property) => property.id === id)) : []
+    );
+  }, [properties]);
+
+  useEffect(() => {
+    setSelectedCompanyIds((current) =>
+      current.length > 0 ? current.filter((id) => companies.some((company) => company.id === id)) : []
+    );
+  }, [companies]);
+
+  useEffect(() => {
+    setSelectedTenantIds((current) =>
+      current.length > 0 ? current.filter((id) => tenants.some((tenant) => tenant.id === id)) : []
+    );
+  }, [tenants]);
 
   const activeTenantsByUnit = useMemo(() => {
     const map = new Map<string, WorkflowRecord>();
@@ -129,38 +252,26 @@ export default function AdminDashboardOverview() {
     return map;
   }, [tenants]);
 
-  const openTickets = useMemo(
-    () =>
-      tickets
-        .filter((ticket) => !['done', 'closed', 'deleted'].includes(cleanText(ticket.data.status)))
-        .sort(
-          (left, right) =>
-            formatTimestampSort(right.data.updatedAt ?? right.data.createdAt) -
-            formatTimestampSort(left.data.updatedAt ?? left.data.createdAt)
-        ),
-    [tickets]
+  const themes = useMemo(() => buildMessageThemes(messages, messageThemes), [messageThemes, messages]);
+
+  const openThemes = useMemo(
+    () => themes.filter((theme) => !theme.archived && !['closed', 'deleted'].includes(cleanText(theme.status))),
+    [themes]
   );
 
-  const newMessages = useMemo(
-    () =>
-      messages
-        .filter((message) => ['new', 'needs_review'].includes(cleanText(message.data.status)))
-        .sort(
-          (left, right) =>
-            formatTimestampSort(right.data.receivedAt ?? right.data.createdAt) -
-            formatTimestampSort(left.data.receivedAt ?? left.data.createdAt)
-        ),
-    [messages]
+  const newThemes = useMemo(
+    () => openThemes.filter((theme) => ['new', 'needs_review'].includes(cleanText(theme.status))),
+    [openThemes]
   );
 
   const needsReviewMessages = useMemo(
-    () => newMessages.filter((message) => cleanText(message.data.status) === 'needs_review'),
-    [newMessages]
+    () => newThemes.filter((theme) => cleanText(theme.status) === 'needs_review'),
+    [newThemes]
   );
 
-  const ticketsInProgress = useMemo(
-    () => tickets.filter((ticket) => cleanText(ticket.data.status) === 'in_progress'),
-    [tickets]
+  const themesInProgress = useMemo(
+    () => openThemes.filter((theme) => cleanText(theme.status) === 'in_progress'),
+    [openThemes]
   );
 
   const today = useMemo(() => {
@@ -172,16 +283,16 @@ export default function AdminDashboardOverview() {
   const reminders = useMemo(() => {
     const reminderItems: ReminderItem[] = [];
 
-    tickets.forEach((ticket) => {
-      const followUpDate = cleanText(ticket.data.followUpDate);
-      const parsed = parseDateInput(followUpDate);
+    themes.forEach((theme) => {
+      const dueDate = cleanText(theme.reminderDate);
+      const parsed = parseDateInput(dueDate);
       if (!parsed) return;
       reminderItems.push({
-        dateValue: followUpDate,
-        href: `/admin/tickets/${ticket.id}`,
-        label: cleanText(ticket.data.title) || cleanText(ticket.data.ticketNumber) || 'Ticket',
-        meta: `Ticket · ${cleanText(ticket.data.ticketNumber) || getStatusLabel(cleanText(ticket.data.status))}`,
-        type: 'ticket',
+        dateValue: dueDate,
+        href: `/admin/mieter/${theme.tenantId}?messageId=${theme.id}`,
+        label: cleanText(theme.subject) || 'Thema ohne Betreff',
+        meta: `Thema · ${buildTenantLabel(tenants.find((tenant) => tenant.id === theme.tenantId) ?? null)}`,
+        type: 'theme',
       });
     });
 
@@ -220,7 +331,7 @@ export default function AdminDashboardOverview() {
       const rightDate = parseDateInput(right.dateValue)?.getTime() ?? Number.MAX_SAFE_INTEGER;
       return leftDate - rightDate;
     });
-  }, [messages, tenants, tickets]);
+  }, [messages, tenants, themes]);
 
   const dueSoonReminders = useMemo(
     () =>
@@ -232,6 +343,18 @@ export default function AdminDashboardOverview() {
       }),
     [reminders, today]
   );
+
+  const themeReminders = useMemo(
+    () => reminders.filter((entry) => entry.type === 'theme'),
+    [reminders]
+  );
+
+  const dueSoonThemeReminders = useMemo(
+    () => dueSoonReminders.filter((entry) => entry.type === 'theme'),
+    [dueSoonReminders]
+  );
+
+  const visibleThemeReminders = dueSoonThemeReminders.length > 0 ? dueSoonThemeReminders : themeReminders;
 
   const vacancyCount = useMemo(
     () =>
@@ -250,24 +373,24 @@ export default function AdminDashboardOverview() {
     [activeTenantsByUnit, properties]
   );
 
-  const latestOpenTickets = useMemo(() => openTickets.slice(0, 6), [openTickets]);
-  const latestNewMessages = useMemo(() => newMessages.slice(0, 6), [newMessages]);
+  const latestOpenThemes = useMemo(() => openThemes.slice(0, 6), [openThemes]);
+  const latestNewThemes = useMemo(() => newThemes.slice(0, 6), [newThemes]);
   const topReminders = useMemo(() => dueSoonReminders.slice(0, 6), [dueSoonReminders]);
 
   const stats: StatCard[] = [
     {
       accentClassName: 'bg-amber-700/90',
-      href: '/admin/tickets',
-      label: 'Offene Tickets',
+      href: '/admin/nachrichten',
+      label: 'Offene Themen',
       sublabel: 'Alle laufenden Vorgänge auf einen Blick',
-      value: openTickets.length,
+      value: openThemes.length,
     },
     {
       accentClassName: 'bg-sky-600/90',
       href: '/admin/nachrichten',
-      label: 'Neue Nachrichten',
+      label: 'Neue Themen',
       sublabel: 'Portal und E-Mail, die noch bearbeitet werden müssen',
-      value: newMessages.length,
+      value: newThemes.length,
     },
     {
       accentClassName: 'bg-rose-600/90',
@@ -278,7 +401,7 @@ export default function AdminDashboardOverview() {
     },
     {
       accentClassName: 'bg-emerald-600/90',
-      href: '/admin/tickets',
+      href: '/admin/mieter',
       label: 'Nächste Erinnerungen',
       sublabel: 'Fällige Wiedervorlagen in den nächsten 14 Tagen',
       value: dueSoonReminders.length,
@@ -291,8 +414,124 @@ export default function AdminDashboardOverview() {
     { href: '/admin/mieter', label: 'Mieter', value: tenants.length },
     { href: '/admin/personen', label: 'Kontakte', value: people.length },
     { href: '/admin/immobilie', label: 'Leerstand', value: vacancyCount },
-    { href: '/admin/tickets', label: 'In Bearbeitung', value: ticketsInProgress.length },
+    { href: '/admin/nachrichten', label: 'In Bearbeitung', value: themesInProgress.length },
   ];
+
+  const activeRentTenants = useMemo(
+    () => tenants.filter((tenant) => cleanText(tenant.data.status) === 'active'),
+    [tenants]
+  );
+
+  const filteredTenantsForChart = useMemo(() => {
+    if (rentFilterScope === 'all') return activeRentTenants;
+
+    if (rentFilterScope === 'properties') {
+      const filteredPropertyIds =
+        selectedPropertyIds.length > 0 ? selectedPropertyIds : properties.map((property) => property.id);
+      return activeRentTenants.filter((tenant) =>
+        filteredPropertyIds.includes(cleanText(tenant.data.propertyId))
+      );
+    }
+
+    if (rentFilterScope === 'companies') {
+      const filteredCompanyIds =
+        selectedCompanyIds.length > 0 ? selectedCompanyIds : companies.map((company) => company.id);
+      return activeRentTenants.filter((tenant) =>
+        filteredCompanyIds.includes(cleanText(tenant.data.companyId))
+      );
+    }
+
+    const filteredTenantIds =
+      selectedTenantIds.length > 0 ? selectedTenantIds : activeRentTenants.map((tenant) => tenant.id);
+    return activeRentTenants.filter((tenant) => filteredTenantIds.includes(tenant.id));
+  }, [
+    activeRentTenants,
+    companies,
+    properties,
+    rentFilterScope,
+    selectedCompanyIds,
+    selectedPropertyIds,
+    selectedTenantIds,
+  ]);
+
+  const dashboardRentPoints = useMemo(() => {
+    const tenantSeries = filteredTenantsForChart
+      .map((tenant) => {
+        const history = Array.isArray(tenant.data.rentHistory) ? tenant.data.rentHistory : [];
+        const referenceDate =
+          cleanText(tenant.data.rentIncreaseReferenceDate) || cleanText(tenant.data.moveInDate) || '';
+        const points = history
+          .filter((entry) => entry && typeof entry === 'object')
+          .map((entry) => ({
+            coldRent: parseMoney((entry as DocumentData).coldRent),
+            date: cleanText((entry as DocumentData).effectiveDate),
+          }))
+          .filter((entry) => entry.date);
+
+        if (referenceDate) {
+          points.push({
+            coldRent: parseMoney(tenant.data.coldRent),
+            date: referenceDate,
+          });
+        }
+
+        return points.sort((left, right) => left.date.localeCompare(right.date));
+      })
+      .filter((points) => points.length > 0);
+
+    const uniqueDates = Array.from(
+      new Set(tenantSeries.flatMap((series) => series.map((entry) => entry.date)))
+    ).sort((left, right) => left.localeCompare(right));
+
+    return uniqueDates.map((date) => {
+      const coldRent = tenantSeries.reduce((total, series) => {
+        const latest = series
+          .filter((entry) => entry.date <= date)
+          .sort((left, right) => left.date.localeCompare(right.date))
+          .at(-1);
+        return total + (latest?.coldRent ?? 0);
+      }, 0);
+
+      return {
+        coldRent,
+        date,
+        label: 'Gesamte Kaltmiete',
+        pointType: 'history' as const,
+      } satisfies RentHistoryChartPoint;
+    });
+  }, [filteredTenantsForChart]);
+
+  function togglePropertySelection(propertyId: string) {
+    setSelectedPropertyIds((current) =>
+      current.includes(propertyId) ? current.filter((id) => id !== propertyId) : [...current, propertyId]
+    );
+  }
+
+  function toggleCompanySelection(companyId: string) {
+    setSelectedCompanyIds((current) =>
+      current.includes(companyId) ? current.filter((id) => id !== companyId) : [...current, companyId]
+    );
+  }
+
+  function toggleTenantSelection(tenantId: string) {
+    setSelectedTenantIds((current) =>
+      current.includes(tenantId) ? current.filter((id) => id !== tenantId) : [...current, tenantId]
+    );
+  }
+
+  function resetActiveFilterSelection() {
+    if (rentFilterScope === 'properties') {
+      setSelectedPropertyIds([]);
+      return;
+    }
+    if (rentFilterScope === 'companies') {
+      setSelectedCompanyIds([]);
+      return;
+    }
+    if (rentFilterScope === 'tenants') {
+      setSelectedTenantIds([]);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -328,13 +567,13 @@ export default function AdminDashboardOverview() {
               <div className="rounded-[24px] bg-[linear-gradient(180deg,#f7efe3_0%,#f3eadf_100%)] p-4">
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-800/80">Dringend</p>
                 <p className="mt-3 text-3xl font-semibold text-slate-950">
-                  {openTickets.filter((ticket) => ['hoch', 'notfall'].includes(cleanText(ticket.data.priority))).length}
+                  {needsReviewMessages.length}
                 </p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">offene Tickets mit hoher Priorität oder Notfall</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">offene Themen mit Klaerungsbedarf oder hoher Dringlichkeit</p>
               </div>
               <div className="rounded-[24px] bg-[linear-gradient(180deg,#eef6fb_0%,#e8f2f9_100%)] p-4">
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700/80">Neue Eingänge</p>
-                <p className="mt-3 text-3xl font-semibold text-slate-950">{newMessages.length}</p>
+                <p className="mt-3 text-3xl font-semibold text-slate-950">{newThemes.length}</p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">Nachrichten warten auf Einordnung oder Antwort</p>
               </div>
               <div className="rounded-[24px] bg-[linear-gradient(180deg,#eef8f0_0%,#e8f3ea_100%)] p-4">
@@ -348,7 +587,7 @@ export default function AdminDashboardOverview() {
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">Empfehlung</p>
               <p className="mt-3 text-sm leading-7 text-slate-700">
                 Starte mit <span className="font-medium">{needsReviewMessages.length} zu prüfenden Nachrichten</span>,
-                dann die <span className="font-medium">{openTickets.filter((ticket) => ['hoch', 'notfall'].includes(cleanText(ticket.data.priority))).length} dringenden Tickets</span>,
+                dann die <span className="font-medium">{themesInProgress.length} Themen in Bearbeitung</span>,
                 danach die nächste Wiedervorlage.
               </p>
             </div>
@@ -357,44 +596,51 @@ export default function AdminDashboardOverview() {
           <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Offene Tickets</p>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Offene Themen</p>
                 <h3 className="mt-2 font-serif text-3xl text-slate-950">Was jetzt läuft</h3>
               </div>
               <Link
                 className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
-                href="/admin/tickets"
+                href="/admin/nachrichten"
               >
-                Alle Tickets
+                Alle Themen
               </Link>
             </div>
 
             <div className="mt-5 space-y-3">
-              {latestOpenTickets.length === 0 ? (
-                <EmptyList text="Keine offenen Tickets vorhanden." />
+              {latestOpenThemes.length === 0 ? (
+                <EmptyList text="Keine offenen Themen vorhanden." />
               ) : (
-                latestOpenTickets.map((ticket) => (
+                latestOpenThemes.map((theme) => (
                   <Link
                     className="grid gap-3 rounded-[22px] border border-stone-200 bg-stone-50/60 px-4 py-4 transition hover:border-stone-300 hover:bg-white md:grid-cols-[minmax(0,170px)_minmax(0,1fr)_140px]"
-                    href={`/admin/tickets/${ticket.id}`}
-                    key={ticket.id}
+                    href={buildDashboardMessageHref(theme.latestInbound ?? theme.latestEntry)}
+                    key={theme.id}
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-950">
-                        {cleanText(ticket.data.ticketNumber) || ticket.id}
+                        {cleanText(theme.subject) || theme.id}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {formatDateTime(ticket.data.updatedAt ?? ticket.data.createdAt)}
+                        {formatDateTime(theme.latestActivityAt)}
                       </p>
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-slate-900">{cleanText(ticket.data.title) || 'Ohne Titel'}</p>
+                      <p className="truncate text-sm text-slate-900">
+                        {cleanText(theme.latestInbound?.data.fromName) ||
+                          cleanText(theme.latestEntry.data.fromName) ||
+      buildTenantLabel(tenants.find((tenant) => tenant.id === theme.tenantId)) ||
+                          'Ohne Zuordnung'}
+                      </p>
                       <p className="mt-1 truncate text-xs text-slate-500">
-                        {getTicketTypeLabel(cleanText(ticket.data.type))} · {cleanText(ticket.data.priority) || 'normal'}
+                        {cleanText(theme.latestInbound?.data.fromEmail) ||
+                          cleanText(theme.latestEntry.data.channel) ||
+                          'Portal oder E-Mail'}
                       </p>
                     </div>
                     <div className="flex items-center justify-start md:justify-end">
                       <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                        {getStatusLabel(cleanText(ticket.data.status))}
+                        {getStatusLabel(cleanText(theme.status))}
                       </span>
                     </div>
                   </Link>
@@ -420,39 +666,39 @@ export default function AdminDashboardOverview() {
             </div>
 
             <div className="mt-5 space-y-3">
-              {latestNewMessages.length === 0 ? (
-                <EmptyList text="Keine neuen Nachrichten vorhanden." />
+              {latestNewThemes.length === 0 ? (
+                <EmptyList text="Keine neuen Themen vorhanden." />
               ) : (
-                latestNewMessages.map((message) => (
+                latestNewThemes.map((theme) => (
                   <Link
                     className="block rounded-[22px] border border-stone-200 bg-stone-50/60 px-4 py-4 transition hover:border-stone-300 hover:bg-white"
-                    href={`/admin/nachrichten/${message.id}`}
-                    key={message.id}
+                    href={buildDashboardMessageHref(theme.latestInbound ?? theme.latestEntry)}
+                    key={theme.id}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-950">
-                          {cleanText(message.data.subject) || cleanText(message.data.fromName) || 'Ohne Betreff'}
+                          {cleanText(theme.subject) || cleanText(theme.latestInbound?.data.fromName) || 'Ohne Betreff'}
                         </p>
                         <p className="mt-1 truncate text-xs text-slate-500">
-                          {cleanText(message.data.fromEmail) || cleanText(message.data.channel) || 'Unbekannter Eingang'}
+                          {cleanText(theme.latestInbound?.data.fromEmail) || cleanText(theme.latestEntry.data.channel) || 'Unbekannter Eingang'}
                         </p>
                       </div>
                       <span
                         className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                          cleanText(message.data.status) === 'needs_review'
+                          cleanText(theme.status) === 'needs_review'
                             ? 'bg-rose-100 text-rose-700'
                             : 'bg-sky-100 text-sky-700'
                         }`}
                       >
-                        {getStatusLabel(cleanText(message.data.status))}
+                        {getStatusLabel(cleanText(theme.status))}
                       </span>
                     </div>
                     <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
-                      {cleanText(message.data.bodyText) || cleanText(message.data.previewText) || 'Keine Vorschau vorhanden.'}
+                      {cleanText(theme.latestEntry.data.bodyText) || cleanText(theme.latestEntry.data.previewText) || 'Keine Vorschau vorhanden.'}
                     </p>
                     <p className="mt-3 text-xs text-slate-500">
-                      {formatDateTime(message.data.receivedAt ?? message.data.createdAt)}
+                      {formatDateTime(theme.latestActivityAt)}
                     </p>
                   </Link>
                 ))
@@ -485,7 +731,7 @@ export default function AdminDashboardOverview() {
                     <div className="text-right">
                       <p className="text-sm font-medium text-slate-950">{formatDateOnly(entry.dateValue)}</p>
                       <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                        {entry.type === 'ticket' ? 'Ticket' : entry.type === 'message' ? 'Nachricht' : 'Mieter'}
+                        {entry.type === 'message' ? 'Nachricht' : 'Mieter'}
                       </p>
                     </div>
                   </Link>
@@ -517,12 +763,150 @@ export default function AdminDashboardOverview() {
           <div className="mt-5 rounded-[24px] border border-stone-200 bg-stone-50/70 p-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">Sinnvoll ergänzt</p>
             <p className="mt-3 text-sm leading-7 text-slate-700">
-              Für dieses Dashboard sind neben Tickets, Nachrichten und Erinnerungen besonders nützlich:
-              Leerstand, zu prüfende Nachrichten, Tickets in Bearbeitung und die nächste Mietvertrags- oder
+              Für dieses Dashboard sind neben Themen, Nachrichten und Erinnerungen besonders nützlich:
+              Leerstand, zu prüfende Nachrichten, Themen in Bearbeitung und die nächste Mietvertrags- oder
               Mieterhöhungsprüfung. Das sind die Punkte, die im Verwaltungsalltag schnell untergehen.
             </p>
           </div>
         </div>
+
+        <div className="space-y-5">
+          <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+            <div className="flex flex-col gap-4">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Kaltmiete im Bestand</p>
+                <h3 className="mt-2 font-serif text-3xl text-slate-950">Objekte im Verlauf</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Gesamte Kaltmiete der gewaehlten Auswahl. Du kannst nach allen, Objekten, Firmen oder einzelnen Mietern filtern.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <label className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+                  <span>Filter</span>
+                  <select
+                    className="bg-transparent text-xs text-slate-900 outline-none"
+                    onChange={(event) => setRentFilterScope(event.target.value as RentFilterScope)}
+                    value={rentFilterScope}
+                  >
+                    <option value="all">Alle</option>
+                    <option value="properties">Objekte</option>
+                    <option value="companies">Firmen</option>
+                    <option value="tenants">Mieter</option>
+                  </select>
+                </label>
+
+                {rentFilterScope === 'properties' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                        selectedPropertyIds.length === 0
+                          ? 'border-amber-700 bg-amber-700 text-white'
+                          : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+                      }`}
+                      onClick={resetActiveFilterSelection}
+                      type="button"
+                    >
+                      Alle
+                    </button>
+                    {properties.map((property) => {
+                      const active = selectedPropertyIds.includes(property.id);
+                      return (
+                        <button
+                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                            active
+                              ? 'border-amber-700 bg-amber-700 text-white'
+                              : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+                          }`}
+                          key={property.id}
+                          onClick={() => togglePropertySelection(property.id)}
+                          type="button"
+                        >
+                          {cleanText(property.data.name) || property.id}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {rentFilterScope === 'companies' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                        selectedCompanyIds.length === 0
+                          ? 'border-amber-700 bg-amber-700 text-white'
+                          : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+                      }`}
+                      onClick={resetActiveFilterSelection}
+                      type="button"
+                    >
+                      Alle
+                    </button>
+                    {companies.map((company) => {
+                      const active = selectedCompanyIds.includes(company.id);
+                      return (
+                        <button
+                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                            active
+                              ? 'border-amber-700 bg-amber-700 text-white'
+                              : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+                          }`}
+                          key={company.id}
+                          onClick={() => toggleCompanySelection(company.id)}
+                          type="button"
+                        >
+                          {cleanText(company.data.name) || company.id}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {rentFilterScope === 'tenants' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                        selectedTenantIds.length === 0
+                          ? 'border-amber-700 bg-amber-700 text-white'
+                          : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+                      }`}
+                      onClick={resetActiveFilterSelection}
+                      type="button"
+                    >
+                      Alle
+                    </button>
+                    {activeRentTenants.map((tenant) => {
+                      const active = selectedTenantIds.includes(tenant.id);
+                      return (
+                        <button
+                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                            active
+                              ? 'border-amber-700 bg-amber-700 text-white'
+                              : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+                          }`}
+                          key={tenant.id}
+                          onClick={() => toggleTenantSelection(tenant.id)}
+                          type="button"
+                        >
+                          {buildTenantLabel(tenant)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-5">
+              <RentHistoryChart
+                defaultMode="cold"
+                emptyText="Fuer die gewaehlten Objekte liegen noch keine Mietdaten vor."
+                framed={false}
+                points={dashboardRentPoints}
+                showCosts={false}
+                subtitle="Summierte Kaltmiete aller ausgewaehlten Objekte auf Basis der hinterlegten Mietdaten."
+                title="Bestandsentwicklung"
+              />
+            </div>
+          </div>
 
         <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
           <div className="flex items-center justify-between gap-4">
@@ -540,18 +924,18 @@ export default function AdminDashboardOverview() {
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-800/80">Inbox zuerst</p>
               <p className="mt-3 text-2xl text-slate-950">Neue Eingänge prüfen</p>
               <p className="mt-3 text-sm leading-7 text-slate-600">
-                {newMessages.length} neue Nachrichten, davon {needsReviewMessages.length} mit Klärungsbedarf.
+                {newThemes.length} neue Nachrichten, davon {needsReviewMessages.length} mit Klärungsbedarf.
               </p>
             </Link>
 
             <Link
               className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,#eef6fb_0%,#e7f1f8_100%)] p-5 transition hover:-translate-y-0.5 hover:border-stone-300"
-              href="/admin/tickets"
+              href="/admin/nachrichten"
             >
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700/80">Vorgänge steuern</p>
-              <p className="mt-3 text-2xl text-slate-950">Offene Tickets priorisieren</p>
+              <p className="mt-3 text-2xl text-slate-950">Offene Themen priorisieren</p>
               <p className="mt-3 text-sm leading-7 text-slate-600">
-                {openTickets.length} offene Tickets, davon {ticketsInProgress.length} bereits in Bearbeitung.
+                {openThemes.length} offene Themen, davon {themesInProgress.length} bereits in Bearbeitung.
               </p>
             </Link>
 
@@ -562,7 +946,7 @@ export default function AdminDashboardOverview() {
               <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700/80">Fristen im Blick</p>
               <p className="mt-3 text-2xl text-slate-950">Mieter und Wiedervorlagen</p>
               <p className="mt-3 text-sm leading-7 text-slate-600">
-                {reminders.length} hinterlegte Erinnerungen aus Tickets, Nachrichten und Mietverläufen.
+                {reminders.length} hinterlegte Erinnerungen aus Themen, Nachrichten und Mietverlaeufen.
               </p>
             </Link>
 
@@ -576,6 +960,43 @@ export default function AdminDashboardOverview() {
                 {vacancyCount} Einheiten ohne aktiven Mieter. Gut geeignet für schnelle Bestandsprüfung.
               </p>
             </Link>
+          </div>
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-stone-200 bg-stone-50 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Wiedervorlage</p>
+                <h4 className="mt-2 text-xl text-slate-950">Themen mit Termin</h4>
+              </div>
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                {themeReminders.length}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {themeReminders.length === 0 ? (
+                <EmptyList text="Aktuell sind keine Themen mit Wiedervorlage hinterlegt." />
+              ) : (
+                visibleThemeReminders.slice(0, 5).map((entry) => (
+                  <Link
+                    className="block rounded-[18px] border border-stone-200 bg-white px-4 py-3 transition hover:border-stone-300"
+                    href={entry.href}
+                    key={`${entry.type}-${entry.href}-${entry.dateValue}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-950">{entry.label}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">{entry.meta}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+                        {formatDateOnly(entry.dateValue)}
+                      </span>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </section>

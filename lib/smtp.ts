@@ -19,6 +19,12 @@ export async function getSmtpTransport() {
 }
 
 export async function sendPortalEmail(args: {
+  attachments?: Array<{
+    cid?: string;
+    content: Buffer | string;
+    contentType?: string;
+    filename?: string;
+  }>;
   html?: string;
   subject: string;
   text: string;
@@ -27,6 +33,7 @@ export async function sendPortalEmail(args: {
   const transporter = await getSmtpTransport();
   const settings = await getMailboxSettingsServer();
   return transporter.sendMail({
+    attachments: args.attachments,
     from: `"Halbmann Holding" <${settings.inboxEmail || PORTAL_INBOX_EMAIL}>`,
     html: args.html,
     subject: args.subject,

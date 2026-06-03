@@ -9,12 +9,47 @@ import { db } from '../../lib/firebase';
 import { composePortalDraft } from '../../lib/draftComposer';
 import { personDocumentFields } from './personConfig';
 import { buildPortalSignatureText, createSignatureRecord, mergeBodyWithSignature } from '../../lib/signatures';
+import { applyAdminSenderToSignature, resolveAdminSenderName } from './adminSenderSignature';
 
 type PersonDetailViewProps = {
   personId: string;
 };
 
 type PersonData = Record<string, string>;
+
+const personCategoryLabels: Record<string, string> = {
+  electrician: 'Elektriker',
+  plumbing: 'Sanitaer / Rohrreinigung',
+  heating_service: 'Heizungsdienst',
+  waste_collection: 'Muellabfuhrunternehmen',
+  billing_service: 'Abrechnungsunternehmen',
+  winter_service: 'Winterdienst',
+  cleaning_service: 'Reinigungsdienst',
+  roof_maintenance: 'Dachwartung',
+  gutter_cleaning: 'Regenrinnenreinigung',
+  craftsperson: 'Handwerker / Dienstleister allgemein',
+  partner_company: 'Partnerfirma / externer Kontakt',
+  caretaker: 'Hausmeister',
+  tax_advisor: 'Steuerberater',
+  guarantor: 'Buerge',
+  manager: 'Verwalter',
+  other: 'Sonstige Person',
+};
+
+const personSalutationLabels: Record<string, string> = {
+  mr: 'Herr',
+  ms: 'Frau',
+  diverse: 'Divers',
+  none: 'Ohne Angabe',
+};
+
+const preferredContactMethodLabels: Record<string, string> = {
+  email: 'E-Mail',
+  phone: 'Telefon',
+  mobile: 'Mobil',
+  portal: 'Portal',
+  mail: 'Post',
+};
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -32,8 +67,23 @@ function formatValue(value?: string) {
   return cleanText(value) || '–';
 }
 
+function translatePersonCategory(value?: string) {
+  const text = cleanText(value);
+  return personCategoryLabels[text] ?? text;
+}
+
+function translatePersonSalutation(value?: string) {
+  const text = cleanText(value);
+  return personSalutationLabels[text] ?? text;
+}
+
+function translatePreferredContactMethod(value?: string) {
+  const text = cleanText(value);
+  return preferredContactMethodLabels[text] ?? text;
+}
+
 export default function PersonDetailView({ personId }: PersonDetailViewProps) {
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
   const [person, setPerson] = useState<PersonData | null>(null);
   const [messages, setMessages] = useState<WorkflowRecord[]>([]);
   const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
@@ -45,6 +95,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [showInvitationSentModal, setShowInvitationSentModal] = useState(false);
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -129,7 +180,10 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     companies.find((entry) => cleanText(entry.data.name) === cleanText(person?.partnerCompanyName || person?.companyName)) ??
     null;
   const portalSignature = buildPortalSignatureText(
-    createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null)
+    applyAdminSenderToSignature(
+      createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
+      resolveAdminSenderName(profile, user)
+    )
   );
 
   async function authorizedFetch(url: string, init?: RequestInit) {
@@ -167,6 +221,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           recipientCount: 1,
           recipientEmail: cleanText(person.email),
           recipientName: [cleanText(person.firstName), cleanText(person.lastName)].filter(Boolean).join(' '),
+          recipientSalutation: cleanText(person.salutation),
           scope: 'manual',
           subject: `Nachricht an ${[cleanText(person.lastName), cleanText(person.firstName)].filter(Boolean).join(', ') || 'Kontakt'}`,
         }),
@@ -181,6 +236,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           contextText: cleanText(latestInbound?.data.bodyText),
           portalSignature,
           recipientName: [cleanText(person.firstName), cleanText(person.lastName)].filter(Boolean).join(' '),
+          recipientSalutation: cleanText(person.salutation),
         })
       );
       setMessage('KI-Entwurf wurde erzeugt.');
@@ -198,14 +254,16 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
       setMessage('');
       setError('');
       try {
-        const signatureRecord = createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null);
+        const signatureRecord = applyAdminSenderToSignature(
+          createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
+          resolveAdminSenderName(profile, user)
+        );
         const baseBody = cleanText(replyText).endsWith(portalSignature)
           ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
           : cleanText(replyText);
-        const finalBody = mergeBodyWithSignature(baseBody, signatureRecord);
         const draftRef = await addDoc(collection(db, 'messageDrafts'), {
           attachments: [],
-          body: finalBody,
+          body: baseBody,
           createdAt: serverTimestamp(),
           kind: 'service_request',
           messageId: personMessages[0]?.id ?? null,
@@ -256,6 +314,35 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     });
   }
 
+  function sendPortalInvitation() {
+    startTransition(async () => {
+      setMessage('');
+      setError('');
+      try {
+        const response = await authorizedFetch('/api/admin/portal-invitation', {
+          body: JSON.stringify({
+            targetId: personId,
+            targetType: 'contact',
+          }),
+          method: 'POST',
+        });
+        const result = (await response.json()) as { error?: string; ok?: boolean };
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || 'Die Einladung konnte nicht versendet werden.');
+        }
+        setMessage('Einladung mit Zugangsdaten wurde per E-Mail versendet.');
+        setShowInvitationSentModal(true);
+      } catch (caughtError) {
+        console.error('Fehler beim Versand der Portaleinladung:', caughtError);
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Die Einladung konnte nicht versendet werden.'
+        );
+      }
+    });
+  }
+
   if (isLoading) {
     return (
       <section className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
@@ -277,8 +364,25 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
+    <div className="admin-page space-y-4">
+      {showInvitationSentModal ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
+          <div className="w-full max-w-sm rounded-[20px] border border-stone-200 bg-white px-5 py-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
+            <p className="text-lg font-medium text-slate-950">Einladung wurde verschickt.</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
+                onClick={() => setShowInvitationSentModal(false)}
+                type="button"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <section className="admin-hero rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Kontakt ansehen</p>
         <h2 className="mt-2 text-3xl text-slate-950">
           {formatValue([person.lastName, person.firstName].filter(Boolean).join(', '))}
@@ -290,6 +394,13 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           >
             Bearbeiten
           </Link>
+          <button
+            className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950 cursor-pointer"
+            onClick={sendPortalInvitation}
+            type="button"
+          >
+            Einladung senden
+          </button>
           <Link
             className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
             href="/admin/personen"
@@ -336,14 +447,6 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
                 placeholder="z. B. kürzer, verbindlicher, freundlicher"
                 value={aiInstruction}
               />
-              <button
-                className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isGeneratingAiDraft || isPending}
-                onClick={generateAiDraft}
-                type="button"
-              >
-                Anwenden
-              </button>
             </div>
           </label>
           <div className="mt-3">
@@ -393,11 +496,10 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
             personMessages.map((entry) => {
               const isOutbound = cleanText(entry.data.direction) === 'outbound';
               return (
-                <Link
-                  className={`block rounded-[18px] border px-4 py-4 transition hover:border-stone-300 ${
+                <article
+                  className={`block rounded-[18px] border px-4 py-4 ${
                     isOutbound ? 'ml-10 border-sky-200 bg-sky-50/80' : 'mr-10 border-stone-200 bg-stone-50/90'
                   }`}
-                  href={entry.data.ticketId ? `/admin/tickets/${entry.data.ticketId}` : '/admin/nachrichten'}
                   key={entry.id}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -413,17 +515,17 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                     {cleanText(entry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
                   </p>
-                </Link>
+                </article>
               );
             })
           )}
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-3 xl:grid-cols-3">
         <DetailCard title="Stammdaten">
-          <DetailRow label="Bereich" value={person.category} />
-          <DetailRow label="Anrede" value={person.salutation} />
+          <DetailRow label="Bereich" value={translatePersonCategory(person.category)} />
+          <DetailRow label="Anrede" value={translatePersonSalutation(person.salutation)} />
           <DetailRow label="Name" value={[person.lastName, person.firstName].filter(Boolean).join(', ')} />
           <DetailRow label="Geburtsdatum" value={person.birthDate} />
           <DetailRow label="Rolle / Funktion" value={person.jobTitle} />
@@ -434,7 +536,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           <DetailRow label="E-Mail" value={person.email} />
           <DetailRow label="Telefon" value={person.phone} />
           <DetailRow label="Mobil" value={person.mobile} />
-          <DetailRow label="Bevorzugter Kontaktweg" value={person.preferredContactMethod} />
+          <DetailRow label="Bevorzugter Kontaktweg" value={translatePreferredContactMethod(person.preferredContactMethod)} />
           <DetailRow label="Zugeordnete Immobilie" value={person.propertyName} />
         </DetailCard>
 
@@ -487,18 +589,18 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
 
 function DetailCard({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+    <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">{title}</p>
-      <div className="mt-4 grid gap-2.5">{children}</div>
+      <div className="admin-card-body mt-4 grid gap-2.5">{children}</div>
     </section>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="grid grid-cols-1 gap-1.5 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)] md:gap-4">
+    <div className="admin-detail-row grid grid-cols-1 gap-1 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)] md:gap-3">
       <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</dt>
-      <dd className="min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
+      <dd className="admin-detail-value min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
     </div>
   );
 }

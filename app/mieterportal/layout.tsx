@@ -11,14 +11,14 @@ export default function MieterportalLayout({
       navSections={[
         {
           links: [
-            { href: '/mieterportal', label: 'Uebersicht' },
-            { href: '/mieterportal/dokumente', label: 'Dokumente' },
             { href: '/mieterportal/nachrichten', label: 'Nachrichten' },
+            { href: '/mieterportal/dokumente', label: 'Dokumente' },
+            { href: '/mieterportal', label: 'Stammdaten' },
           ],
         },
       ]}
-      requiredRole="tenant"
-      title="Mieterportal"
+      requiredRole="portal"
+      title="Portal"
     >
       {children}
     </ProtectedAreaLayout>

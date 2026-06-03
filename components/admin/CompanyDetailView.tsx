@@ -93,8 +93,8 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
+    <div className="admin-page space-y-4">
+      <section className="admin-hero rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
           Firma ansehen
         </p>
@@ -126,7 +126,7 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-3 xl:grid-cols-3">
         <DetailCard title="Stammdaten">
           <DetailRow label="Firmenname" value={company.name} />
           <DetailRow label="Rechtsform" value={normalizeLegalFormDisplay(company.legalForm)} />
@@ -175,7 +175,7 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
         </DetailCard>
       </div>
 
-      <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
           Dokumente
         </p>
@@ -221,20 +221,20 @@ function DetailCard({
   title: string;
 }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+    <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
         {title}
       </p>
-      <div className="mt-4 grid gap-2.5">{children}</div>
+      <div className="admin-card-body mt-4 grid gap-2.5">{children}</div>
     </section>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value?: unknown }) {
   return (
-    <div className="grid grid-cols-1 gap-1.5 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[120px_minmax(0,1fr)] md:gap-4">
+    <div className="admin-detail-row grid grid-cols-1 gap-1 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[120px_minmax(0,1fr)] md:gap-3">
       <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</dt>
-      <dd className="min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
+      <dd className="admin-detail-value min-w-0 whitespace-normal break-words leading-6 text-slate-900">{formatValue(value)}</dd>
     </div>
   );
 }

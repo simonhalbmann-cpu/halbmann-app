@@ -440,7 +440,11 @@ export default function AdminCollectionManager({
         continue;
       }
       const field = fields.find((currentField) => currentField.name === key);
-      values[key] = field ? formatFieldValue(field, String(value)) : String(value);
+      if (field?.kind === 'credential_password' && !String(value).trim()) {
+        values[key] = editMode ? initialValues[key] ?? '' : '';
+      } else {
+        values[key] = field ? formatFieldValue(field, String(value)) : String(value);
+      }
     }
     fields
       .filter((field) => field.type === 'text-list')
@@ -477,10 +481,15 @@ export default function AdminCollectionManager({
           : '';
       }
     });
+    const portalPasswordInput = String(values.portalPassword ?? '');
+    if (collectionName === 'people') {
+      delete values.portalPassword;
+    }
     setMessage('');
     setError('');
     startTransition(async () => {
       try {
+        let savedRecordId = documentId ?? '';
         if (editMode && documentId) {
           await updateDoc(doc(db, collectionName, documentId), {
             ...values,
@@ -493,17 +502,54 @@ export default function AdminCollectionManager({
           setMessage(`${recordLabel} wurde aktualisiert.`);
           if (redirectPathAfterSave) router.push(redirectPathAfterSave);
         } else {
-          await addDoc(collection(db, collectionName), {
+          const createdRecord = await addDoc(collection(db, collectionName), {
             ...values,
             createdAt: serverTimestamp(),
             createdByEmail: user.email ?? null,
             createdByUid: user.uid,
             updatedAt: serverTimestamp(),
           });
+          savedRecordId = createdRecord.id;
           form.reset();
           setFormKey(`new-${Date.now()}`);
           setMessage(`${submitLabel} wurde gespeichert.`);
           window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        if (collectionName === 'people' && savedRecordId) {
+          const portalUsername = cleanSpaces(String(values.portalUsername ?? '')).toLowerCase();
+          const email = cleanSpaces(String(values.email ?? '')).toLowerCase();
+
+          if (portalUsername && email) {
+            const token = await user.getIdToken();
+            const response = await fetch('/api/admin/portal-access', {
+              body: JSON.stringify({
+                password: portalPasswordInput,
+                targetId: savedRecordId,
+                targetType: 'contact',
+                username: portalUsername,
+              }),
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              method: 'POST',
+            });
+            const result = (await response.json()) as { error?: string; ok?: boolean };
+
+            if (!response.ok || !result.ok) {
+              setError(
+                `Datensatz wurde gespeichert. Portalzugang konnte nicht eingerichtet werden: ${result.error || 'Fehler'}`
+              );
+              return;
+            }
+
+            setMessage((current) =>
+              current
+                ? `${current} Portalzugang wurde eingerichtet.`
+                : 'Datensatz wurde gespeichert. Portalzugang wurde eingerichtet.'
+            );
+          }
         }
       } catch (caughtError) {
         console.error(`Fehler beim Speichern in ${collectionName}:`, caughtError);
@@ -532,6 +578,7 @@ export default function AdminCollectionManager({
     const fieldType = field.type ?? 'text';
     const value = initialValues[field.name] ?? '';
     const stringValue = typeof value === 'string' ? value : String(value ?? '');
+    const defaultFieldValue = field.kind === 'credential_password' ? '' : stringValue;
     if (fieldType === 'section') {
       return (
         <div className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-5">
@@ -549,7 +596,7 @@ export default function AdminCollectionManager({
       autoComplete:
         field.autoComplete ??
         (field.kind === 'credential_password' ? 'new-password' : 'off'),
-      defaultValue: stringValue,
+      defaultValue: defaultFieldValue,
       name: field.name,
       onBlur: (
         event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>

@@ -1635,6 +1635,7 @@ export default function AdminLetterSettings({
                 </>
               ) : isGreetingView ? (
                 <>
+                  <ToolButton label="Sehr geehrte(r)" onClick={() => insertTemplateToken('{{FORMAL_SALUTATION}}')} />
                   <ToolButton label="Empfänger Name" onClick={() => insertTemplateToken('{{RECIPIENT_NAME}}')} />
                   <ToolButton label="Empfänger Firma" onClick={() => insertTemplateToken('{{RECIPIENT_COMPANY}}')} />
                   <ToolButton label="Immobilie" onClick={() => insertTemplateToken('{{PROPERTY_NAME}}')} />

@@ -19,6 +19,16 @@ function lastNameFromRecipient(name: string) {
   return segments.length > 0 ? segments[segments.length - 1] : normalized;
 }
 
+function removeLeadingGreetingClause(text: string) {
+  const normalized = cleanText(text);
+  if (!normalized) return '';
+
+  return normalized.replace(
+    /^(?:guten tag|guten morgen|guten abend|hallo|sehr geehrte?r?(?:\s+(?:frau|herr))?)(?:\s+[^\n,]+){0,6},\s*/i,
+    ''
+  );
+}
+
 function inferSalutationFromContext(contextText: string) {
   const source = cleanText(contextText);
   if (!source) return '';
@@ -67,14 +77,16 @@ export function stripAiEnvelope(text: string) {
     .split('\n')
     .map((line) => line.trimEnd());
 
+  const isGreetingLine = (value: string) =>
+    /^(guten tag|guten morgen|guten abend|sehr geehrt|hallo|frau\s+\S+|herr\s+\S+)\b/i.test(
+      cleanText(value)
+    );
+
   while (lines.length > 0 && !cleanText(lines[0])) {
     lines.shift();
   }
 
-  if (
-    lines.length > 0 &&
-    /^(guten tag|guten morgen|guten abend|sehr geehrt|hallo)\b/i.test(cleanText(lines[0]))
-  ) {
+  while (lines.length > 0 && isGreetingLine(lines[0])) {
     lines.shift();
     while (lines.length > 0 && !cleanText(lines[0])) {
       lines.shift();
@@ -93,7 +105,8 @@ export function stripAiEnvelope(text: string) {
     contentLines.pop();
   }
 
-  return contentLines.join('\n').trim();
+  const content = contentLines.join('\n').trim();
+  return removeLeadingGreetingClause(content);
 }
 
 export function composePortalDraft({

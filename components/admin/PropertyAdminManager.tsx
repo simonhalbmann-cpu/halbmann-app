@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import {
   addDoc,
@@ -1073,7 +1073,7 @@ export default function PropertyAdminManager({
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium text-slate-900">Jährliche Wartungen</p>
               <p className="text-xs leading-6 text-slate-500">
-                Heizung, Dach und Regenrinnenreinigung werden hier untereinander mit letztem Wartungsdatum gepflegt. Später folgt daraus automatisch eine Ticket-Erinnerung nach 11 Monaten.
+                Heizung, Dach und Regenrinnenreinigung werden hier untereinander mit letztem Wartungsdatum gepflegt. Später folgt daraus automatisch eine Themen-Erinnerung nach 11 Monaten.
               </p>
             </div>
             <div className="mt-4 space-y-4">
@@ -1356,4 +1356,5 @@ export default function PropertyAdminManager({
     </div>
   );
 }
+
 

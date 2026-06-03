@@ -48,6 +48,22 @@ type RentIncreaseRow = {
   toDate: string;
 };
 
+type RentHistoryEntry = {
+  coldRent: string;
+  effectiveDate: string;
+  id: string;
+  label: string;
+  netOperatingCosts: string;
+};
+
+type RentChartPoint = {
+  coldRent: number;
+  date: string;
+  label: string;
+  netOperatingCosts: number;
+  pointType: 'current' | 'history' | 'planned';
+};
+
 type UnitOption = {
   label: string;
   ownerName: string;
@@ -67,6 +83,7 @@ type TenantFormState = {
   companyContactEmail: string;
   companyContactName: string;
   companyContactPhone: string;
+  companyContactSalutation: string;
   companyHouseNumber: string;
   companyName: string;
   companyPostalCode: string;
@@ -78,6 +95,7 @@ type TenantFormState = {
   documentsNotes: string;
   email: string;
   firstName: string;
+  salutation: string;
   guarantorExists: string;
   guarantorId: string;
   guarantorLabel: string;
@@ -86,18 +104,23 @@ type TenantFormState = {
   netOperatingCosts: string;
   notes: string;
   phone: string;
+  portalPassword: string;
+  portalUsername: string;
   rentIncreaseNextReview: string;
   rentIncreaseReferenceDate: string;
+  rentHistory: RentHistoryEntry[];
   rentIncreaseRows: RentIncreaseRow[];
   rentIncreaseType: string;
   salaryProofsFile: string;
   schufaFile: string;
   selectedUnitKey: string;
+  storedPortalPassword: string;
   status: string;
   taxNumber: string;
   tenantInfoFile: string;
   tenancyAddendumsFile: string;
   tenancyAgreementFile: string;
+  pendingColdRent: string;
   vatRule: string;
 };
 
@@ -135,6 +158,18 @@ const additionalPersonRelations = [
   { label: 'Sonstige Person', value: 'other' },
 ];
 
+const statusLabelMap = Object.fromEntries(statusOptions.map((option) => [option.value, option.label]));
+const rentIncreaseLabelMap = Object.fromEntries(
+  rentIncreaseOptions.map((option) => [option.value, option.label])
+);
+const depositTypeLabelMap = Object.fromEntries(
+  depositTypeOptions.map((option) => [option.value, option.label])
+);
+const vatRuleLabelMap = Object.fromEntries(vatRuleOptions.map((option) => [option.value, option.label]));
+const relationLabelMap = Object.fromEntries(
+  additionalPersonRelations.map((option) => [option.value, option.label])
+);
+
 const defaultFormState = (): TenantFormState => ({
   additionalPersons: [],
   additionalPersonsDraftRelation: '',
@@ -144,6 +179,7 @@ const defaultFormState = (): TenantFormState => ({
   companyContactEmail: '',
   companyContactName: '',
   companyContactPhone: '',
+  companyContactSalutation: '',
   companyHouseNumber: '',
   companyName: '',
   companyPostalCode: '',
@@ -155,6 +191,7 @@ const defaultFormState = (): TenantFormState => ({
   documentsNotes: '',
   email: '',
   firstName: '',
+  salutation: '',
   guarantorExists: 'no',
   guarantorId: '',
   guarantorLabel: '',
@@ -163,13 +200,18 @@ const defaultFormState = (): TenantFormState => ({
   netOperatingCosts: '',
   notes: '',
   phone: '',
+  portalPassword: '',
+  portalUsername: '',
+  pendingColdRent: '',
   rentIncreaseNextReview: '',
   rentIncreaseReferenceDate: '',
+  rentHistory: [],
   rentIncreaseRows: [],
   rentIncreaseType: '',
   salaryProofsFile: '',
   schufaFile: '',
   selectedUnitKey: '',
+  storedPortalPassword: '',
   status: 'active',
   taxNumber: '',
   tenantInfoFile: '',
@@ -242,12 +284,161 @@ const createOneYearRange = (startDate: string) => ({
   toDate: startDate ? shiftDays(shiftMonths(startDate, 12), -1) : '',
 });
 
-const calculateReminderForRule = (referenceDate: string, cycleMonths: number) =>
-  shiftMonths(referenceDate, cycleMonths - 1);
+const calculateReminderForRule = (referenceDate: string, monthsUntilReminder: number) =>
+  shiftMonths(referenceDate, monthsUntilReminder);
 
 const formatMoneyForBlur = (value: string) => {
   const amount = parseMoney(value);
   return amount > 0 ? formatMoneyNumber(amount) : '';
+};
+
+const formatDateLabel = (dateValue: string) => {
+  if (!dateValue) return '';
+  const date = new Date(`${dateValue}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('de-DE').format(date);
+};
+
+const formatMonthLabel = (dateValue: string) => {
+  if (!dateValue) return '';
+  const date = new Date(`${dateValue}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('de-DE', {
+    month: 'short',
+    year: '2-digit',
+  }).format(date);
+};
+
+const todayDate = () => new Date().toISOString().slice(0, 10);
+
+const getEffectiveReferenceDate = (referenceDate: string, moveInDate: string) =>
+  referenceDate || moveInDate || todayDate();
+
+const getRentIncreaseTypeLabel = (type: string) =>
+  rentIncreaseLabelMap[type] ?? 'Mieterhoehung';
+
+const getStatusLabel = (status: string) => statusLabelMap[status] ?? status;
+const getDepositTypeLabel = (value: string) => depositTypeLabelMap[value] ?? value;
+const getVatRuleLabel = (value: string) => vatRuleLabelMap[value] ?? value;
+const getRelationLabel = (value: string) => relationLabelMap[value] ?? value;
+
+const getRentIncreaseStatusLabel = (type: string, nextReviewDate: string) => {
+  if (!type || !nextReviewDate) return '';
+  const reviewDate = new Date(`${nextReviewDate}T12:00:00`);
+  if (Number.isNaN(reviewDate.getTime())) return '';
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const prefix = getRentIncreaseTypeLabel(type);
+  if (reviewDate <= today) {
+    return `${prefix}: jetzt pruefen`;
+  }
+
+  return `${prefix}: pruefbar ab ${formatDateLabel(nextReviewDate)}`;
+};
+
+const parseSelectedUnitKey = (selectedUnitKey: string) => {
+  const [propertyId = '', unitId = ''] = selectedUnitKey.split('::');
+  return { propertyId, unitId };
+};
+
+const getSelectedUnitOption = (unitOptions: UnitOption[], selectedUnitKey: string) =>
+  unitOptions.find((unit) => `${unit.propertyId}::${unit.unitId}` === selectedUnitKey) ?? null;
+
+const getSelectedPropertyName = (properties: AdminRecord[], selectedUnitKey: string) => {
+  const { propertyId } = parseSelectedUnitKey(selectedUnitKey);
+  return String(properties.find((property) => property.id === propertyId)?.data.name ?? '');
+};
+
+const recalculateGraduatedRows = (baseColdRent: string, rows: RentIncreaseRow[]) => {
+  let previousColdRent = parseMoney(baseColdRent);
+
+  return rows.map((row) => {
+    const percentValue =
+      Number.parseFloat(row.percentIncrease.replace('%', '').replace(',', '.')) || 0;
+    const euroIncrease = previousColdRent * (percentValue / 100);
+    const nextColdRent = previousColdRent + euroIncrease;
+
+    previousColdRent = nextColdRent;
+
+    return {
+      ...row,
+      coldRent: formatMoneyNumber(nextColdRent),
+      euroIncrease: formatMoneyNumber(euroIncrease),
+      percentIncrease: formatPercent(percentValue),
+    };
+  });
+};
+
+const calculateRentReminder = (
+  type: string,
+  referenceDate: string,
+  rows: RentIncreaseRow[]
+) => {
+  if (type === 'graduated') {
+    const nextGraduatedRow = rows.find((row) => row.fromDate);
+    return nextGraduatedRow?.reminderDate ?? '';
+  }
+  if (type === 'index') {
+    return calculateReminderForRule(referenceDate, 11);
+  }
+  if (type === 'legal') {
+    return calculateReminderForRule(referenceDate, 30);
+  }
+  return '';
+};
+
+const mapRentHistoryEntry = (entry: unknown): RentHistoryEntry | null => {
+  if (!entry || typeof entry !== 'object') return null;
+  return {
+    coldRent: String((entry as DocumentData).coldRent ?? ''),
+    effectiveDate: String((entry as DocumentData).effectiveDate ?? ''),
+    id: String((entry as DocumentData).id ?? crypto.randomUUID()),
+    label: String((entry as DocumentData).label ?? 'Miete'),
+    netOperatingCosts: String((entry as DocumentData).netOperatingCosts ?? ''),
+  };
+};
+
+const sortRentChartPoints = (left: RentChartPoint, right: RentChartPoint) =>
+  new Date(`${left.date}T12:00:00`).getTime() - new Date(`${right.date}T12:00:00`).getTime();
+
+const buildRentHistoryFromData = (
+  rentHistory: RentHistoryEntry[],
+  coldRent: string,
+  netOperatingCosts: string,
+  referenceDate: string
+) => {
+  const validHistory = rentHistory.filter((entry) => entry.effectiveDate);
+  const fallbackEntry: RentHistoryEntry = {
+    coldRent,
+    effectiveDate: referenceDate,
+    id: `seed-${referenceDate || 'today'}`,
+    label: 'Aktuelle Miete',
+    netOperatingCosts,
+  };
+
+  if (validHistory.length === 0) {
+    return referenceDate ? [fallbackEntry] : [];
+  }
+
+  const hasCurrentEntry = validHistory.some(
+    (entry) =>
+      entry.effectiveDate === referenceDate &&
+      parseMoney(entry.coldRent) === parseMoney(coldRent) &&
+      parseMoney(entry.netOperatingCosts) === parseMoney(netOperatingCosts)
+  );
+
+  return hasCurrentEntry || !referenceDate ? validHistory : [...validHistory, fallbackEntry];
+};
+
+const upsertRentHistoryEntry = (history: RentHistoryEntry[], nextEntry: RentHistoryEntry) => {
+  const sameDateIndex = history.findIndex((entry) => entry.effectiveDate === nextEntry.effectiveDate);
+  if (sameDateIndex === -1) {
+    return [...history, nextEntry];
+  }
+
+  return history.map((entry, index) => (index === sameDateIndex ? nextEntry : entry));
 };
 
 const mapAdditionalPerson = (person: unknown): AdditionalPerson | null => {
@@ -275,57 +466,88 @@ const mapRentIncreaseRow = (row: unknown): RentIncreaseRow | null => {
   };
 };
 
-const mapTenantDataToFormState = (data: DocumentData): TenantFormState => ({
-  additionalPersons: Array.isArray(data.additionalPersons)
-    ? data.additionalPersons
-        .map(mapAdditionalPerson)
-        .filter((entry): entry is AdditionalPerson => Boolean(entry))
-    : [],
-  additionalPersonsDraftRelation: '',
-  annualStatementFile: String(data.annualStatementFile ?? ''),
-  bankStatementsFile: String(data.bankStatementsFile ?? ''),
-  companyCity: String(data.companyCity ?? ''),
-  companyContactEmail: String(data.companyContactEmail ?? ''),
-  companyContactName: String(data.companyContactName ?? ''),
-  companyContactPhone: String(data.companyContactPhone ?? ''),
-  companyHouseNumber: String(data.companyHouseNumber ?? ''),
-  companyName: String(data.companyName ?? ''),
-  companyPostalCode: String(data.companyPostalCode ?? ''),
-  companyStreet: String(data.companyStreet ?? ''),
-  coldRent: String(data.coldRent ?? ''),
-  depositCertificateFile: String(data.depositCertificateFile ?? ''),
-  depositAmount: String(data.depositAmount ?? ''),
-  depositType: String(data.depositType ?? ''),
-  documentsNotes: String(data.documentsNotes ?? ''),
-  email: String(data.email ?? ''),
-  firstName: String(data.firstName ?? ''),
-  guarantorExists: String(data.guarantorExists ?? 'no'),
-  guarantorId: String(data.guarantorId ?? ''),
-  guarantorLabel: String(data.guarantorLabel ?? ''),
-  identityCopiesFile: String(data.identityCopiesFile ?? ''),
-  moveInDate: String(data.moveInDate ?? ''),
-  netOperatingCosts: String(data.netOperatingCosts ?? ''),
-  notes: String(data.notes ?? ''),
-  phone: String(data.phone ?? ''),
-  rentIncreaseNextReview: String(data.rentIncreaseNextReview ?? ''),
-  rentIncreaseReferenceDate: String(data.rentIncreaseReferenceDate ?? ''),
-  rentIncreaseRows: Array.isArray(data.rentIncreaseRows)
+const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
+  const rentIncreaseRows = Array.isArray(data.rentIncreaseRows)
     ? data.rentIncreaseRows
         .map(mapRentIncreaseRow)
         .filter((entry): entry is RentIncreaseRow => Boolean(entry))
-    : [],
-  rentIncreaseType: String(data.rentIncreaseType ?? ''),
-  salaryProofsFile: String(data.salaryProofsFile ?? ''),
-  schufaFile: String(data.schufaFile ?? ''),
-  selectedUnitKey:
-    data.propertyId && data.unitId ? `${String(data.propertyId)}::${String(data.unitId)}` : '',
-  status: String(data.status ?? 'active'),
-  taxNumber: String(data.taxNumber ?? ''),
-  tenantInfoFile: String(data.tenantInfoFile ?? ''),
-  tenancyAddendumsFile: String(data.tenancyAddendumsFile ?? ''),
-  tenancyAgreementFile: String(data.tenancyAgreementFile ?? ''),
-  vatRule: String(data.vatRule ?? 'no_vat'),
-});
+    : [];
+  const rentHistory = Array.isArray(data.rentHistory)
+    ? data.rentHistory
+        .map(mapRentHistoryEntry)
+        .filter((entry): entry is RentHistoryEntry => Boolean(entry))
+    : [];
+  const rentIncreaseType = String(data.rentIncreaseType ?? '');
+  const moveInDate = String(data.moveInDate ?? '');
+  const rentIncreaseReferenceDate = String(data.rentIncreaseReferenceDate ?? '');
+  const effectiveReferenceDate = getEffectiveReferenceDate(rentIncreaseReferenceDate, moveInDate);
+  const coldRent = String(data.coldRent ?? '');
+  const netOperatingCosts = String(data.netOperatingCosts ?? '');
+
+  return {
+    additionalPersons: Array.isArray(data.additionalPersons)
+      ? data.additionalPersons
+          .map(mapAdditionalPerson)
+          .filter((entry): entry is AdditionalPerson => Boolean(entry))
+      : [],
+    additionalPersonsDraftRelation: '',
+    annualStatementFile: String(data.annualStatementFile ?? ''),
+    bankStatementsFile: String(data.bankStatementsFile ?? ''),
+    companyCity: String(data.companyCity ?? ''),
+    companyContactEmail: String(data.companyContactEmail ?? ''),
+    companyContactName: String(data.companyContactName ?? ''),
+    companyContactPhone: String(data.companyContactPhone ?? ''),
+    companyContactSalutation: String(data.companyContactSalutation ?? ''),
+    companyHouseNumber: String(data.companyHouseNumber ?? ''),
+    companyName: String(data.companyName ?? ''),
+    companyPostalCode: String(data.companyPostalCode ?? ''),
+    companyStreet: String(data.companyStreet ?? ''),
+    coldRent,
+    depositCertificateFile: String(data.depositCertificateFile ?? ''),
+    depositAmount: String(data.depositAmount ?? ''),
+    depositType: String(data.depositType ?? ''),
+    documentsNotes: String(data.documentsNotes ?? ''),
+    email: String(data.email ?? ''),
+    firstName: String(data.firstName ?? ''),
+    salutation: String(data.salutation ?? data.anrede ?? ''),
+    guarantorExists: String(data.guarantorExists ?? 'no'),
+    guarantorId: String(data.guarantorId ?? ''),
+    guarantorLabel: String(data.guarantorLabel ?? ''),
+    identityCopiesFile: String(data.identityCopiesFile ?? ''),
+    moveInDate,
+    netOperatingCosts,
+    notes: String(data.notes ?? ''),
+    pendingColdRent: '',
+    phone: String(data.phone ?? ''),
+    portalPassword: '',
+    portalUsername: String(data.portalUsername ?? ''),
+    rentIncreaseNextReview: calculateRentReminder(
+      rentIncreaseType,
+      effectiveReferenceDate,
+      rentIncreaseRows
+    ),
+    rentIncreaseReferenceDate,
+    rentHistory: buildRentHistoryFromData(
+      rentHistory,
+      coldRent,
+      netOperatingCosts,
+      effectiveReferenceDate
+    ),
+    rentIncreaseRows,
+    rentIncreaseType,
+    salaryProofsFile: String(data.salaryProofsFile ?? ''),
+    schufaFile: String(data.schufaFile ?? ''),
+    selectedUnitKey:
+      data.propertyId && data.unitId ? `${String(data.propertyId)}::${String(data.unitId)}` : '',
+    storedPortalPassword: String(data.portalPasswordCipher ?? data.portalPassword ?? ''),
+    status: String(data.status ?? 'active'),
+    taxNumber: String(data.taxNumber ?? ''),
+    tenantInfoFile: String(data.tenantInfoFile ?? ''),
+    tenancyAddendumsFile: String(data.tenancyAddendumsFile ?? ''),
+    tenancyAgreementFile: String(data.tenancyAgreementFile ?? ''),
+    vatRule: String(data.vatRule ?? 'no_vat'),
+  };
+};
 
 type TenantAdminManagerProps = {
   documentId?: string;
@@ -351,12 +573,14 @@ export default function TenantAdminManager({
   const [people, setPeople] = useState<AdminRecord[]>([]);
   const [form, setForm] = useState<TenantFormState>(() => defaultFormState());
   const [lastName, setLastName] = useState('');
+  const [showPortalPassword, setShowPortalPassword] = useState(false);
   const [originalAssignment, setOriginalAssignment] = useState<{
     propertyId: string;
     unitId: string;
   } | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [overviewPropertyFilter, setOverviewPropertyFilter] = useState('all');
   const [isLoadingInitialValues, setIsLoadingInitialValues] = useState(
     () => editMode && Boolean(documentId)
   );
@@ -373,7 +597,7 @@ export default function TenantAdminManager({
             }))
             .sort(
               (left, right) =>
-                (right.data.createdAt?.seconds ?? 0) - (left.data.createdAt?.seconds ?? 0)
+                (right.data.createdAt?.seconds  - 0) - (left.data.createdAt?.seconds  - 0)
             )
         );
       }),
@@ -415,12 +639,26 @@ export default function TenantAdminManager({
       }
 
       const data = snapshot.data();
-      setForm(mapTenantDataToFormState(data));
+      const nextForm = mapTenantDataToFormState(data);
+      setForm(nextForm);
       setLastName(String(data.lastName ?? ''));
       setOriginalAssignment({
         propertyId: String(data.propertyId ?? ''),
         unitId: String(data.unitId ?? ''),
       });
+      if (nextForm.portalUsername) {
+        try {
+          const secret = await loadStoredPortalPassword(currentDocumentId, nextForm.portalUsername);
+          if (!isMounted) return;
+          setForm((current) => ({
+            ...current,
+            portalPassword: secret.password ?? current.portalPassword,
+            portalUsername: secret.portalUsername ?? current.portalUsername,
+          }));
+        } catch (caughtError) {
+          console.error(`Portal-Passwort fuer Mieter ${currentDocumentId} konnte nicht geladen werden:`, caughtError);
+        }
+      }
       setError('');
       setIsLoadingInitialValues(false);
     }
@@ -471,18 +709,42 @@ export default function TenantAdminManager({
     return options.sort((left, right) => left.label.localeCompare(right.label, 'de'));
   }, [documentId, editMode, properties]);
 
+  const overviewPropertyOptions = useMemo(
+    () =>
+      properties
+        .map((property) => ({
+          label: String(property.data.name ?? '').trim() || property.id,
+          value: property.id,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label, 'de')),
+    [properties]
+  );
+
   const tenantOverview = useMemo(
     () =>
       tenants
+        .filter(
+          (tenant) =>
+            overviewPropertyFilter === 'all' ||
+            String(tenant.data.propertyId ?? '').trim() === overviewPropertyFilter
+        )
         .map((tenant) => ({
-        id: tenant.id,
-        name: [tenant.data.lastName, tenant.data.firstName].filter(Boolean).join(', '),
-        subtitle: [tenant.data.propertyName, tenant.data.unitLabel, tenant.data.status]
-          .filter(Boolean)
-          .join(' · '),
+          id: tenant.id,
+          name: [tenant.data.lastName, tenant.data.firstName].filter(Boolean).join(', '),
+          rentIncreaseHint: getRentIncreaseStatusLabel(
+            String(tenant.data.rentIncreaseType ?? ''),
+            String(tenant.data.rentIncreaseNextReview ?? '')
+          ),
+          subtitle: [
+            tenant.data.propertyName,
+            tenant.data.unitLabel,
+            getStatusLabel(String(tenant.data.status ?? '')),
+          ]
+            .filter(Boolean)
+            .join(' - '),
         }))
         .sort((left, right) => left.name.localeCompare(right.name, 'de')),
-    [tenants]
+    [overviewPropertyFilter, tenants]
   );
 
   const guarantorOptions = useMemo<GuarantorOption[]>(
@@ -504,23 +766,6 @@ export default function TenantAdminManager({
     [form.coldRent, form.netOperatingCosts]
   );
 
-  function calculateRentReminder(
-    type: TenantFormState['rentIncreaseType'],
-    referenceDate: string,
-    rows: RentIncreaseRow[]
-  ) {
-    if (type === 'graduated') {
-      const nextGraduatedRow = rows.find((row) => row.fromDate);
-      return nextGraduatedRow?.reminderDate ?? '';
-    }
-    if (type === 'index') {
-      return calculateReminderForRule(referenceDate, 12);
-    }
-    if (type === 'legal') {
-      return calculateReminderForRule(referenceDate, 36);
-    }
-    return '';
-  }
 
   function updateField<K extends keyof TenantFormState>(key: K, value: TenantFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -538,6 +783,98 @@ export default function TenantAdminManager({
           current.rentIncreaseRows
         ),
         rentIncreaseReferenceDate: nextReferenceDate,
+      };
+    });
+  }
+
+  function addRentHistoryEntry() {
+    setForm((current) => ({
+      ...current,
+      rentHistory: [
+        ...current.rentHistory,
+        {
+          coldRent: '',
+          effectiveDate: current.rentIncreaseReferenceDate || current.moveInDate || '',
+          id: crypto.randomUUID(),
+          label: 'Historie',
+          netOperatingCosts: current.netOperatingCosts,
+        },
+      ],
+    }));
+  }
+
+  function updateRentHistoryEntry(
+    entryId: string,
+    field: keyof RentHistoryEntry,
+    value: string
+  ) {
+    setForm((current) => ({
+      ...current,
+      rentHistory: current.rentHistory.map((entry) =>
+        entry.id === entryId
+          ? {
+              ...entry,
+              [field]:
+                field === 'coldRent' || field === 'netOperatingCosts'
+                  ? formatMoneyInput(value)
+                  : cleanSpaces(value),
+            }
+          : entry
+      ),
+    }));
+  }
+
+  function blurRentHistoryEntry(entryId: string, field: 'coldRent' | 'netOperatingCosts', value: string) {
+    setForm((current) => ({
+      ...current,
+      rentHistory: current.rentHistory.map((entry) =>
+        entry.id === entryId
+          ? {
+              ...entry,
+              [field]: formatMoneyForBlur(value),
+            }
+          : entry
+      ),
+    }));
+  }
+
+  function removeRentHistoryEntry(entryId: string) {
+    setForm((current) => ({
+      ...current,
+      rentHistory: current.rentHistory.filter((entry) => entry.id !== entryId),
+    }));
+  }
+
+  function handlePendingColdRentChange(value: string) {
+    setForm((current) => {
+      const nextPendingColdRent = formatMoneyInput(value);
+      const baseColdRent = nextPendingColdRent || current.coldRent;
+      const nextRows =
+        current.rentIncreaseType === 'graduated'
+          ? recalculateGraduatedRows(baseColdRent, current.rentIncreaseRows)
+          : current.rentIncreaseRows;
+
+      return {
+        ...current,
+        pendingColdRent: nextPendingColdRent,
+        rentIncreaseRows: nextRows,
+      };
+    });
+  }
+
+  function handlePendingColdRentBlur(value: string) {
+    setForm((current) => {
+      const nextPendingColdRent = formatMoneyForBlur(value);
+      const baseColdRent = nextPendingColdRent || current.coldRent;
+      const nextRows =
+        current.rentIncreaseType === 'graduated'
+          ? recalculateGraduatedRows(baseColdRent, current.rentIncreaseRows)
+          : current.rentIncreaseRows;
+
+      return {
+        ...current,
+        pendingColdRent: nextPendingColdRent,
+        rentIncreaseRows: nextRows,
       };
     });
   }
@@ -560,7 +897,7 @@ export default function TenantAdminManager({
             ? current.rentIncreaseRows
             : [
                 {
-                  ...createRentIncreaseRow(current.coldRent),
+                  ...createRentIncreaseRow(current.pendingColdRent || current.coldRent),
                   ...createOneYearRange(referenceDate),
                   reminderDate: referenceDate ? shiftMonths(referenceDate, -1) : '',
                 },
@@ -595,7 +932,8 @@ export default function TenantAdminManager({
   function addRentIncreaseRow() {
     setForm((current) => {
       const previousRow = current.rentIncreaseRows.at(-1);
-      const baseColdRent = previousRow?.coldRent || current.coldRent || '0,00 EUR';
+      const baseColdRent =
+        previousRow?.coldRent || current.pendingColdRent || current.coldRent || '0,00 EUR';
       const nextStartDate =
         previousRow?.toDate
           ? shiftDays(previousRow.toDate, 1)
@@ -655,8 +993,12 @@ export default function TenantAdminManager({
 
         const previousColdRent =
           index === 0
-            ? parseMoney(current.coldRent)
-            : parseMoney(current.rentIncreaseRows[index - 1]?.coldRent || current.coldRent);
+            ? parseMoney(current.pendingColdRent || current.coldRent)
+            : parseMoney(
+                current.rentIncreaseRows[index - 1]?.coldRent ||
+                  current.pendingColdRent ||
+                  current.coldRent
+              );
 
         const nextRow = { ...row, [field]: value };
 
@@ -703,6 +1045,144 @@ export default function TenantAdminManager({
     setForm(defaultFormState());
     setLastName('');
     setOriginalAssignment(null);
+    setShowPortalPassword(false);
+  }
+
+  async function provisionTenantPortalAccess(
+    targetId: string,
+    username: string,
+    password: string
+    ) {
+      const isLocalDevelopment =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      const token = !isLocalDevelopment && user ? await user.getIdToken() : '';
+      const selectedUnitInfo = getSelectedUnitOption(unitOptions, form.selectedUnitKey);
+      const selectedUnitIds = parseSelectedUnitKey(form.selectedUnitKey);
+      const selectedProperty =
+        properties.find((property) => property.id === selectedUnitIds.propertyId) ?? null;
+      const selectedPropertyUnits = Array.isArray(selectedProperty?.data.units)
+        ? selectedProperty.data.units
+        : [];
+      const selectedUnitData =
+        selectedPropertyUnits.find(
+          (unit: DocumentData) => String(unit?.id ?? '').trim() === selectedUnitIds.unitId
+        ) ?? null;
+      const response = await fetch('/api/admin/portal-access', {
+        body: JSON.stringify({
+          contactEmail: form.email,
+          existingPasswordCipher: form.storedPortalPassword,
+          password,
+          propertySnapshot: selectedProperty
+            ? {
+                city: String(selectedProperty.data.city ?? ''),
+                houseNumber: String(selectedProperty.data.houseNumber ?? ''),
+                id: selectedProperty.id,
+                meters: Array.isArray(selectedProperty.data.meters)
+                  ? selectedProperty.data.meters
+                  : [],
+                name: String(selectedProperty.data.name ?? ''),
+                postalCode: String(selectedProperty.data.postalCode ?? ''),
+                street: String(selectedProperty.data.street ?? ''),
+                units: selectedUnitData
+                  ? [
+                      {
+                        ...selectedUnitData,
+                        meters: Array.isArray(selectedUnitData.meters)
+                          ? selectedUnitData.meters
+                          : [],
+                      },
+                    ]
+                  : [],
+              }
+            : null,
+          targetId,
+          targetSnapshot: {
+            coldRent: form.coldRent,
+            email: form.email,
+            firstName: form.firstName,
+            houseNumber: String(selectedProperty?.data.houseNumber ?? ''),
+            lastName,
+            phone: form.phone,
+            city: String(selectedProperty?.data.city ?? ''),
+            postalCode: String(selectedProperty?.data.postalCode ?? ''),
+            propertyId: selectedUnitIds.propertyId,
+            propertyName: getSelectedPropertyName(properties, form.selectedUnitKey),
+            street: String(selectedProperty?.data.street ?? ''),
+            unitId: selectedUnitIds.unitId,
+            unitLabel: selectedUnitInfo?.unitLabel ?? '',
+            unitMeters:
+              selectedUnitData && Array.isArray(selectedUnitData.meters)
+                ? selectedUnitData.meters
+                : [],
+          },
+          targetType: 'tenant',
+          username,
+      }),
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+    const result = (await response.json()) as {
+      authEmail?: string;
+      error?: string;
+      ok?: boolean;
+      portalAuthUid?: string;
+      portalPasswordCipher?: string;
+    };
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || 'portal_access_save_failed');
+    }
+
+    await updateDoc(doc(db, 'tenants', targetId), {
+      authEmail: result.authEmail ?? '',
+      portalAccessEnabled: true,
+      portalAuthUid: result.portalAuthUid ?? '',
+      portalPasswordCipher: result.portalPasswordCipher ?? '',
+      portalUsername: username,
+      updatedAt: serverTimestamp(),
+    });
+
+    setForm((current) => ({
+      ...current,
+      portalPassword: password || current.portalPassword,
+      portalUsername: username,
+      storedPortalPassword: result.portalPasswordCipher ?? current.storedPortalPassword,
+    }));
+  }
+
+  async function loadStoredPortalPassword(targetId: string, username: string) {
+    const isLocalDevelopment =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const token = !isLocalDevelopment && user ? await user.getIdToken() : '';
+    const response = await fetch('/api/admin/portal-access-secret', {
+      body: JSON.stringify({
+        targetId,
+        targetType: 'tenant',
+        username,
+      }),
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+    const result = (await response.json()) as {
+      error?: string;
+      ok?: boolean;
+      password?: string;
+      portalUsername?: string;
+    };
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || 'portal_secret_load_failed');
+    }
+
+    return result;
   }
 
   function addAdditionalPerson() {
@@ -874,6 +1354,28 @@ export default function TenantAdminManager({
       return;
     }
 
+    if (form.pendingColdRent && !form.rentIncreaseReferenceDate) {
+      setError(
+        'Bitte ein Datum bei Letzte Mieterhöhung hinterlegen, wenn du eine neue Kaltmiete speicherst.'
+      );
+      return;
+    }
+
+    if (form.portalUsername && !form.email) {
+      setError('Bitte eine E-Mail-Adresse hinterlegen, bevor du einen Portalzugang anlegst.');
+      return;
+    }
+
+    if (!editMode && form.portalUsername && !form.portalPassword) {
+      setError('Bitte ein Passwort hinterlegen, wenn du für den Mieter einen Portalzugang anlegst.');
+      return;
+    }
+
+    if (editMode && form.portalUsername && !form.portalPassword && !form.storedPortalPassword) {
+      setError('Bitte ein Passwort hinterlegen, damit der Portalzugang erstmals eingerichtet werden kann.');
+      return;
+    }
+
     const selectedProperty = properties.find((property) => property.id === selectedUnit.propertyId);
     const propertyUnits = Array.isArray(selectedProperty?.data.units)
       ? selectedProperty.data.units
@@ -884,6 +1386,36 @@ export default function TenantAdminManager({
 
     startTransition(async () => {
       try {
+        const effectiveReferenceDate = getEffectiveReferenceDate(
+          form.rentIncreaseReferenceDate,
+          form.moveInDate
+        );
+        const nextColdRent = form.pendingColdRent
+          ? formatMoneyForBlur(form.pendingColdRent)
+          : form.coldRent;
+        const nextHistory = form.pendingColdRent
+          ? upsertRentHistoryEntry(
+              buildRentHistoryFromData(
+                form.rentHistory,
+                form.coldRent,
+                form.netOperatingCosts,
+                effectiveReferenceDate
+              ),
+              {
+                coldRent: nextColdRent,
+                effectiveDate: form.rentIncreaseReferenceDate,
+                id: crypto.randomUUID(),
+                label: 'Mieterhoehung',
+                netOperatingCosts: formatMoneyInput(form.netOperatingCosts),
+              }
+            )
+          : buildRentHistoryFromData(
+              form.rentHistory,
+              form.coldRent,
+              form.netOperatingCosts,
+              effectiveReferenceDate
+            );
+
         const payload = {
           additionalPersons: form.additionalPersons,
           annualStatementFile: form.annualStatementFile,
@@ -892,11 +1424,12 @@ export default function TenantAdminManager({
           companyContactEmail: cleanSpaces(form.companyContactEmail).toLowerCase(),
           companyContactName: titleCase(form.companyContactName),
           companyContactPhone: cleanSpaces(form.companyContactPhone),
+          companyContactSalutation: cleanSpaces(form.companyContactSalutation),
           companyHouseNumber: cleanSpaces(form.companyHouseNumber),
           companyName: titleCase(form.companyName),
           companyPostalCode: cleanSpaces(form.companyPostalCode),
           companyStreet: titleCase(form.companyStreet),
-          coldRent: formatMoneyInput(form.coldRent),
+          coldRent: formatMoneyInput(nextColdRent),
           createdAt: serverTimestamp(),
           createdByEmail: user.email ?? null,
           createdByUid: user.uid,
@@ -906,6 +1439,7 @@ export default function TenantAdminManager({
           documentsNotes: cleanSpaces(form.documentsNotes),
           email: cleanSpaces(form.email).toLowerCase(),
           firstName: titleCase(form.firstName),
+          salutation: cleanSpaces(form.salutation),
           guarantorExists: form.guarantorExists,
           guarantorId: form.guarantorId,
           guarantorLabel: form.guarantorLabel,
@@ -916,9 +1450,11 @@ export default function TenantAdminManager({
           notes: cleanSpaces(form.notes),
           ownerName: selectedUnit.ownerName,
           phone: cleanSpaces(form.phone),
+          portalUsername: cleanSpaces(form.portalUsername).toLowerCase(),
           propertyId: selectedUnit.propertyId,
           propertyName: selectedUnit.propertyName,
           propertyUnit: selectedUnit.label,
+          rentHistory: nextHistory,
           rentIncreaseNextReview: form.rentIncreaseNextReview,
           rentIncreaseReferenceDate: form.rentIncreaseReferenceDate,
           rentIncreaseRows: form.rentIncreaseRows,
@@ -965,6 +1501,10 @@ export default function TenantAdminManager({
           if (redirectPathAfterSave) {
             router.push(redirectPathAfterSave);
           }
+
+          if (payload.portalUsername && payload.email) {
+            await provisionTenantPortalAccess(currentDocumentId, payload.portalUsername, form.portalPassword);
+          }
         } else {
           const tenantRef = await addDoc(collection(db, 'tenants'), {
             ...payload,
@@ -990,6 +1530,10 @@ export default function TenantAdminManager({
             });
           }
 
+          if (payload.portalUsername && payload.email) {
+            await provisionTenantPortalAccess(tenantRef.id, payload.portalUsername, form.portalPassword);
+          }
+
           setMessage('Mieter wurde gespeichert.');
           resetForm();
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1002,11 +1546,30 @@ export default function TenantAdminManager({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mt-6 space-y-6">
       {!hideOverview ? (
       <section className="rounded-[32px] border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Übersicht</p>
-        <h3 className="mt-2 text-3xl text-slate-950">Mieter</h3>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Uebersicht</p>
+            <h3 className="mt-2 text-3xl text-slate-950">Mieter</h3>
+          </div>
+          <label className="block min-w-[240px]">
+            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Objekt</span>
+            <select
+              className="mt-2 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => setOverviewPropertyFilter(event.target.value)}
+              value={overviewPropertyFilter}
+            >
+              <option value="all">Alle</option>
+              {overviewPropertyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         {tenantOverview.length === 0 ? (
           <div className="mt-6 rounded-[24px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-slate-600">
             Noch keine Mieter angelegt.
@@ -1022,6 +1585,11 @@ export default function TenantAdminManager({
                   <div className="min-w-0">
                     <p className="text-sm font-medium leading-5 text-slate-950">{tenant.name}</p>
                     <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{tenant.subtitle}</p>
+                    {tenant.rentIncreaseHint ? (
+                      <p className="mt-1 text-[11px] font-medium leading-4 text-amber-700">
+                        {tenant.rentIncreaseHint}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Link className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" href={`/admin/mieter/${tenant.id}`}>Ansehen</Link>
@@ -1048,7 +1616,99 @@ export default function TenantAdminManager({
           </div>
         ) : (
         <form autoComplete="off" className="mt-8 space-y-8" onSubmit={handleSubmit}>
+          <input autoComplete="username" className="hidden" name="tenant-fake-username" tabIndex={-1} type="text" />
+          <input autoComplete="current-password" className="hidden" name="tenant-fake-password" tabIndex={-1} type="password" />
+          <section className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+            <div className="rounded-[24px] border border-stone-200 bg-white p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Vergangene Miethoehen</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Hier kannst du alte Kaltmieten und Nebenkosten rueckwirkend nachtragen.
+                  </p>
+                </div>
+                <button
+                  className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                  onClick={addRentHistoryEntry}
+                  type="button"
+                >
+                  Historie hinzufuegen
+                </button>
+              </div>
+
+              {form.rentHistory.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  {form.rentHistory
+                    .slice()
+                    .sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate))
+                    .map((entry) => (
+                      <div className="rounded-[20px] border border-stone-200 bg-stone-50 p-3" key={entry.id}>
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                          <label className="block space-y-2">
+                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Datum</span>
+                            <input
+                              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                              onChange={(event) => updateRentHistoryEntry(entry.id, 'effectiveDate', event.target.value)}
+                              type="date"
+                              value={entry.effectiveDate}
+                            />
+                          </label>
+                          <label className="block space-y-2">
+                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Kaltmiete</span>
+                            <input
+                              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                              onBlur={(event) => blurRentHistoryEntry(entry.id, 'coldRent', event.target.value)}
+                              onChange={(event) => updateRentHistoryEntry(entry.id, 'coldRent', event.target.value)}
+                              placeholder="z. B. 850,00 EUR"
+                              value={entry.coldRent}
+                            />
+                          </label>
+                          <label className="block space-y-2">
+                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Nebenkosten</span>
+                            <input
+                              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                              onBlur={(event) => blurRentHistoryEntry(entry.id, 'netOperatingCosts', event.target.value)}
+                              onChange={(event) => updateRentHistoryEntry(entry.id, 'netOperatingCosts', event.target.value)}
+                              placeholder="z. B. 220,00 EUR"
+                              value={entry.netOperatingCosts}
+                            />
+                          </label>
+                          <div className="flex items-end">
+                            <button
+                              className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-100"
+                              onClick={() => removeRentHistoryEntry(entry.id)}
+                              type="button"
+                            >
+                              Entfernen
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-slate-600">
+                  Noch keine rueckwirkenden Miethoehen hinterlegt.
+                </div>
+              )}
+            </div>
+          </section>
+
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Anrede</span>
+              <select
+                className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                onChange={(event) => updateField('salutation', event.target.value)}
+                value={form.salutation}
+              >
+                <option value="">Bitte wählen</option>
+                <option value="Herr">Herr</option>
+                <option value="Frau">Frau</option>
+                <option value="Divers">Divers</option>
+                <option value="Ohne Angabe">Ohne Angabe</option>
+              </select>
+            </label>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Vorname</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('firstName', titleCase(event.target.value))} placeholder="Max" required value={form.firstName} />
@@ -1088,6 +1748,47 @@ export default function TenantAdminManager({
 
           <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
             <div>
+              <p className="text-sm font-medium text-slate-900">Portalzugang</p>
+              <p className="mt-1 text-xs leading-6 text-slate-500">
+                Optional. Hier legst du Benutzername und Passwort für den späteren Login im Portal fest.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-5 md:grid-cols-2">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Benutzername</span>
+                <input
+                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                  onChange={(event) => updateField('portalUsername', cleanSpaces(event.target.value).toLowerCase())}
+                  placeholder="z. B. gross.hentschel"
+                  value={form.portalUsername}
+                />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Passwort</span>
+                <div className="relative">
+                  <input
+                    autoComplete="new-password"
+                    className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 pr-20 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                    name="tenant-portal-password"
+                    onChange={(event) => updateField('portalPassword', event.target.value)}
+                    placeholder={form.storedPortalPassword ? 'Neues Passwort setzen oder leer lassen' : 'Passwort festlegen'}
+                    type={showPortalPassword ? 'text' : 'password'}
+                    value={form.portalPassword}
+                  />
+                  <button
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-xs font-medium text-slate-500 transition hover:text-slate-900"
+                    onClick={() => setShowPortalPassword((current) => !current)}
+                    type="button"
+                  >
+                    {showPortalPassword ? 'Verbergen' : 'Anzeigen'}
+                  </button>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+            <div>
               <p className="text-sm font-medium text-slate-900">Firma / Zentrale</p>
               <p className="mt-1 text-xs leading-6 text-slate-500">
                 Für gewerbliche Mieter oder zentrale Ansprechpartner des Mieters.
@@ -1101,6 +1802,16 @@ export default function TenantAdminManager({
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Kontaktperson</span>
                 <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('companyContactName', titleCase(event.target.value))} placeholder="Vor- und Nachname" value={form.companyContactName} />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Anrede Kontaktperson</span>
+                <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('companyContactSalutation', event.target.value)} value={form.companyContactSalutation}>
+                  <option value="">Bitte wählen</option>
+                  <option value="Herr">Herr</option>
+                  <option value="Frau">Frau</option>
+                  <option value="Divers">Divers</option>
+                  <option value="Ohne Angabe">Ohne Angabe</option>
+                </select>
               </label>
               <label className="block space-y-2 xl:col-span-3">
                 <span className="text-sm font-medium text-slate-700">Straße</span>
@@ -1183,8 +1894,8 @@ export default function TenantAdminManager({
 
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Kaltmiete</span>
-              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onBlur={(event) => updateField('coldRent', formatMoneyForBlur(event.target.value))} onChange={(event) => updateField('coldRent', formatMoneyInput(event.target.value))} placeholder="z. B. 850,00 EUR" value={form.coldRent} />
+              <span className="text-sm font-medium text-slate-700">Aktuelle Kaltmiete</span>
+              <input className="w-full rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-slate-700 outline-none" readOnly value={form.coldRent} />
             </label>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Betriebskosten</span>
@@ -1232,7 +1943,17 @@ export default function TenantAdminManager({
           </div>
 
           <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+            <div className="mb-4">
+              <p className="text-sm font-medium text-slate-900">Mieterhoehung</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Die neue Miete traegst du hier ein. Oben wird nur der aktuell gespeicherte Stand angezeigt.
+              </p>
+            </div>
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Neue Kaltmiete</span>
+                <input className="w-full rounded-2xl border border-amber-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onBlur={(event) => handlePendingColdRentBlur(event.target.value)} onChange={(event) => handlePendingColdRentChange(event.target.value)} placeholder="Neue Miethoehe eintragen" value={form.pendingColdRent} />
+              </label>
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Mieterhöhungsart</span>
                 <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => handleRentIncreaseTypeChange(event.target.value)} value={form.rentIncreaseType}>
@@ -1245,7 +1966,7 @@ export default function TenantAdminManager({
                 </select>
               </label>
               <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-700">Basisdatum Prüfung</span>
+                <span className="text-sm font-medium text-slate-700">Letzte Mieterhöhung</span>
                 <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => handleRentIncreaseReferenceDateChange(event.target.value)} type="date" value={form.rentIncreaseReferenceDate} />
               </label>
               <label className="block space-y-2">
@@ -1309,8 +2030,9 @@ export default function TenantAdminManager({
 
             {form.rentIncreaseType === 'legal' ? (
               <p className="mt-4 text-sm leading-6 text-slate-600">
-                Bei Erhöhung nach Gesetz prüft das System alle drei Jahre und erinnert ebenfalls mit
-                einem Monat Puffer.
+                Bei Erhöhung nach Gesetz ist die nächste Prüfung nach drei Jahren fällig. Die
+                Erinnerung kommt sechs Monate vorher, also nach zweieinhalb Jahren seit der letzten
+                Erhöhung bzw. seit dem hier hinterlegten Datum.
               </p>
             ) : null}
           </div>
