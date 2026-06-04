@@ -18,6 +18,7 @@ import RentHistoryChart, { type RentHistoryChartPoint } from './RentHistoryChart
 type ReminderItem = {
   dateValue: string;
   href: string;
+  id: string;
   label: string;
   meta: string;
   type: 'message' | 'property' | 'tenant' | 'theme';
@@ -302,6 +303,7 @@ export default function AdminDashboardOverview() {
       reminderItems.push({
         dateValue: dueDate,
         href: `/admin/mieter/${theme.tenantId}?messageId=${theme.id}`,
+        id: `theme-${theme.id}`,
         label: cleanText(theme.subject) || 'Thema ohne Betreff',
         meta: `Thema · ${buildTenantLabel(tenants.find((tenant) => tenant.id === theme.tenantId) ?? null)}`,
         type: 'theme',
@@ -315,6 +317,7 @@ export default function AdminDashboardOverview() {
       reminderItems.push({
         dateValue: dueDate,
         href: '/admin/nachrichten',
+        id: `message-${message.id}`,
         label: cleanText(message.data.subject) || cleanText(message.data.fromName) || 'Nachricht',
         meta: `Nachricht · ${cleanText(message.data.fromEmail) || 'ohne Absender'}`,
         type: 'message',
@@ -323,7 +326,7 @@ export default function AdminDashboardOverview() {
 
     tenants.forEach((tenant) => {
       const rows = Array.isArray(tenant.data.rentDevelopment) ? tenant.data.rentDevelopment : [];
-      rows.forEach((row) => {
+      rows.forEach((row, rowIndex) => {
         if (!row || typeof row !== 'object') return;
         const reminderDate = cleanText((row as DocumentData).reminderDate);
         const parsed = parseDateInput(reminderDate);
@@ -331,6 +334,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           dateValue: reminderDate,
           href: `/admin/mieter/${tenant.id}`,
+          id: `tenant-rent-${tenant.id}-${reminderDate}-${rowIndex}`,
           label: buildTenantLabel(tenant),
           meta: `Mieterhöhung prüfen · ${cleanText((row as DocumentData).kind) || 'Mietvertrag'}`,
           type: 'tenant',
@@ -348,6 +352,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           dateValue: roofReminderDate,
           href: `/admin/immobilie/${property.id}`,
+          id: `property-roof-${property.id}`,
           label: propertyLabel,
           meta: `Dachwartung · nach ${parseReminderMonths(property.data.roofMaintenanceReminderMonths)} Monaten`,
           type: 'property',
@@ -362,6 +367,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           dateValue: gutterReminderDate,
           href: `/admin/immobilie/${property.id}`,
+          id: `property-gutter-${property.id}`,
           label: propertyLabel,
           meta: `Regenrinnenreinigung · nach ${parseReminderMonths(property.data.gutterCleaningReminderMonths)} Monaten`,
           type: 'property',
@@ -371,7 +377,7 @@ export default function AdminDashboardOverview() {
       const heatingEntries = Array.isArray(property.data.heatingEntries)
         ? property.data.heatingEntries
         : [];
-      heatingEntries.forEach((entry) => {
+      heatingEntries.forEach((entry, heatingIndex) => {
         if (!entry || typeof entry !== 'object') return;
         const heating = entry as DocumentData;
         const heatingReminderDate = shiftDateByMonths(
@@ -382,6 +388,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           dateValue: heatingReminderDate,
           href: `/admin/immobilie/${property.id}`,
+          id: `property-heating-${property.id}-${cleanText(heating.id) || cleanText(heating.type) || heatingIndex}`,
           label: propertyLabel,
           meta: `Heizungswartung · ${cleanText(heating.type) || 'Heizung'} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
           type: 'property',
@@ -397,7 +404,7 @@ export default function AdminDashboardOverview() {
           .filter(Boolean)
           .join(' · ');
         const unitHeatingEntries = Array.isArray(unitRecord.heatingEntries) ? unitRecord.heatingEntries : [];
-        unitHeatingEntries.forEach((entry) => {
+        unitHeatingEntries.forEach((entry, heatingIndex) => {
           if (!entry || typeof entry !== 'object') return;
           const heating = entry as DocumentData;
           const heatingReminderDate = shiftDateByMonths(
@@ -408,6 +415,7 @@ export default function AdminDashboardOverview() {
           reminderItems.push({
             dateValue: heatingReminderDate,
             href: unitId ? `/admin/einheit/${property.id}/${unitId}` : `/admin/immobilie/${property.id}`,
+            id: `unit-heating-${property.id}-${unitId || 'property'}-${cleanText(heating.id) || cleanText(heating.type) || heatingIndex}`,
             label: propertyLabel,
             meta: `Heizungswartung ${unitLabel ? `· ${unitLabel}` : ''} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
             type: 'property',
@@ -812,7 +820,7 @@ export default function AdminDashboardOverview() {
                   <Link
                     className="flex items-center justify-between gap-4 rounded-[22px] border border-stone-200 bg-stone-50/60 px-4 py-4 transition hover:border-stone-300 hover:bg-white"
                     href={entry.href}
-                    key={`${entry.type}-${entry.href}-${entry.dateValue}-${entry.label}`}
+                    key={entry.id}
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-950">{entry.label}</p>
@@ -1072,7 +1080,7 @@ export default function AdminDashboardOverview() {
                   <Link
                     className="block rounded-[18px] border border-stone-200 bg-white px-4 py-3 transition hover:border-stone-300"
                     href={entry.href}
-                    key={`${entry.type}-${entry.href}-${entry.dateValue}`}
+                    key={entry.id}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
