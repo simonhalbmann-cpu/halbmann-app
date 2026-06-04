@@ -12,11 +12,17 @@ import {
   updateDoc,
   type DocumentData,
 } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
+import {
+  cleanTenantDocuments,
+  sanitizeStorageFileName,
+  type TenantDocumentEntry,
+} from '../../lib/tenantDocuments';
 
 type AdminRecord = {
   data: DocumentData;
@@ -118,6 +124,7 @@ type TenantFormState = {
   status: string;
   taxNumber: string;
   tenantInfoFile: string;
+  tenantDocuments: TenantDocumentEntry[];
   tenancyAddendumsFile: string;
   tenancyAgreementFile: string;
   pendingColdRent: string;
@@ -215,6 +222,7 @@ const defaultFormState = (): TenantFormState => ({
   status: 'active',
   taxNumber: '',
   tenantInfoFile: '',
+  tenantDocuments: [],
   tenancyAddendumsFile: '',
   tenancyAgreementFile: '',
   vatRule: 'no_vat',
@@ -520,7 +528,7 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     pendingColdRent: '',
     phone: String(data.phone ?? ''),
     portalPassword: '',
-    portalUsername: String(data.portalUsername ?? ''),
+    portalUsername: '',
     rentIncreaseNextReview: calculateRentReminder(
       rentIncreaseType,
       effectiveReferenceDate,
@@ -539,10 +547,11 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     schufaFile: String(data.schufaFile ?? ''),
     selectedUnitKey:
       data.propertyId && data.unitId ? `${String(data.propertyId)}::${String(data.unitId)}` : '',
-    storedPortalPassword: String(data.portalPasswordCipher ?? data.portalPassword ?? ''),
+    storedPortalPassword: '',
     status: String(data.status ?? 'active'),
     taxNumber: String(data.taxNumber ?? ''),
     tenantInfoFile: String(data.tenantInfoFile ?? ''),
+    tenantDocuments: cleanTenantDocuments(data.tenantDocuments),
     tenancyAddendumsFile: String(data.tenancyAddendumsFile ?? ''),
     tenancyAgreementFile: String(data.tenancyAgreementFile ?? ''),
     vatRule: String(data.vatRule ?? 'no_vat'),
@@ -573,6 +582,7 @@ export default function TenantAdminManager({
   const [people, setPeople] = useState<AdminRecord[]>([]);
   const [form, setForm] = useState<TenantFormState>(() => defaultFormState());
   const [lastName, setLastName] = useState('');
+  const [pendingDocumentFiles, setPendingDocumentFiles] = useState<File[]>([]);
   const [showPortalPassword, setShowPortalPassword] = useState(false);
   const [originalAssignment, setOriginalAssignment] = useState<{
     propertyId: string;
@@ -1231,21 +1241,36 @@ export default function TenantAdminManager({
     }));
   }
 
-  function handleFileSelection(
-    field:
-      | 'annualStatementFile'
-      | 'bankStatementsFile'
-      | 'depositCertificateFile'
-      | 'identityCopiesFile'
-      | 'salaryProofsFile'
-      | 'schufaFile'
-      | 'tenantInfoFile'
-      | 'tenancyAddendumsFile'
-      | 'tenancyAgreementFile',
-    files: FileList | null
-  ) {
-    const fileName = files && files.length > 0 ? files[0].name : '';
-    updateField(field, fileName);
+  function handleDocumentFileSelection(files: FileList | null) {
+    setPendingDocumentFiles(files ? Array.from(files) : []);
+  }
+
+  async function uploadTenantDocuments(tenantDocumentId: string) {
+    if (pendingDocumentFiles.length === 0) return [];
+
+    const uploadedDocuments: TenantDocumentEntry[] = [];
+
+    for (const file of pendingDocumentFiles) {
+      const safeName = sanitizeStorageFileName(file.name);
+      const storagePath = `tenant-documents/${tenantDocumentId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, file, {
+        contentType: file.type || 'application/octet-stream',
+      });
+      const url = await getDownloadURL(storageRef);
+
+      uploadedDocuments.push({
+        contentType: file.type || 'application/octet-stream',
+        name: file.name,
+        path: storagePath,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedByEmail: user?.email ?? '',
+        url,
+      });
+    }
+
+    return uploadedDocuments;
   }
 
   async function syncTenantAssignment(
@@ -1464,6 +1489,7 @@ export default function TenantAdminManager({
           status: form.status,
           taxNumber: cleanSpaces(form.taxNumber),
           tenantInfoFile: form.tenantInfoFile,
+          tenantDocuments: form.tenantDocuments,
           tenancyAddendumsFile: form.tenancyAddendumsFile,
           tenancyAgreementFile: form.tenancyAgreementFile,
           unitId: selectedUnit.unitId,
@@ -1480,8 +1506,12 @@ export default function TenantAdminManager({
         const currentDocumentId = documentId;
 
         if (editMode && currentDocumentId) {
+          const uploadedDocuments = await uploadTenantDocuments(currentDocumentId);
+          const nextTenantDocuments = [...payload.tenantDocuments, ...uploadedDocuments];
+
           await updateDoc(doc(db, 'tenants', currentDocumentId), {
             ...payload,
+            tenantDocuments: nextTenantDocuments,
             updatedByEmail: user.email ?? null,
             updatedByUid: user.uid,
           });
@@ -1497,7 +1527,9 @@ export default function TenantAdminManager({
             originalAssignment
           );
 
-          setMessage('Mieter wurde aktualisiert.');
+          setPendingDocumentFiles([]);
+          setForm((current) => ({ ...current, tenantDocuments: nextTenantDocuments }));
+          setMessage(uploadedDocuments.length > 0 ? 'Mieter und Dokumente wurden aktualisiert.' : 'Mieter wurde aktualisiert.');
           if (redirectPathAfterSave) {
             router.push(redirectPathAfterSave);
           }
@@ -1508,10 +1540,19 @@ export default function TenantAdminManager({
         } else {
           const tenantRef = await addDoc(collection(db, 'tenants'), {
             ...payload,
+            tenantDocuments: [],
             createdAt: serverTimestamp(),
             createdByEmail: user.email ?? null,
             createdByUid: user.uid,
           });
+
+          const uploadedDocuments = await uploadTenantDocuments(tenantRef.id);
+          if (uploadedDocuments.length > 0) {
+            await updateDoc(doc(db, 'tenants', tenantRef.id), {
+              tenantDocuments: uploadedDocuments,
+              updatedAt: serverTimestamp(),
+            });
+          }
 
           if (selectedProperty) {
             const nextUnits = propertyUnits.map((unit, index) =>
@@ -1534,7 +1575,8 @@ export default function TenantAdminManager({
             await provisionTenantPortalAccess(tenantRef.id, payload.portalUsername, form.portalPassword);
           }
 
-          setMessage('Mieter wurde gespeichert.');
+          setPendingDocumentFiles([]);
+          setMessage(uploadedDocuments.length > 0 ? 'Mieter und Dokumente wurden gespeichert.' : 'Mieter wurde gespeichert.');
           resetForm();
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -1746,7 +1788,7 @@ export default function TenantAdminManager({
             </label>
           </div>
 
-          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+          <div className="hidden">
             <div>
               <p className="text-sm font-medium text-slate-900">Portalzugang</p>
               <p className="mt-1 text-xs leading-6 text-slate-500">
@@ -2071,51 +2113,57 @@ export default function TenantAdminManager({
           <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
             <p className="text-sm font-medium text-slate-900">Dokumente zum Mietverhältnis</p>
             <p className="mt-1 text-xs leading-6 text-slate-500">
-              Die Uploadlogik zu Storage folgt später. Für jetzt werden die Dokumentplätze mit
-              Dateinamen vorbereitet.
+              Hier kannst du beliebige Dateien zum Mieter hinterlegen, zum Beispiel Dokumente,
+              Bilder oder Videos.
             </p>
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {[
-                ['tenancyAgreementFile', 'Mietvertrag'],
-                ['tenancyAddendumsFile', 'Nachträge'],
-                ['depositCertificateFile', 'Bankbürgschaft / Kautionsurkunde'],
-                ['identityCopiesFile', 'Ausweiskopien'],
-                ['tenantInfoFile', 'Mieterinformationen'],
-                ['schufaFile', 'SCHUFA-Auskunft'],
-                ['salaryProofsFile', 'Gehaltsnachweise'],
-                ['annualStatementFile', 'Jahresabrechnungen'],
-                ['bankStatementsFile', 'Weitere Bonitätsunterlagen'],
-              ].map(([fieldName, label]) => (
-                <label className="block space-y-2" key={fieldName}>
-                  <span className="text-sm font-medium text-slate-700">{label}</span>
-                  <input
-                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
-                    className="w-full rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition file:mr-4 file:rounded-full file:border-0 file:bg-stone-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 focus:border-amber-700/60"
-                    onChange={(event) =>
-                      handleFileSelection(
-                        fieldName as
-                          | 'annualStatementFile'
-                          | 'bankStatementsFile'
-                          | 'depositCertificateFile'
-                          | 'identityCopiesFile'
-                          | 'salaryProofsFile'
-                          | 'schufaFile'
-                          | 'tenantInfoFile'
-                          | 'tenancyAddendumsFile'
-                          | 'tenancyAgreementFile',
-                        event.target.files
-                      )
-                    }
-                    type="file"
-                  />
-                  {String(form[fieldName as keyof TenantFormState] ?? '') ? (
-                    <p className="text-xs leading-5 text-slate-500">
-                      Hinterlegt: {String(form[fieldName as keyof TenantFormState])}
-                    </p>
-                  ) : null}
-                </label>
-              ))}
-              <label className="block space-y-2 xl:col-span-3">
+            <div className="mt-4 grid gap-4">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Dateien hochladen</span>
+                <input
+                  className="w-full rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition file:mr-4 file:rounded-full file:border-0 file:bg-stone-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 focus:border-amber-700/60"
+                  multiple
+                  onChange={(event) => handleDocumentFileSelection(event.target.files)}
+                  type="file"
+                />
+              </label>
+
+              {pendingDocumentFiles.length > 0 ? (
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                    Zum Speichern vorgemerkt
+                  </p>
+                  <div className="mt-3 grid gap-2">
+                    {pendingDocumentFiles.map((file) => (
+                      <p className="text-sm text-slate-700" key={`${file.name}-${file.size}`}>
+                        {file.name}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {form.tenantDocuments.length > 0 ? (
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                    Bereits hinterlegt
+                  </p>
+                  <div className="mt-3 grid gap-2">
+                    {form.tenantDocuments.map((document) => (
+                      <a
+                        className="text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-950 hover:underline"
+                        href={document.url}
+                        key={`${document.path}-${document.url}`}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {document.name}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Hinweise zu Dokumenten</span>
                 <textarea className="min-h-24 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('documentsNotes', event.target.value)} placeholder="z. B. fehlende Nachweise, Fristen, Besonderheiten ..." value={form.documentsNotes} />
               </label>

@@ -22,10 +22,12 @@ import {
 } from '../lib/auth';
 import { db } from '../lib/firebase';
 import { buildPortalDisplayName } from '../lib/portalAccess';
+import { hasAdminPermission, type AdminPermissionKey } from '../lib/adminPermissions';
 
 type NavLink = {
   href: string;
   label: string;
+  permissionKey?: AdminPermissionKey;
 };
 
 type NavSection = {
@@ -53,6 +55,19 @@ type SearchResult = {
   type: 'company' | 'property' | 'tenant' | 'unit';
   unitId?: string;
 };
+
+const settingsLinks: Array<{
+  href: string;
+  label: string;
+  permissionKey: AdminPermissionKey;
+}> = [
+  { href: '/admin/einstellungen', label: 'E-Mail-Postfach', permissionKey: 'settings.mailbox' },
+  { href: '/admin/einstellungen?tab=profil', label: 'Mein Profil', permissionKey: 'settings.profile' },
+  { href: '/admin/einstellungen?tab=mitarbeiter', label: 'Mitarbeiter', permissionKey: 'settings.employees' },
+  { href: '/admin/einstellungen?tab=ki', label: 'KI-Prompt', permissionKey: 'settings.ai' },
+  { href: '/admin/einstellungen?tab=brief', label: 'Vorlagen', permissionKey: 'settings.letters' },
+  { href: '/admin/einstellungen?tab=signaturen', label: 'Signaturen', permissionKey: 'settings.signatures' },
+];
 
 const cleanText = (value: unknown) =>
   typeof value === 'string' ? value.trim() : '';
@@ -138,6 +153,93 @@ function getHeaderContent(pathname: string, fallbackTitle: string) {
   };
 }
 
+function resolveRequiredAdminPermission(
+  pathname: string,
+  settingsTab: string
+): AdminPermissionKey | null {
+  if (pathname === '/admin') return null;
+
+  if (pathname === '/admin/einstellungen') {
+    if (settingsTab === 'profil') return 'settings.profile';
+    if (settingsTab === 'mitarbeiter') return 'settings.employees';
+    if (settingsTab === 'ki') return 'settings.ai';
+    if (settingsTab === 'brief') return 'settings.letters';
+    if (settingsTab === 'signaturen') return 'settings.signatures';
+    return 'settings.mailbox';
+  }
+  if (pathname.startsWith('/admin/einstellungen/mitarbeiter/')) {
+    return 'settings.employees';
+  }
+
+  if (pathname === '/admin/nachrichten' || pathname.startsWith('/admin/nachrichten/')) {
+    return 'messages.read';
+  }
+
+  if (pathname === '/admin/firma' || pathname === '/admin/firmen') return 'companies.create';
+  if (/^\/admin\/firma\/[^/]+\/bearbeiten$/.test(pathname)) return 'companies.update';
+  if (/^\/admin\/firma\/[^/]+$/.test(pathname)) return 'companies.read';
+
+  if (pathname === '/admin/immobilie' || pathname === '/admin/objekte') return 'properties.create';
+  if (/^\/admin\/immobilie\/[^/]+\/bearbeiten$/.test(pathname)) return 'properties.update';
+  if (/^\/admin\/immobilie\/[^/]+$/.test(pathname)) return 'properties.read';
+  if (/^\/admin\/einheit\/[^/]+\/[^/]+$/.test(pathname)) return 'properties.read';
+  if (/^\/admin\/zaehler\/[^/]+\/[^/]+$/.test(pathname)) return 'properties.meters';
+
+  if (pathname === '/admin/mieter') return 'tenants.create';
+  if (/^\/admin\/mieter\/[^/]+\/bearbeiten$/.test(pathname)) return 'tenants.update';
+  if (/^\/admin\/mieter\/[^/]+$/.test(pathname)) return 'tenants.read';
+
+  if (pathname === '/admin/personen' || pathname === '/admin/kontakte') return 'contacts.create';
+  if (/^\/admin\/personen\/[^/]+\/bearbeiten$/.test(pathname)) return 'contacts.update';
+  if (/^\/admin\/personen\/[^/]+$/.test(pathname)) return 'contacts.read';
+
+  return null;
+}
+
+function resolveSettingsSidebarTitle(settingsTab: string) {
+  if (settingsTab === 'profil') return 'Mein Profil';
+  if (settingsTab === 'mitarbeiter') return 'Mitarbeiter';
+  if (settingsTab === 'ki') return 'KI';
+  if (settingsTab === 'brief') return 'Vorlagen';
+  if (settingsTab === 'signaturen') return 'Signaturen';
+  return 'Postfach-Zugang';
+}
+
+function resolveAdminSidebarTitle(
+  pathname: string,
+  settingsTab: string,
+  mailboxViewLabel: 'Archiv' | 'Posteingang',
+  tenantMailboxMode: boolean
+) {
+  if (pathname === '/admin') return 'Dashboard';
+  if (pathname === '/admin/einstellungen') return resolveSettingsSidebarTitle(settingsTab);
+  if (pathname.startsWith('/admin/einstellungen/mitarbeiter/')) return 'Mitarbeiter';
+  if (pathname === '/admin/nachrichten' || pathname.startsWith('/admin/nachrichten/') || tenantMailboxMode) {
+    return mailboxViewLabel;
+  }
+  if (pathname === '/admin/firma' || pathname === '/admin/firmen' || pathname.startsWith('/admin/firma/')) {
+    return 'Firma';
+  }
+  if (
+    pathname === '/admin/immobilie' ||
+    pathname === '/admin/objekte' ||
+    pathname.startsWith('/admin/immobilie/') ||
+    pathname.startsWith('/admin/einheit/') ||
+    pathname.startsWith('/admin/zaehler/')
+  ) {
+    return 'Immobilie';
+  }
+  if (pathname === '/admin/mieter' || pathname.startsWith('/admin/mieter/')) return 'Mieter';
+  if (
+    pathname === '/admin/personen' ||
+    pathname === '/admin/kontakte' ||
+    pathname.startsWith('/admin/personen/')
+  ) {
+    return 'Dienstleister';
+  }
+  return 'Verwaltungsbereich';
+}
+
 export default function ProtectedAreaLayout({
   children,
   navSections,
@@ -162,9 +264,31 @@ export default function ProtectedAreaLayout({
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [portalSidebarName, setPortalSidebarName] = useState('');
   const settingsMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibleNavSections = useMemo(
+    () =>
+      navSections
+        .map((section) => ({
+          ...section,
+          links:
+            requiredRole === 'admin'
+              ? section.links.filter(
+                  (link) => !link.permissionKey || hasAdminPermission(profile, link.permissionKey)
+                )
+              : section.links,
+        }))
+        .filter((section) => section.links.length > 0),
+    [navSections, profile, requiredRole]
+  );
+  const visibleSettingsLinks = useMemo(
+    () =>
+      requiredRole === 'admin'
+        ? settingsLinks.filter((link) => hasAdminPermission(profile, link.permissionKey))
+        : [],
+    [profile, requiredRole]
+  );
   const navHrefs = useMemo(
-    () => navSections.flatMap((section) => section.links.map((link) => link.href)),
-    [navSections]
+    () => visibleNavSections.flatMap((section) => section.links.map((link) => link.href)),
+    [visibleNavSections]
   );
   const activeNavHref = useMemo(() => resolveActiveNavHref(pathname, navHrefs), [navHrefs, pathname]);
   const headerContent = useMemo(() => getHeaderContent(pathname, title), [pathname, title]);
@@ -172,6 +296,22 @@ export default function ProtectedAreaLayout({
   const isTenantOverviewRoute = pathname === '/admin/mieter';
   const isTenantDetailRoute = /^\/admin\/mieter\/[^/]+$/.test(pathname);
   const isBriefSettingsRoute = pathname === '/admin/einstellungen' && settingsTab === 'brief';
+  const requiredAdminPermission = useMemo(
+    () =>
+      requiredRole === 'admin'
+        ? resolveRequiredAdminPermission(pathname, settingsTab)
+        : null,
+    [pathname, requiredRole, settingsTab]
+  );
+  const canViewCurrentAdminPage =
+    requiredRole !== 'admin' ||
+    !requiredAdminPermission ||
+    hasAdminPermission(profile, requiredAdminPermission);
+  const canReadCompanies = requiredRole !== 'admin' || hasAdminPermission(profile, 'companies.read');
+  const canReadProperties = requiredRole !== 'admin' || hasAdminPermission(profile, 'properties.read');
+  const canReadTenants = requiredRole !== 'admin' || hasAdminPermission(profile, 'tenants.read');
+  const canViewInventoryTree =
+    requiredRole === 'admin' && (canReadCompanies || canReadProperties || canReadTenants);
   const isCompactHeaderRoute = isMessageRoute || isTenantOverviewRoute || isTenantDetailRoute || isBriefSettingsRoute;
   const propertyDetailId = useMemo(() => {
     const match = pathname.match(/^\/admin\/immobilie\/([^/]+)$/);
@@ -198,21 +338,15 @@ export default function ProtectedAreaLayout({
     return currentUnit ? unitDisplayLabel(currentUnit) : '';
   }, [properties, unitRouteMatch]);
   const sidebarTitle = unitRouteMatch
-    ? 'Einheit'
+    ? resolveAdminSidebarTitle(pathname, settingsTab, mailboxViewLabel, tenantMailboxMode)
     : propertyDetailId
-      ? 'Objekt'
+      ? resolveAdminSidebarTitle(pathname, settingsTab, mailboxViewLabel, tenantMailboxMode)
     : requiredRole === 'portal'
       ? cleanText(portalSidebarName) ||
         cleanText(profile?.displayName) ||
         cleanText(profile?.username) ||
         title
-    : activeNavHref === '/admin/nachrichten' || tenantMailboxMode
-        ? mailboxViewLabel
-        : activeNavHref === '/admin/mieter'
-          ? 'Mieter'
-        : isBriefSettingsRoute
-          ? 'Brief'
-        : title;
+    : resolveAdminSidebarTitle(pathname, settingsTab, mailboxViewLabel, tenantMailboxMode);
   const resolvedHeaderContent = isTenantOverviewRoute
     ? {
         description: '',
@@ -262,11 +396,26 @@ export default function ProtectedAreaLayout({
   }, [pathname]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    const currentSearchParams = new URLSearchParams(window.location.search);
-    setSettingsTab(currentSearchParams.get('tab') ?? '');
+    if (typeof window === 'undefined') return;
+
+    const applySettingsTabFromLocation = () => {
+      setSettingsTab(new URLSearchParams(window.location.search).get('tab') ?? '');
+    };
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest('a') : null;
+      if (!(target instanceof HTMLAnchorElement)) return;
+      if (!target.href.includes('/admin/einstellungen')) return;
+      window.setTimeout(applySettingsTabFromLocation, 0);
+    };
+
+    applySettingsTabFromLocation();
+    window.addEventListener('popstate', applySettingsTabFromLocation);
+    document.addEventListener('click', handleDocumentClick);
+
+    return () => {
+      window.removeEventListener('popstate', applySettingsTabFromLocation);
+      document.removeEventListener('click', handleDocumentClick);
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -487,6 +636,10 @@ export default function ProtectedAreaLayout({
   }
 
   const companyTree = useMemo(() => {
+    if (requiredRole === 'admin' && !canReadCompanies && !canReadProperties && !canReadTenants) {
+      return [];
+    }
+
     const searchText = search.trim().toLowerCase();
     const sortedCompanies = [...companies].sort((left, right) =>
       cleanText(left.data.name).localeCompare(cleanText(right.data.name), 'de')
@@ -501,7 +654,7 @@ export default function ProtectedAreaLayout({
           )
           .map((property) => {
             const propertyTenants = tenants
-              .filter((tenant) => cleanText(tenant.data.propertyId) === property.id)
+              .filter((tenant) => canReadTenants && cleanText(tenant.data.propertyId) === property.id)
               .sort((left, right) =>
                 cleanText(right.data.moveInDate).localeCompare(cleanText(left.data.moveInDate), 'de')
               );
@@ -544,9 +697,10 @@ export default function ProtectedAreaLayout({
             return {
               id: property.id,
               label: cleanText(property.data.name) || property.id,
-              units: mappedUnits,
+              units: canReadProperties || canReadTenants ? mappedUnits : [],
             };
-          });
+          })
+          .filter(() => canReadProperties || canReadTenants);
 
         if (!searchText) {
           return {
@@ -613,62 +767,79 @@ export default function ProtectedAreaLayout({
         }[];
       }[];
     }[];
-  }, [companies, properties, search, tenants]);
+  }, [
+    canReadCompanies,
+    canReadProperties,
+    canReadTenants,
+    companies,
+    properties,
+    requiredRole,
+    search,
+    tenants,
+  ]);
 
   const searchResults = useMemo(() => {
     const searchText = search.trim().toLowerCase();
     if (!searchText) return [];
 
-    const companyResults: SearchResult[] = companies
-      .filter((company) => cleanText(company.data.name).toLowerCase().includes(searchText))
-      .map((company) => ({
-        companyId: company.id,
-        label: cleanText(company.data.name) || company.id,
-        type: 'company',
-      }));
+    const companyResults: SearchResult[] = canReadCompanies
+      ? companies
+          .filter((company) => cleanText(company.data.name).toLowerCase().includes(searchText))
+          .map((company) => ({
+            companyId: company.id,
+            label: cleanText(company.data.name) || company.id,
+            type: 'company',
+          }))
+      : [];
 
-    const propertyResults: SearchResult[] = properties
-      .filter((property) => cleanText(property.data.name).toLowerCase().includes(searchText))
-      .map((property) => ({
-        companyId: cleanText(property.data.ownerId),
-        label: cleanText(property.data.name) || property.id,
-        propertyId: property.id,
-        type: 'property',
-      }));
+    const propertyResults: SearchResult[] = canReadProperties
+      ? properties
+          .filter((property) => cleanText(property.data.name).toLowerCase().includes(searchText))
+          .map((property) => ({
+            companyId: cleanText(property.data.ownerId),
+            label: cleanText(property.data.name) || property.id,
+            propertyId: property.id,
+            type: 'property',
+          }))
+      : [];
 
-    const unitResults: SearchResult[] = properties.flatMap((property) => {
-      const units = Array.isArray(property.data.units) ? property.data.units : [];
-      return units
-        .filter((unit) => unit && typeof unit === 'object')
-        .map((unit) => ({
-          companyId: cleanText(property.data.ownerId),
-          label: unitDisplayLabel(unit),
-          propertyId: property.id,
-          type: 'unit' as const,
-          unitId: cleanText(unit.id),
-        }))
-        .filter((unit) => unit.label.toLowerCase().includes(searchText));
-    });
+    const unitResults: SearchResult[] = canReadProperties
+      ? properties.flatMap((property) => {
+          const units = Array.isArray(property.data.units) ? property.data.units : [];
+          return units
+            .filter((unit) => unit && typeof unit === 'object')
+            .map((unit) => ({
+              companyId: cleanText(property.data.ownerId),
+              label: unitDisplayLabel(unit),
+              propertyId: property.id,
+              type: 'unit' as const,
+              unitId: cleanText(unit.id),
+            }))
+            .filter((unit) => unit.label.toLowerCase().includes(searchText));
+        })
+      : [];
 
-    const tenantResults: SearchResult[] = tenants
-      .map((tenant) => {
-        const propertyId = cleanText(tenant.data.propertyId);
-        const relatedProperty = properties.find((property) => property.id === propertyId);
-        return {
-          companyId: cleanText(relatedProperty?.data.ownerId),
-          label: [cleanText(tenant.data.lastName), cleanText(tenant.data.firstName)]
-            .filter(Boolean)
-            .join(', '),
-          propertyId,
-          tenantId: tenant.id,
-          type: 'tenant' as const,
-          unitId: cleanText(tenant.data.unitId),
-        };
-      })
-      .filter((tenant) => tenant.label.toLowerCase().includes(searchText));
+    const tenantResults: SearchResult[] = canReadTenants
+      ? tenants
+          .map((tenant) => {
+            const propertyId = cleanText(tenant.data.propertyId);
+            const relatedProperty = properties.find((property) => property.id === propertyId);
+            return {
+              companyId: cleanText(relatedProperty?.data.ownerId),
+              label: [cleanText(tenant.data.lastName), cleanText(tenant.data.firstName)]
+                .filter(Boolean)
+                .join(', '),
+              propertyId,
+              tenantId: tenant.id,
+              type: 'tenant' as const,
+              unitId: cleanText(tenant.data.unitId),
+            };
+          })
+          .filter((tenant) => tenant.label.toLowerCase().includes(searchText))
+      : [];
 
     return [...companyResults, ...propertyResults, ...unitResults, ...tenantResults].slice(0, 12);
-  }, [companies, properties, search, tenants]);
+  }, [canReadCompanies, canReadProperties, canReadTenants, companies, properties, search, tenants]);
 
   function revealSearchResult(result: SearchResult) {
     if (result.type === 'company' && result.companyId) {
@@ -735,44 +906,21 @@ export default function ProtectedAreaLayout({
   }
 
   function renderSettingsMenu() {
+    if (visibleSettingsLinks.length === 0) return null;
+
     return (
       <div className="absolute -left-28 right-3 top-full pt-3">
         <div className="ml-auto w-72 rounded-[22px] border border-stone-200 bg-white p-3 shadow-[0_24px_60px_-34px_rgba(148,119,77,0.35)]">
-          <Link
-            className="block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
-            href="/admin/einstellungen"
-            onClick={() => setSettingsMenuOpen(false)}
-          >
-            E-Mail-Postfach
-          </Link>
-          <Link
-            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
-            href="/admin/einstellungen?tab=ki"
-            onClick={() => setSettingsMenuOpen(false)}
-          >
-            KI-Prompt
-          </Link>
-          <Link
-            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
-            href="/admin/einstellungen?tab=portal"
-            onClick={() => setSettingsMenuOpen(false)}
-          >
-            Einladungsmail
-          </Link>
-          <Link
-            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
-            href="/admin/einstellungen?tab=brief"
-            onClick={() => setSettingsMenuOpen(false)}
-          >
-            Brief
-          </Link>
-          <Link
-            className="mt-1 block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900"
-            href="/admin/einstellungen?tab=signaturen"
-            onClick={() => setSettingsMenuOpen(false)}
-          >
-            Signaturen
-          </Link>
+          {visibleSettingsLinks.map((link, index) => (
+            <Link
+              className={`${index === 0 ? '' : 'mt-1 '}block rounded-[16px] px-4 py-3 text-sm text-slate-700 transition hover:bg-amber-50/70 hover:text-amber-900`}
+              href={link.href}
+              key={link.href}
+              onClick={() => setSettingsMenuOpen(false)}
+            >
+              {link.label}
+            </Link>
+          ))}
         </div>
       </div>
     );
@@ -802,7 +950,7 @@ export default function ProtectedAreaLayout({
           <div className="flex h-full flex-col justify-between">
             <div>
               <div className="-mt-5 rounded-[26px] border border-stone-200/80 bg-white/72 px-4 py-3 shadow-[0_20px_40px_-34px_rgba(148,119,77,0.4)]">
-                {requiredRole === 'admin' ? (
+                {canViewInventoryTree ? (
                   <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
                     Interner Bereich
                   </p>
@@ -854,7 +1002,7 @@ export default function ProtectedAreaLayout({
                 </div>
 
                 <nav className="space-y-2">
-                  {navSections[0]?.links.map((link) => {
+                  {visibleNavSections[0]?.links.map((link) => {
                     const isActive = activeNavHref === link.href;
 
                     return (
@@ -1043,7 +1191,7 @@ export default function ProtectedAreaLayout({
               </div>
 
               <nav className="mt-4 space-y-4">
-                {navSections.slice(1).map((section) => (
+                {visibleNavSections.slice(1).map((section) => (
                   <div key={section.label ?? section.links.map((link) => link.href).join('|')}>
                     {section.label ? (
                       <button
@@ -1131,7 +1279,7 @@ export default function ProtectedAreaLayout({
                   <p className="mt-3 text-sm text-emerald-700">{mailSyncNote}</p>
                 ) : null}
               </div>
-              {requiredRole === 'admin' ? (
+              {requiredRole === 'admin' && visibleSettingsLinks.length > 0 ? (
                 <div
                   className="relative z-40"
                   onMouseEnter={openSettingsMenu}
@@ -1149,7 +1297,7 @@ export default function ProtectedAreaLayout({
                 isTenantDetailRoute ? 'pt-2 mb-0' : 'pt-3 -mb-11'
               }`}
             >
-              {requiredRole === 'admin' ? (
+              {requiredRole === 'admin' && visibleSettingsLinks.length > 0 ? (
                 <div
                   className="pointer-events-auto relative z-40"
                   onMouseEnter={openSettingsMenu}
@@ -1166,7 +1314,20 @@ export default function ProtectedAreaLayout({
               isTenantDetailRoute ? 'pt-0 pb-2' : isCompactHeaderRoute ? 'py-2' : 'py-8'
             } xl:px-10`}
           >
-            {children}
+            {canViewCurrentAdminPage ? (
+              children
+            ) : (
+              <section className="rounded-[28px] border border-stone-200 bg-white p-8 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
+                  Kein Zugriff
+                </p>
+                <h2 className="mt-2 text-3xl text-slate-950">Dieser Bereich ist nicht freigegeben.</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                  Ein Super Admin kann den Zugriff unter Einstellungen / Mitarbeiter beim jeweiligen
+                  Mitarbeiter aktivieren.
+                </p>
+              </section>
+            )}
           </main>
         </div>
       </div>

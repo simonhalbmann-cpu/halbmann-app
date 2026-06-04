@@ -12,11 +12,17 @@ import {
   updateDoc,
   type DocumentData,
 } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
+import {
+  cleanStoredDocuments,
+  sanitizeStorageFileName,
+  type StoredDocumentEntry,
+} from '../../lib/tenantDocuments';
 
 type AdminRecord = {
   data: DocumentData;
@@ -42,11 +48,14 @@ type HeatingEntry = {
   buildYear: string;
   id: string;
   lastMaintenance: string;
+  maintenanceReminderMonths: string;
   type: string;
 };
 
 type UnitForm = {
   areaSqm: string;
+  basementPosition: string;
+  documents: StoredDocumentEntry[];
   floor: string;
   heatingDraftType: string;
   heatingEntries: HeatingEntry[];
@@ -54,6 +63,7 @@ type UnitForm = {
   meterDraftType: string;
   meters: MeterEntry[];
   notes: string;
+  mailboxPosition: string;
   rooms: string;
   section: string;
   tenantId: string;
@@ -64,14 +74,19 @@ type UnitForm = {
 };
 
 type PropertyFormState = {
+  basementPosition: string;
   billingServiceId: string;
+  carpenterServiceId: string;
+  chimneySweepServiceId: string;
   city: string;
   cleaningServiceId: string;
   country: string;
   hasCentralHeating: string;
   electricianId: string;
+  gardeningServiceId: string;
   gutterCleaningId: string;
   gutterCleaningLastMaintenance: string;
+  gutterCleaningReminderMonths: string;
   heatingDraftType: string;
   heatingServiceId: string;
   heatingEntries: HeatingEntry[];
@@ -79,12 +94,17 @@ type PropertyFormState = {
   initialYieldPercent: string;
   janitorId: string;
   landRegisterReference: string;
+  locksmithServiceId: string;
   meterDraftType: string;
   meters: MeterEntry[];
   name: string;
   notes: string;
+  mailboxPosition: string;
+  otherServiceId: string;
   ownerId: string;
   ownerName: string;
+  painterServiceId: string;
+  propertyDocuments: StoredDocumentEntry[];
   ownershipSince: string;
   ownershipType: string;
   plumbingServiceId: string;
@@ -94,10 +114,12 @@ type PropertyFormState = {
   purchasePrice: string;
   roofMaintenanceId: string;
   roofMaintenanceLastMaintenance: string;
+  roofMaintenanceReminderMonths: string;
   street: string;
   usageType: string;
   wasteCollectionId: string;
   wegManagerId: string;
+  windowDoorServiceId: string;
   winterServiceId: string;
   yearBuilt: string;
 };
@@ -184,27 +206,41 @@ const unitPositionOptions = [
 const unitTypeOptions = ['Wohnung', 'Gewerbe', 'Stellplatz', 'Lager', 'Keller', 'Sonstige Einheit'];
 
 const servicePartnerFields = [
-  { idField: 'wasteCollectionId', label: 'Müllabfuhr' },
   { idField: 'billingServiceId', label: 'Abrechnungsunternehmen' },
-  { idField: 'cleaningServiceId', label: 'Hausreinigung' },
+  { idField: 'roofMaintenanceId', label: 'Dachdecker / Dachwartung' },
   { idField: 'electricianId', label: 'Elektriker' },
-  { idField: 'heatingServiceId', label: 'Heizungsdienst' },
-  { idField: 'plumbingServiceId', label: 'Sanitär / Rohrreinigung' },
+  { idField: 'windowDoorServiceId', label: 'Fenster / Türen' },
+  { idField: 'gardeningServiceId', label: 'Gartenpflege' },
   { idField: 'janitorId', label: 'Hausmeister' },
-  { idField: 'winterServiceId', label: 'Winterdienst' },
-  { idField: 'roofMaintenanceId', label: 'Dachwartung' },
+  { idField: 'cleaningServiceId', label: 'Hausreinigung' },
+  { idField: 'heatingServiceId', label: 'Heizung' },
+  { idField: 'painterServiceId', label: 'Maler' },
+  { idField: 'wasteCollectionId', label: 'Müllabfuhr' },
   { idField: 'gutterCleaningId', label: 'Regenrinnenreinigung' },
+  { idField: 'plumbingServiceId', label: 'Rohrreinigung / Sanitär' },
+  { idField: 'locksmithServiceId', label: 'Schlüsseldienst' },
+  { idField: 'chimneySweepServiceId', label: 'Schornsteinfeger' },
+  { idField: 'otherServiceId', label: 'Sonstiges' },
+  { idField: 'carpenterServiceId', label: 'Tischler' },
+  { idField: 'winterServiceId', label: 'Winterdienst' },
 ] as const;
 
+type ServiceFieldId = (typeof servicePartnerFields)[number]['idField'];
+
 const defaultFormState = (): PropertyFormState => ({
+  basementPosition: '',
   billingServiceId: '',
+  carpenterServiceId: '',
+  chimneySweepServiceId: '',
   city: '',
   cleaningServiceId: '',
   country: 'Deutschland',
   hasCentralHeating: 'yes',
   electricianId: '',
+  gardeningServiceId: '',
   gutterCleaningId: '',
   gutterCleaningLastMaintenance: '',
+  gutterCleaningReminderMonths: '11',
   heatingDraftType: '',
   heatingServiceId: '',
   heatingEntries: [],
@@ -212,12 +248,17 @@ const defaultFormState = (): PropertyFormState => ({
   initialYieldPercent: '',
   janitorId: '',
   landRegisterReference: '',
+  locksmithServiceId: '',
   meterDraftType: '',
   meters: [],
   name: '',
   notes: '',
+  mailboxPosition: '',
   ownerId: '',
   ownerName: '',
+  otherServiceId: '',
+  painterServiceId: '',
+  propertyDocuments: [],
   ownershipSince: '',
   ownershipType: '',
   plumbingServiceId: '',
@@ -227,22 +268,27 @@ const defaultFormState = (): PropertyFormState => ({
   purchasePrice: '',
   roofMaintenanceId: '',
   roofMaintenanceLastMaintenance: '',
+  roofMaintenanceReminderMonths: '11',
   street: '',
   usageType: '',
   wasteCollectionId: '',
   wegManagerId: '',
+  windowDoorServiceId: '',
   winterServiceId: '',
   yearBuilt: '',
 });
 
 const createUnit = (): UnitForm => ({
   areaSqm: '',
+  basementPosition: '',
+  documents: [],
   floor: '',
   heatingDraftType: '',
   heatingEntries: [],
   id: crypto.randomUUID(),
   meterDraftType: '',
   meters: [],
+  mailboxPosition: '',
   notes: '',
   rooms: '',
   section: '',
@@ -281,6 +327,7 @@ const mapHeatingEntry = (entry: unknown): HeatingEntry | null => {
     buildYear: String((entry as DocumentData).buildYear ?? ''),
     id: String((entry as DocumentData).id ?? crypto.randomUUID()),
     lastMaintenance: String((entry as DocumentData).lastMaintenance ?? ''),
+    maintenanceReminderMonths: String((entry as DocumentData).maintenanceReminderMonths ?? '11'),
     type: String((entry as DocumentData).type ?? ''),
   };
 };
@@ -289,6 +336,8 @@ const mapUnit = (unit: unknown): UnitForm | null => {
   if (!unit || typeof unit !== 'object') return null;
   return {
     areaSqm: String((unit as DocumentData).areaSqm ?? ''),
+    basementPosition: String((unit as DocumentData).basementPosition ?? ''),
+    documents: cleanStoredDocuments((unit as DocumentData).documents),
     floor: String((unit as DocumentData).floor ?? ''),
     heatingDraftType: '',
     heatingEntries: Array.isArray((unit as DocumentData).heatingEntries)
@@ -303,6 +352,7 @@ const mapUnit = (unit: unknown): UnitForm | null => {
           .map(mapMeterEntry)
           .filter((entry): entry is MeterEntry => Boolean(entry))
       : [],
+    mailboxPosition: String((unit as DocumentData).mailboxPosition ?? ''),
     notes: String((unit as DocumentData).notes ?? ''),
     rooms: String((unit as DocumentData).rooms ?? ''),
     section: String((unit as DocumentData).section ?? ''),
@@ -315,14 +365,19 @@ const mapUnit = (unit: unknown): UnitForm | null => {
 };
 
 const mapPropertyDataToFormState = (data: DocumentData): PropertyFormState => ({
+  basementPosition: String(data.basementPosition ?? ''),
   billingServiceId: String(data.billingServiceId ?? ''),
+  carpenterServiceId: String(data.carpenterServiceId ?? ''),
+  chimneySweepServiceId: String(data.chimneySweepServiceId ?? ''),
   city: String(data.city ?? ''),
   cleaningServiceId: String(data.cleaningServiceId ?? ''),
   country: String(data.country ?? 'Deutschland'),
   hasCentralHeating: String(data.hasCentralHeating ?? 'yes'),
   electricianId: String(data.electricianId ?? ''),
+  gardeningServiceId: String(data.gardeningServiceId ?? ''),
   gutterCleaningId: String(data.gutterCleaningId ?? ''),
   gutterCleaningLastMaintenance: String(data.gutterCleaningLastMaintenance ?? ''),
+  gutterCleaningReminderMonths: String(data.gutterCleaningReminderMonths ?? '11'),
   heatingDraftType: '',
   heatingServiceId: String(data.heatingServiceId ?? ''),
   heatingEntries: Array.isArray(data.heatingEntries)
@@ -335,6 +390,7 @@ const mapPropertyDataToFormState = (data: DocumentData): PropertyFormState => ({
             mapHeatingEntry({
               buildYear: data.heatingBuildYear ?? '',
               lastMaintenance: data.lastHeatingMaintenance ?? '',
+              maintenanceReminderMonths: data.heatingMaintenanceReminderMonths ?? '11',
               type: String(entry),
             })
           )
@@ -344,6 +400,7 @@ const mapPropertyDataToFormState = (data: DocumentData): PropertyFormState => ({
   initialYieldPercent: String(data.initialYieldPercent ?? ''),
   janitorId: String(data.janitorId ?? ''),
   landRegisterReference: String(data.landRegisterReference ?? ''),
+  locksmithServiceId: String(data.locksmithServiceId ?? ''),
   meterDraftType: '',
   meters: Array.isArray(data.meters)
     ? data.meters
@@ -352,8 +409,12 @@ const mapPropertyDataToFormState = (data: DocumentData): PropertyFormState => ({
     : [],
   name: String(data.name ?? ''),
   notes: String(data.notes ?? ''),
+  mailboxPosition: String(data.mailboxPosition ?? ''),
   ownerId: String(data.ownerId ?? ''),
   ownerName: String(data.ownerName ?? ''),
+  otherServiceId: String(data.otherServiceId ?? ''),
+  painterServiceId: String(data.painterServiceId ?? ''),
+  propertyDocuments: cleanStoredDocuments(data.propertyDocuments),
   ownershipSince: String(data.ownershipSince ?? ''),
   ownershipType: String(data.ownershipType ?? ''),
   plumbingServiceId: String(data.plumbingServiceId ?? ''),
@@ -363,15 +424,24 @@ const mapPropertyDataToFormState = (data: DocumentData): PropertyFormState => ({
   purchasePrice: String(data.purchasePrice ?? ''),
   roofMaintenanceId: String(data.roofMaintenanceId ?? ''),
   roofMaintenanceLastMaintenance: String(data.roofMaintenanceLastMaintenance ?? ''),
+  roofMaintenanceReminderMonths: String(data.roofMaintenanceReminderMonths ?? '11'),
   street: String(data.street ?? ''),
   usageType: String(data.usageType ?? ''),
   wasteCollectionId: String(data.wasteCollectionId ?? ''),
   wegManagerId: String(data.wegManagerId ?? ''),
+  windowDoorServiceId: String(data.windowDoorServiceId ?? ''),
   winterServiceId: String(data.winterServiceId ?? ''),
   yearBuilt: String(data.yearBuilt ?? ''),
 });
 
 const cleanSpaces = (value: string) => value.replace(/\s+/g, ' ').trim();
+const cleanReminderMonths = (value: string) => {
+  const digits = value.replace(/\D/g, '').slice(0, 2);
+  if (!digits) return '';
+  const numeric = Number.parseInt(digits, 10);
+  if (!Number.isFinite(numeric)) return '';
+  return String(Math.min(Math.max(numeric, 1), 60));
+};
 const titleCase = (value: string) =>
   cleanSpaces(value)
     .split(' ')
@@ -424,6 +494,7 @@ const buildHeatingEntry = (heatingType: string) =>
         buildYear: '',
         id: crypto.randomUUID(),
         lastMaintenance: '',
+        maintenanceReminderMonths: '11',
         type: heatingType,
       }
     : null;
@@ -453,6 +524,9 @@ export default function PropertyAdminManager({
   const [tenants, setTenants] = useState<AdminRecord[]>([]);
   const [form, setForm] = useState<PropertyFormState>(() => defaultFormState());
   const [units, setUnits] = useState<UnitForm[]>([]);
+  const [pendingPropertyDocumentFiles, setPendingPropertyDocumentFiles] = useState<File[]>([]);
+  const [pendingUnitDocumentFiles, setPendingUnitDocumentFiles] = useState<Record<string, File[]>>({});
+  const [selectedServiceField, setSelectedServiceField] = useState<ServiceFieldId>('billingServiceId');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isLoadingInitialValues, setIsLoadingInitialValues] = useState(
@@ -571,6 +645,43 @@ export default function PropertyAdminManager({
     [people]
   );
 
+  const serviceOptions = useMemo(
+    () =>
+      [
+        ...companies.map((record) => ({
+          label: String(record.data.name ?? record.data.companyName ?? record.id),
+          type: 'Firma',
+          value: `company:${record.id}`,
+        })),
+        ...people.map((record) => ({
+          label:
+            [record.data.lastName, record.data.firstName].filter(Boolean).join(', ') ||
+            String(record.data.companyName ?? record.data.name ?? record.id),
+          type: 'Person',
+          value: record.id,
+        })),
+      ].sort((left, right) => left.label.localeCompare(right.label, 'de')),
+    [companies, people]
+  );
+
+  const assignedServices = useMemo(
+    () =>
+      servicePartnerFields
+        .map((field) => {
+          const value = String(form[field.idField] ?? '').trim();
+          const option =
+            serviceOptions.find((entry) => entry.value === value) ||
+            serviceOptions.find((entry) => entry.value === `company:${value}`);
+          return {
+            field,
+            label: option?.label || value,
+            value,
+          };
+        })
+        .filter((entry) => entry.value),
+    [form, serviceOptions]
+  );
+
   const tenantOptions = useMemo(
     () =>
       tenants
@@ -612,6 +723,74 @@ export default function PropertyAdminManager({
 
   function updateFormField<K extends keyof PropertyFormState>(key: K, value: PropertyFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function handlePropertyDocumentSelection(files: FileList | null) {
+    setPendingPropertyDocumentFiles(files ? Array.from(files) : []);
+  }
+
+  function handleUnitDocumentSelection(unitId: string, files: FileList | null) {
+    setPendingUnitDocumentFiles((current) => ({
+      ...current,
+      [unitId]: files ? Array.from(files) : [],
+    }));
+  }
+
+  async function uploadDocumentFiles(
+    files: File[],
+    storageBasePath: string
+  ): Promise<StoredDocumentEntry[]> {
+    const uploadedDocuments: StoredDocumentEntry[] = [];
+
+    for (const file of files) {
+      const safeName = sanitizeStorageFileName(file.name);
+      const storagePath = `${storageBasePath}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, file, {
+        contentType: file.type || 'application/octet-stream',
+      });
+
+      uploadedDocuments.push({
+        contentType: file.type || 'application/octet-stream',
+        name: file.name,
+        path: storagePath,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedByEmail: user?.email ?? '',
+        url: await getDownloadURL(storageRef),
+      });
+    }
+
+    return uploadedDocuments;
+  }
+
+  async function appendPendingDocumentsToProperty(propertyId: string, sourceUnits: UnitForm[]) {
+    const uploadedPropertyDocuments = await uploadDocumentFiles(
+      pendingPropertyDocumentFiles,
+      `property-documents/${propertyId}/object`
+    );
+
+    const nextUnits: UnitForm[] = [];
+    let uploadedUnitDocumentCount = 0;
+
+    for (const unit of sourceUnits) {
+      const files = pendingUnitDocumentFiles[unit.id] ?? [];
+      const uploadedUnitDocuments = await uploadDocumentFiles(
+        files,
+        `property-documents/${propertyId}/units/${unit.id}`
+      );
+      uploadedUnitDocumentCount += uploadedUnitDocuments.length;
+      nextUnits.push({
+        ...unit,
+        documents: [...unit.documents, ...uploadedUnitDocuments],
+      });
+    }
+
+    return {
+      documentCount: uploadedPropertyDocuments.length + uploadedUnitDocumentCount,
+      propertyDocuments: [...form.propertyDocuments, ...uploadedPropertyDocuments],
+      units: nextUnits,
+    };
   }
 
   function updateTextField<K extends keyof Pick<PropertyFormState, 'name' | 'street' | 'city' | 'country' | 'houseNumber' | 'postalCode' | 'yearBuilt'>>(
@@ -690,11 +869,25 @@ export default function PropertyAdminManager({
     }));
   }
 
-  function updateHeatingEntry(heatingId: string, field: keyof Pick<HeatingEntry, 'buildYear' | 'lastMaintenance'>, value: string) {
+  function updateHeatingEntry(
+    heatingId: string,
+    field: keyof Pick<HeatingEntry, 'buildYear' | 'lastMaintenance' | 'maintenanceReminderMonths'>,
+    value: string
+  ) {
     setForm((current) => ({
       ...current,
       heatingEntries: current.heatingEntries.map((entry) =>
-        entry.id === heatingId ? { ...entry, [field]: field === 'buildYear' ? cleanSpaces(value) : value } : entry
+        entry.id === heatingId
+          ? {
+              ...entry,
+              [field]:
+                field === 'buildYear'
+                  ? cleanSpaces(value)
+                  : field === 'maintenanceReminderMonths'
+                    ? cleanReminderMonths(value)
+                    : value,
+            }
+          : entry
       ),
     }));
   }
@@ -729,7 +922,7 @@ export default function PropertyAdminManager({
   function updateUnitHeating(
     unitId: string,
     heatingId: string,
-    field: keyof Pick<HeatingEntry, 'buildYear' | 'lastMaintenance'>,
+    field: keyof Pick<HeatingEntry, 'buildYear' | 'lastMaintenance' | 'maintenanceReminderMonths'>,
     value: string
   ) {
     setUnits((current) =>
@@ -739,7 +932,15 @@ export default function PropertyAdminManager({
               ...unit,
               heatingEntries: unit.heatingEntries.map((entry) =>
                 entry.id === heatingId
-                  ? { ...entry, [field]: field === 'buildYear' ? cleanSpaces(value) : value }
+                  ? {
+                      ...entry,
+                      [field]:
+                        field === 'buildYear'
+                          ? cleanSpaces(value)
+                          : field === 'maintenanceReminderMonths'
+                            ? cleanReminderMonths(value)
+                            : value,
+                    }
                   : entry
               ),
             }
@@ -775,6 +976,11 @@ export default function PropertyAdminManager({
 
   function removeUnit(unitId: string) {
     setUnits((current) => current.filter((unit) => unit.id !== unitId));
+    setPendingUnitDocumentFiles((current) => {
+      const next = { ...current };
+      delete next[unitId];
+      return next;
+    });
   }
 
   function addUnitMeter(unitId: string) {
@@ -833,6 +1039,8 @@ export default function PropertyAdminManager({
   function resetForm() {
     setForm(defaultFormState());
     setUnits([]);
+    setPendingPropertyDocumentFiles([]);
+    setPendingUnitDocumentFiles({});
   }
 
   function handleDelete(propertyId: string) {
@@ -893,23 +1101,51 @@ export default function PropertyAdminManager({
         };
 
         if (editMode && currentDocumentId) {
+          const documentResult = await appendPendingDocumentsToProperty(currentDocumentId, units);
           await updateDoc(doc(db, 'properties', currentDocumentId), {
             ...payload,
+            propertyDocuments: documentResult.propertyDocuments,
+            units: documentResult.units,
             updatedByEmail: user.email ?? null,
             updatedByUid: user.uid,
           });
-          setMessage('Immobilie wurde aktualisiert.');
+          setPendingPropertyDocumentFiles([]);
+          setPendingUnitDocumentFiles({});
+          setForm((current) => ({
+            ...current,
+            propertyDocuments: documentResult.propertyDocuments,
+          }));
+          setUnits(documentResult.units);
+          setMessage(
+            documentResult.documentCount > 0
+              ? 'Immobilie und Dokumente wurden aktualisiert.'
+              : 'Immobilie wurde aktualisiert.'
+          );
           if (redirectPathAfterSave) {
             router.push(redirectPathAfterSave);
           }
         } else {
-          await addDoc(collection(db, 'properties'), {
+          const propertyRef = await addDoc(collection(db, 'properties'), {
             ...payload,
+            propertyDocuments: [],
+            units: units.map((unit) => ({ ...unit, documents: [] })),
             createdAt: serverTimestamp(),
             createdByEmail: user.email ?? null,
             createdByUid: user.uid,
           });
-          setMessage('Immobilie wurde gespeichert.');
+          const documentResult = await appendPendingDocumentsToProperty(propertyRef.id, units);
+          if (documentResult.documentCount > 0) {
+            await updateDoc(doc(db, 'properties', propertyRef.id), {
+              propertyDocuments: documentResult.propertyDocuments,
+              units: documentResult.units,
+              updatedAt: serverTimestamp(),
+            });
+          }
+          setMessage(
+            documentResult.documentCount > 0
+              ? 'Immobilie und Dokumente wurden gespeichert.'
+              : 'Immobilie wurde gespeichert.'
+          );
           resetForm();
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -1000,15 +1236,25 @@ export default function PropertyAdminManager({
               </select>
             </label>
             {form.ownershipType === 'partial_ownership' ? (
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-700">Verwalter</span>
-                <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('wegManagerId', event.target.value)} value={form.wegManagerId}>
-                  <option value="">Bitte wählen</option>
-                  {personOptions.map((record) => (
-                    <option key={record.id} value={record.id}>{[record.data.lastName, record.data.firstName].filter(Boolean).join(', ')}</option>
-                  ))}
-                </select>
-              </label>
+              <>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Verwalter</span>
+                  <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('wegManagerId', event.target.value)} value={form.wegManagerId}>
+                    <option value="">Bitte wählen</option>
+                    {personOptions.map((record) => (
+                      <option key={record.id} value={record.id}>{[record.data.lastName, record.data.firstName].filter(Boolean).join(', ')}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Position Keller</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('basementPosition', cleanSpaces(event.target.value))} placeholder="z. B. Kellerraum 3" value={form.basementPosition} />
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Position Briefkasten</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('mailboxPosition', cleanSpaces(event.target.value))} placeholder="z. B. EG links" value={form.mailboxPosition} />
+                </label>
+              </>
             ) : null}
           </div>
 
@@ -1073,63 +1319,69 @@ export default function PropertyAdminManager({
             <div className="flex flex-col gap-2">
               <p className="text-sm font-medium text-slate-900">Jährliche Wartungen</p>
               <p className="text-xs leading-6 text-slate-500">
-                Heizung, Dach und Regenrinnenreinigung werden hier untereinander mit letztem Wartungsdatum gepflegt. Später folgt daraus automatisch eine Themen-Erinnerung nach 11 Monaten.
+                Heizung, Dach und Regenrinnenreinigung werden hier mit letztem Wartungsdatum und frei einstellbarem Erinnerungsintervall gepflegt.
               </p>
             </div>
             <div className="mt-4 space-y-4">
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_220px]">
-                <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-4">
-                  <p className="text-sm font-medium text-slate-900">Heizung</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Baujahr und letzte jährliche Wartung. Die spätere Erinnerung erfolgt nach 11 Monaten.
-                  </p>
-                  <div className="mt-4 grid gap-4">
-                    <label className="block space-y-2">
-                      <span className="text-sm font-medium text-slate-700">Zentrale Heizungsversorgung</span>
-                      <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('hasCentralHeating', event.target.value)} value={form.hasCentralHeating}>
-                        <option value="yes">Ja, zentral für das Objekt</option>
-                        <option value="no">Nein, auf Einheiten verteilt</option>
-                      </select>
-                    </label>
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                      <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('heatingDraftType', event.target.value)} value={form.heatingDraftType}>
-                        <option value="">Heizungsart wählen</option>
-                        {heatingSystemOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <button className="rounded-full border border-stone-300 bg-stone-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={addHeatingSystem} type="button">
-                        Heizung hinzufügen
-                      </button>
-                    </div>
-                    {form.heatingEntries.length > 0 ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {form.heatingEntries.map((entry) => (
-                          <div className="rounded-[20px] border border-stone-200 bg-white p-4" key={entry.id}>
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-sm font-medium text-slate-900">
-                                {heatingSystemOptions.find((option) => option.value === entry.type)?.label ?? entry.type}
-                              </p>
-                              <button className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100" onClick={() => removeHeatingSystem(entry.id)} type="button">
-                                Entfernen
-                              </button>
-                            </div>
-                            <div className="mt-3 grid gap-3">
-                              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateHeatingEntry(entry.id, 'buildYear', event.target.value)} placeholder="Baujahr" value={entry.buildYear} />
-                              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateHeatingEntry(entry.id, 'lastMaintenance', event.target.value)} type="date" value={entry.lastMaintenance} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs leading-5 text-slate-500">Noch keine Heizungsart hinzugefügt.</p>
-                    )}
-                  </div>
-                </div>
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Zentrale Heizungsversorgung</span>
+                  <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('hasCentralHeating', event.target.value)} value={form.hasCentralHeating}>
+                    <option value="yes">Ja, zentral für das Objekt</option>
+                    <option value="no">Nein, auf Einheiten verteilt</option>
+                  </select>
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Heizungsart</span>
+                  <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('heatingDraftType', event.target.value)} value={form.heatingDraftType}>
+                    <option value="">Heizungsart wählen</option>
+                    {heatingSystemOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="self-end rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={addHeatingSystem} type="button">
+                  Heizung hinzufügen
+                </button>
               </div>
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+
+              {form.heatingEntries.length > 0 ? (
+                <div className="space-y-4">
+                  {form.heatingEntries.map((entry) => (
+                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_180px]" key={entry.id}>
+                      <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">Heizung</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                              {heatingSystemOptions.find((option) => option.value === entry.type)?.label ?? entry.type}
+                            </p>
+                          </div>
+                          <button className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100" onClick={() => removeHeatingSystem(entry.id)} type="button">
+                            Entfernen
+                          </button>
+                        </div>
+                        <input className="mt-3 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateHeatingEntry(entry.id, 'buildYear', event.target.value)} placeholder="Baujahr" value={entry.buildYear} />
+                      </div>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Datum letzte Wartung</span>
+                        <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateHeatingEntry(entry.id, 'lastMaintenance', event.target.value)} type="date" value={entry.lastMaintenance} />
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Erinnerung nach Monaten</span>
+                        <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" inputMode="numeric" min="1" onChange={(event) => updateHeatingEntry(entry.id, 'maintenanceReminderMonths', event.target.value)} placeholder="11" type="number" value={entry.maintenanceReminderMonths} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[22px] border border-dashed border-stone-300 bg-white px-4 py-4 text-sm text-slate-600">
+                  Noch keine Heizungsart hinzugefügt.
+                </div>
+              )}
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_180px]">
                 <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-4">
                   <p className="text-sm font-medium text-slate-900">Dach</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -1140,8 +1392,12 @@ export default function PropertyAdminManager({
                   <span className="text-sm font-medium text-slate-700">Datum letzte Wartung</span>
                   <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('roofMaintenanceLastMaintenance', event.target.value)} type="date" value={form.roofMaintenanceLastMaintenance} />
                 </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Erinnerung nach Monaten</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" inputMode="numeric" min="1" onChange={(event) => updateFormField('roofMaintenanceReminderMonths', cleanReminderMonths(event.target.value))} placeholder="11" type="number" value={form.roofMaintenanceReminderMonths} />
+                </label>
               </div>
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_180px]">
                 <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-4">
                   <p className="text-sm font-medium text-slate-900">Regenrinnenreinigung</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -1151,6 +1407,10 @@ export default function PropertyAdminManager({
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-slate-700">Datum letzte Wartung</span>
                   <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('gutterCleaningLastMaintenance', event.target.value)} type="date" value={form.gutterCleaningLastMaintenance} />
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Erinnerung nach Monaten</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" inputMode="numeric" min="1" onChange={(event) => updateFormField('gutterCleaningReminderMonths', cleanReminderMonths(event.target.value))} placeholder="11" type="number" value={form.gutterCleaningReminderMonths} />
                 </label>
               </div>
             </div>
@@ -1198,6 +1458,50 @@ export default function PropertyAdminManager({
           </div>
 
           <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+            <p className="text-sm font-medium text-slate-900">Dokumente zur Immobilie</p>
+            <p className="mt-1 text-xs leading-6 text-slate-500">
+              Hier kannst du beliebige Dateien direkt am Objekt hinterlegen.
+            </p>
+            <label className="mt-4 block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Dateien hochladen</span>
+              <input
+                className="w-full rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition file:mr-4 file:rounded-full file:border-0 file:bg-stone-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 focus:border-amber-700/60"
+                multiple
+                onChange={(event) => handlePropertyDocumentSelection(event.target.files)}
+                type="file"
+              />
+            </label>
+            {pendingPropertyDocumentFiles.length > 0 ? (
+              <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">Zum Speichern vorgemerkt</p>
+                <div className="mt-3 grid gap-2">
+                  {pendingPropertyDocumentFiles.map((file) => (
+                    <p className="text-sm text-slate-700" key={`${file.name}-${file.size}`}>{file.name}</p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {form.propertyDocuments.length > 0 ? (
+              <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">Bereits hinterlegt</p>
+                <div className="mt-3 grid gap-2">
+                  {form.propertyDocuments.map((document) => (
+                    <a
+                      className="text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-950 hover:underline"
+                      href={document.url}
+                      key={`${document.path}-${document.url}`}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {document.name}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-900">Einheiten</p>
@@ -1239,6 +1543,8 @@ export default function PropertyAdminManager({
                     </select>
                     <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnit(unit.id, 'rooms', event.target.value)} placeholder="Zimmer" value={unit.rooms} />
                     <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnit(unit.id, 'areaSqm', event.target.value)} placeholder="Fläche in m²" value={unit.areaSqm} />
+                    <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnit(unit.id, 'basementPosition', cleanSpaces(event.target.value))} placeholder="Position Keller" value={unit.basementPosition} />
+                    <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnit(unit.id, 'mailboxPosition', cleanSpaces(event.target.value))} placeholder="Position Briefkasten" value={unit.mailboxPosition} />
                     <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60 xl:col-span-2" onChange={(event) => updateUnit(unit.id, 'tenantId', event.target.value)} value={unit.tenantId}>
                       <option value="">Kein Mieter zugeordnet</option>
                       {tenantOptions.map((record) => <option key={record.id} value={record.id}>{[record.data.lastName, record.data.firstName].filter(Boolean).join(', ')}</option>)}
@@ -1302,34 +1608,128 @@ export default function PropertyAdminManager({
                               </button>
                             </div>
                             <div className="mt-3 grid gap-3">
-                              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnitHeating(unit.id, entry.id, 'buildYear', event.target.value)} placeholder="Baujahr" value={entry.buildYear} />
-                              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnitHeating(unit.id, entry.id, 'lastMaintenance', event.target.value)} type="date" value={entry.lastMaintenance} />
+                              <label className="space-y-1">
+                                <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Baujahr</span>
+                                <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnitHeating(unit.id, entry.id, 'buildYear', event.target.value)} placeholder="Baujahr" value={entry.buildYear} />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Datum letzte Wartung</span>
+                                <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnitHeating(unit.id, entry.id, 'lastMaintenance', event.target.value)} type="date" value={entry.lastMaintenance} />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Erinnerung nach Monaten</span>
+                                <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" inputMode="numeric" min="1" onChange={(event) => updateUnitHeating(unit.id, entry.id, 'maintenanceReminderMonths', event.target.value)} placeholder="11" type="number" value={entry.maintenanceReminderMonths} />
+                              </label>
                             </div>
                           </div>
                         ))}
                       </div>
                     </div>
                   ) : null}
+                  <div className="mt-4 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+                    <p className="text-sm font-medium text-slate-900">Dokumente der Einheit</p>
+                    <label className="mt-3 block space-y-2">
+                      <span className="text-sm font-medium text-slate-700">Dateien hochladen</span>
+                      <input
+                        className="w-full rounded-2xl border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition file:mr-4 file:rounded-full file:border-0 file:bg-stone-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 focus:border-amber-700/60"
+                        multiple
+                        onChange={(event) => handleUnitDocumentSelection(unit.id, event.target.files)}
+                        type="file"
+                      />
+                    </label>
+                    {(pendingUnitDocumentFiles[unit.id] ?? []).length > 0 ? (
+                      <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+                        <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                          Zum Speichern vorgemerkt
+                        </p>
+                        <div className="mt-3 grid gap-2">
+                          {(pendingUnitDocumentFiles[unit.id] ?? []).map((file) => (
+                            <p className="text-sm text-slate-700" key={`${unit.id}-${file.name}-${file.size}`}>
+                              {file.name}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {unit.documents.length > 0 ? (
+                      <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+                        <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                          Bereits hinterlegt
+                        </p>
+                        <div className="mt-3 grid gap-2">
+                          {unit.documents.map((document) => (
+                            <a
+                              className="text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-950 hover:underline"
+                              href={document.url}
+                              key={`${unit.id}-${document.path}-${document.url}`}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {document.name}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                   <textarea className="mt-4 min-h-24 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnit(unit.id, 'notes', event.target.value)} placeholder="Notizen zur Einheit" value={unit.notes} />
                 </article>
               ))}
             </div>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {servicePartnerFields.map((field) => (
-              <label className="block space-y-2" key={field.idField}>
-                <span className="text-sm font-medium text-slate-700">{field.label}</span>
-                <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField(field.idField, event.target.value)} value={form[field.idField]}>
-                  <option value="">Bitte wählen</option>
-                  {personOptions.map((record) => (
-                    <option key={record.id} value={record.id}>
-                      {[record.data.lastName, record.data.firstName, record.data.category].filter(Boolean).join(' · ')}
+          <div className="rounded-[24px] border border-stone-200 bg-white p-5">
+            <p className="text-sm font-medium text-slate-900">Gewerke und Dienstleister</p>
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] lg:items-end">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Dienstleisterart</span>
+                <select
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                  onChange={(event) => setSelectedServiceField(event.target.value as ServiceFieldId)}
+                  value={String(selectedServiceField)}
+                >
+                  {servicePartnerFields.map((field) => (
+                    <option key={field.idField} value={field.idField}>
+                      {field.label}
                     </option>
                   ))}
                 </select>
               </label>
-            ))}
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Firma / Person</span>
+                <select
+                  className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                  onChange={(event) => updateFormField(selectedServiceField, event.target.value)}
+                  value={String(form[selectedServiceField] ?? '')}
+                >
+                  <option value="">Nicht zugeordnet</option>
+                  {serviceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} ({option.type})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="rounded-full border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 transition hover:border-rose-300"
+                onClick={() => updateFormField(selectedServiceField, '')}
+                type="button"
+              >
+                Entfernen
+              </button>
+            </div>
+            <div className="mt-4 divide-y divide-stone-100 overflow-hidden rounded-[18px] border border-stone-200">
+              {assignedServices.length === 0 ? (
+                <div className="bg-stone-50 px-4 py-3 text-sm text-slate-600">Noch keine Dienstleister zugeordnet.</div>
+              ) : (
+                assignedServices.map((entry) => (
+                  <div className="grid gap-2 bg-white px-4 py-3 text-sm md:grid-cols-[220px_minmax(0,1fr)]" key={entry.field.idField}>
+                    <span className="font-medium text-slate-700">{entry.field.label}</span>
+                    <span className="text-slate-950">{entry.label}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
 
           <label className="block space-y-2">

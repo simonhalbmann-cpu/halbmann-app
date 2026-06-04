@@ -64,8 +64,9 @@ service cloud.firestore {
     }
 
     match /userProfiles/{userId} {
-      allow read, create, update: if isOwnProfile(userId);
-      allow read, update, delete: if isAdminFromAnotherProfile(userId);
+      allow list: if isAdmin();
+      allow get, create, update: if isOwnProfile(userId);
+      allow get, create, update, delete: if isAdminFromAnotherProfile(userId);
     }
 
     match /people/{documentId} {

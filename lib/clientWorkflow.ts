@@ -34,6 +34,21 @@ function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+const MAX_FIRESTORE_TEXT_FIELD_BYTES = 900_000;
+const MAX_BODY_TEXT_CHARS = 200_000;
+
+function byteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
+function limitForFirestoreField(value: string, maxBytes = MAX_FIRESTORE_TEXT_FIELD_BYTES) {
+  let nextValue = value;
+  while (byteLength(nextValue) > maxBytes) {
+    nextValue = nextValue.slice(0, Math.floor(nextValue.length * 0.8));
+  }
+  return nextValue;
+}
+
 async function loadCollection(name: string): Promise<WorkflowRecord[]> {
   const snapshot = await getDocs(collection(db, name));
   return snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id }));
@@ -99,11 +114,16 @@ export async function persistInboundEmailsClient(emails: SyncedInboundEmail[]) {
     const tenant =
       tenants.find((record) => cleanText(record.data.email).toLowerCase() === fromEmail) ?? null;
 
+    const bodyHtml = cleanText(email.html);
+    const limitedBodyHtml = limitForFirestoreField(bodyHtml);
+    const bodyText = cleanText(email.text).slice(0, MAX_BODY_TEXT_CHARS);
+
     const messageRef = await addDoc(collection(db, 'messages'), {
       analysis: null,
       attachments: [],
-      bodyHtml: cleanText(email.html),
-      bodyText: cleanText(email.text),
+      bodyHtml: limitedBodyHtml,
+      bodyHtmlTruncated: bodyHtml.length > limitedBodyHtml.length,
+      bodyText,
       category: '',
       channel: 'email',
       createdAt: serverTimestamp(),
@@ -128,7 +148,7 @@ export async function persistInboundEmailsClient(emails: SyncedInboundEmail[]) {
     const messageRecord: WorkflowRecord = {
       id: messageRef.id,
       data: {
-        bodyText: cleanText(email.text),
+        bodyText,
         category: '',
         fromEmail,
         fromName: cleanText(email.fromName) || cleanText(email.from) || fromEmail,

@@ -1,6 +1,7 @@
 ﻿'use client';
 
-import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, type DocumentData } from 'firebase/firestore';
+import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, type DocumentData } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react';
@@ -12,7 +13,7 @@ import {
   getStatusLabel,
   type WorkflowRecord,
 } from '../../lib/adminWorkflow';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
 import { composePortalDraft, stripAiEnvelope } from '../../lib/draftComposer';
 import type { LocalMessageTheme } from '../../lib/localMessageThemes';
 import { buildMessageThemes, type MessageTheme } from '../../lib/messageThemes';
@@ -23,10 +24,17 @@ import {
   createSignatureRecord,
   mergeBodyWithSignature,
 } from '../../lib/signatures';
-import { applyAdminSenderToSignature, resolveAdminSenderName } from './adminSenderSignature';
+import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
 import { appendDeliveryLabel } from './messageDeliveryLabel';
+import DocumentUploadControl from './DocumentUploadControl';
 import RentHistoryChart, { type RentHistoryChartPoint } from './RentHistoryChart';
+import {
+  cleanTenantDocuments,
+  getLegacyTenantDocumentNames,
+  sanitizeStorageFileName,
+  type TenantDocumentEntry,
+} from '../../lib/tenantDocuments';
 
 type TenantDetailViewProps = {
   activeThemeListMode?: 'archive' | 'open';
@@ -215,6 +223,25 @@ function formatMoneyAmount(value: number) {
   }).format(value);
 }
 
+function formatFileSize(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function formatUploadDate(value: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
 function buildTenantMessageHref(tenantId: string, messageId: string) {
   return `/admin/mieter/${tenantId}?messageId=${messageId}`;
 }
@@ -338,7 +365,10 @@ export default function TenantDetailView({
   const [vendorContactId, setVendorContactId] = useState('');
   const [themePendingDeleteId, setThemePendingDeleteId] = useState('');
   const [showInvitationSentModal, setShowInvitationSentModal] = useState(false);
+  const [isUploadingTenantDocument, setIsUploadingTenantDocument] = useState(false);
+  const [deletingTenantDocumentPath, setDeletingTenantDocumentPath] = useState('');
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
+  const [handoverProtocolKind, setHandoverProtocolKind] = useState<'moveIn' | 'moveOut'>('moveIn');
   const [isPending, startTransition] = useTransition();
   const resolvedThemeListMode = activeThemeListMode ?? themeListMode;
   const isMessagesLayout = detailLayout === 'messages';
@@ -462,6 +492,8 @@ export default function TenantDetailView({
     () => (Array.isArray(tenant?.additionalPersons) ? tenant.additionalPersons : []),
     [tenant]
   );
+  const tenantDocuments = useMemo(() => cleanTenantDocuments(tenant?.tenantDocuments), [tenant]);
+  const legacyTenantDocumentNames = useMemo(() => getLegacyTenantDocumentNames(tenant), [tenant]);
 
   const rentChartPoints = useMemo(() => {
     if (!tenant) return [];
@@ -825,7 +857,7 @@ export default function TenantDetailView({
       buildPortalSignatureText(
         applyAdminSenderToSignature(
           createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
-          resolveAdminSenderName(profile, user)
+          resolveAdminSenderContact(profile, user)
         )
       ),
     [profile, selectedCompany, user]
@@ -1030,6 +1062,133 @@ export default function TenantDetailView({
         ...(init?.headers ?? {}),
       },
     });
+  }
+
+  async function uploadTenantDocuments(files: FileList | File[] | null) {
+    if (!files || files.length === 0 || !tenant) return;
+
+    setError('');
+    setMessage('');
+    setIsUploadingTenantDocument(true);
+
+    try {
+      const uploadedDocuments: TenantDocumentEntry[] = [];
+
+      for (const file of Array.from(files)) {
+        const safeName = sanitizeStorageFileName(file.name);
+        const storagePath = `tenant-documents/${tenantId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storageRef = ref(storage, storagePath);
+
+        await uploadBytes(storageRef, file, {
+          contentType: file.type || 'application/octet-stream',
+        });
+
+        uploadedDocuments.push({
+          contentType: file.type || 'application/octet-stream',
+          name: file.name,
+          path: storagePath,
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+          uploadedByEmail: user?.email ?? '',
+          url: await getDownloadURL(storageRef),
+        });
+      }
+
+      await updateDoc(doc(db, 'tenants', tenantId), {
+        tenantDocuments: [...tenantDocuments, ...uploadedDocuments],
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      setMessage(uploadedDocuments.length === 1 ? 'Dokument wurde hochgeladen.' : 'Dokumente wurden hochgeladen.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Hochladen von Dokumenten fuer Mieter ${tenantId}:`, caughtError);
+      setError('Dokumente konnten nicht hochgeladen werden.');
+    } finally {
+      setIsUploadingTenantDocument(false);
+    }
+  }
+
+  async function deleteTenantDocument(targetDocument: TenantDocumentEntry) {
+    const confirmed = window.confirm(`Dokument "${targetDocument.name}" wirklich löschen?`);
+    if (!confirmed) return;
+
+    setError('');
+    setMessage('');
+    setDeletingTenantDocumentPath(targetDocument.path || targetDocument.url);
+
+    try {
+      if (targetDocument.path) {
+        await deleteObject(ref(storage, targetDocument.path));
+      }
+
+      await updateDoc(doc(db, 'tenants', tenantId), {
+        tenantDocuments: tenantDocuments.filter(
+          (document) =>
+            (targetDocument.path && document.path !== targetDocument.path) ||
+            (!targetDocument.path && document.url !== targetDocument.url)
+        ),
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      setMessage('Dokument wurde gelöscht.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Loeschen eines Dokuments fuer Mieter ${tenantId}:`, caughtError);
+      setError('Dokument konnte nicht gelöscht werden.');
+    } finally {
+      setDeletingTenantDocumentPath('');
+    }
+  }
+
+  async function downloadHandoverProtocol(kind: 'moveIn' | 'moveOut') {
+    const templateUrl = cleanText(
+      kind === 'moveIn'
+        ? selectedCompany?.data.handoverMoveInTemplateUrl
+        : selectedCompany?.data.handoverMoveOutTemplateUrl
+    );
+    if (!templateUrl) {
+      setError(
+        kind === 'moveIn'
+          ? 'Fuer diese Firma ist noch keine Vorlage fuer das Uebergabeprotokoll Einzug hinterlegt.'
+          : 'Fuer diese Firma ist noch keine Vorlage fuer das Uebergabeprotokoll Auszug hinterlegt.'
+      );
+      return;
+    }
+
+    const subject = kind === 'moveIn' ? 'Uebergabeprotokoll Einzug' : 'Uebergabeprotokoll Auszug';
+    const subjectLine2 = buildLetterSubjectLine2(selectedProperty, unitInfoLabel || cleanText(tenant?.unitLabel));
+    const signatureRecord = applyAdminSenderToSignature(
+      createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
+      resolveAdminSenderContact(profile, user)
+    );
+
+    try {
+      setError('');
+      await downloadFilledLetterTemplate({
+        fallbackHtml: `<h1>${subject}</h1><p>${subjectLine2}</p>`,
+        fileName: subject,
+        getAuthToken: user ? () => user.getIdToken() : undefined,
+        replacements: buildLetterTemplateReplacements({
+          body: subject,
+          closing: signatureRecord.letterClosing || signatureRecord.closing,
+          companyName: signatureRecord.companyName,
+          recipientAddress: letterRecipient.address,
+          recipientCompany: letterRecipient.company,
+          recipientName: letterRecipient.name,
+          recipientSalutation: letterRecipient.salutation,
+          senderName: signatureRecord.name,
+          subject,
+          subjectLine2,
+        }),
+        templateUrl,
+      });
+    } catch (caughtError) {
+      console.error('Fehler beim Erstellen des Uebergabeprotokolls:', caughtError);
+      setError('Das Uebergabeprotokoll konnte nicht erstellt werden.');
+    }
   }
 
   async function saveThemeMeta(
@@ -1357,7 +1516,7 @@ export default function TenantDetailView({
 
     const signatureRecord = applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
-      resolveAdminSenderName(profile, user)
+      resolveAdminSenderContact(profile, user)
     );
     const subject = cleanText(selectedTheme.subject) || 'Rückfrage zu einem Thema';
     const draftRef = await addDoc(collection(db, 'messageDrafts'), {
@@ -1617,7 +1776,7 @@ export default function TenantDetailView({
         const nextFollowUpDate = cleanText(followUpDate);
         const signatureRecord = applyAdminSenderToSignature(
           createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
-          resolveAdminSenderName(profile, user)
+          resolveAdminSenderContact(profile, user)
         );
         const themeId = isGeneralConversation ? globalThis.crypto.randomUUID() : selectedTheme?.id || selectedRequest?.id || null;
         const threadMessageId = themeId;
@@ -1811,14 +1970,6 @@ export default function TenantDetailView({
         <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm leading-6 text-slate-600">
           Mieter wird geladen...
         </div>
-        <div className="mt-4 rounded-[18px] border border-stone-200 bg-white/70 px-4 py-3 text-sm text-slate-700">
-          <div className="font-medium text-slate-950">
-            Portalzugang: {cleanText(tenant?.portalUsername) || 'noch nicht hinterlegt'}
-          </div>
-          <div className="mt-1 text-xs text-slate-500">
-            {cleanText(tenant?.email) || 'Keine E-Mail hinterlegt'}
-          </div>
-        </div>
       </section>
     );
   }
@@ -1871,9 +2022,30 @@ export default function TenantDetailView({
           >
             Neue Nachricht
           </Link>
+          <div className="ml-auto flex items-center gap-3">
+            <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
+              <span>Uebergabe</span>
+              <select
+                className="bg-transparent text-sm text-slate-900 outline-none"
+                onChange={(event) => setHandoverProtocolKind(event.target.value === 'moveOut' ? 'moveOut' : 'moveIn')}
+                value={handoverProtocolKind}
+              >
+                <option value="moveIn">Einzug</option>
+                <option value="moveOut">Auszug</option>
+              </select>
+            </label>
+            <button
+              aria-label="Uebergabeprotokoll herunterladen"
+              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+              onClick={() => void downloadHandoverProtocol(handoverProtocolKind)}
+              type="button"
+            >
+              ✓
+            </button>
+          </div>
         </div>
       ) : null}
-      {showEditButton || showInvitationButton || showOverviewButton ? (
+      {showEditButton || showOverviewButton ? (
         <div className={headerClassName || '-mt-10 flex flex-wrap items-center justify-between gap-4 pr-14 xl:-mt-11 xl:pr-16'}>
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             <h2 className="min-w-0 text-3xl text-slate-950">
@@ -1897,22 +2069,93 @@ export default function TenantDetailView({
               Mieterübersicht
             </Link>
             ) : null}
-            {showInvitationButton ? (
-            <button
-              aria-label="Einladung senden"
-              className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-stone-300 bg-white text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-              onClick={sendPortalInvitation}
-              title="Einladung senden"
-              type="button"
-            >
-              <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-                <path d="M3.75 6.75h16.5v10.5H3.75z" stroke="currentColor" strokeWidth="1.6" />
-                <path d="m4.5 7.5 7.5 6 7.5-6" stroke="currentColor" strokeWidth="1.6" />
-              </svg>
-            </button>
-            ) : null}
           </div>
         </div>
+      ) : null}
+
+      {false && isMessagesLayout ? (
+        <div className="flex justify-end">
+          <div className="grid gap-2 sm:grid-cols-[180px_auto]">
+            <select
+              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => setHandoverProtocolKind(event.target.value === 'moveOut' ? 'moveOut' : 'moveIn')}
+              value={handoverProtocolKind}
+            >
+              <option value="moveIn">Uebergabe Einzug</option>
+              <option value="moveOut">Uebergabe Auszug</option>
+            </select>
+            <button
+              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+              onClick={() => void downloadHandoverProtocol(handoverProtocolKind)}
+              type="button"
+            >
+              ✓
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {false && isMessagesLayout ? (
+        <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</p>
+              <h3 className="mt-1 text-xl text-slate-950">Mieterdateien</h3>
+            </div>
+            <div className="min-w-[min(100%,560px)] flex-1">
+              <DocumentUploadControl
+                disabled={isUploadingTenantDocument}
+                onUpload={(files) => uploadTenantDocuments(files)}
+              />
+            </div>
+          </div>
+
+          {tenantDocuments.length > 0 ? (
+            <div className="mt-4 divide-y divide-stone-100 overflow-hidden rounded-[18px] border border-stone-200">
+              {tenantDocuments.map((tenantDocument) => {
+                const isDeleting =
+                  deletingTenantDocumentPath === (tenantDocument.path || tenantDocument.url);
+                const meta = [formatFileSize(tenantDocument.size), formatUploadDate(tenantDocument.uploadedAt)]
+                  .filter(Boolean)
+                  .join(' · ');
+
+                return (
+                  <div
+                    className="grid gap-3 bg-white px-4 py-3 text-sm md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                    key={`${tenantDocument.path}-${tenantDocument.url}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-900">{tenantDocument.name}</p>
+                      {meta ? <p className="mt-0.5 text-xs text-slate-500">{meta}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                        href={tenantDocument.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Anschauen
+                      </a>
+                      <button
+                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={isDeleting}
+                        onClick={() => void deleteTenantDocument(tenantDocument)}
+                        type="button"
+                      >
+                        {isDeleting ? 'Löscht...' : 'Löschen'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[18px] border border-dashed border-stone-300 bg-stone-50 p-4 text-sm leading-6 text-slate-600">
+              Noch keine Dokumente hochgeladen.
+            </div>
+          )}
+        </section>
       ) : null}
 
       <section className="rounded-[24px] border border-stone-200 bg-white px-5 pb-5 pt-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
@@ -2459,7 +2702,7 @@ export default function TenantDetailView({
         </DetailCard>
       ) : null}
 
-      {propertyServiceRows.length > 0 ? (
+      {false && propertyServiceRows.length > 0 ? (
         <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
             Gewerke und Dienstleister
@@ -2481,6 +2724,84 @@ export default function TenantDetailView({
               </Link>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {true ? (
+        <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</p>
+              <h3 className="mt-1 text-xl text-slate-950">Mieterdateien</h3>
+            </div>
+            <div className="min-w-[min(100%,560px)] flex-1">
+              <DocumentUploadControl
+                disabled={isUploadingTenantDocument}
+                onUpload={(files) => uploadTenantDocuments(files)}
+              />
+            </div>
+          </div>
+
+          {tenantDocuments.length > 0 ? (
+            <div className="mt-4 divide-y divide-stone-100 overflow-hidden rounded-[18px] border border-stone-200">
+              {tenantDocuments.map((tenantDocument) => {
+                const isDeleting =
+                  deletingTenantDocumentPath === (tenantDocument.path || tenantDocument.url);
+                const meta = [formatFileSize(tenantDocument.size), formatUploadDate(tenantDocument.uploadedAt)]
+                  .filter(Boolean)
+                  .join(' · ');
+
+                return (
+                  <div
+                    className="grid gap-3 bg-white px-4 py-3 text-sm md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                    key={`${tenantDocument.path}-${tenantDocument.url}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-900">{tenantDocument.name}</p>
+                      {meta ? <p className="mt-0.5 text-xs text-slate-500">{meta}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                        href={tenantDocument.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Anschauen
+                      </a>
+                      <button
+                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={isDeleting}
+                        onClick={() => void deleteTenantDocument(tenantDocument)}
+                        type="button"
+                      >
+                        {isDeleting ? 'Löscht...' : 'Löschen'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[18px] border border-dashed border-stone-300 bg-stone-50 p-4 text-sm leading-6 text-slate-600">
+              Noch keine Dokumente hochgeladen.
+            </div>
+          )}
+
+          {legacyTenantDocumentNames.length > 0 ? (
+            <div className="mt-4 rounded-[18px] border border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-amber-700/80">
+                Alte Dateinamen ohne Upload
+              </p>
+              <div className="mt-2 grid gap-1 text-sm text-slate-700">
+                {legacyTenantDocumentNames.map((legacyDocument) => (
+                  <p key={`${legacyDocument.label}-${legacyDocument.name}`}>
+                    {legacyDocument.label}: {legacyDocument.name}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -2553,3 +2874,4 @@ function Field({ label, value }: { label: string; value?: unknown }) {
     </div>
   );
 }
+

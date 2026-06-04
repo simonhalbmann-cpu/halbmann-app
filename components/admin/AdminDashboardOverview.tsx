@@ -20,7 +20,7 @@ type ReminderItem = {
   href: string;
   label: string;
   meta: string;
-  type: 'message' | 'tenant' | 'theme';
+  type: 'message' | 'property' | 'tenant' | 'theme';
 };
 
 type StatCard = {
@@ -75,6 +75,18 @@ function formatDateOnly(value: unknown) {
     month: '2-digit',
     year: 'numeric',
   });
+}
+
+function parseReminderMonths(value: unknown) {
+  const numeric = Number.parseInt(cleanText(value), 10);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 11;
+}
+
+function shiftDateByMonths(value: unknown, months: unknown) {
+  const date = parseDateInput(value);
+  if (!date) return '';
+  date.setMonth(date.getMonth() + parseReminderMonths(months));
+  return date.toISOString().slice(0, 10);
 }
 
 function buildTenantLabel(record?: WorkflowRecord | null) {
@@ -326,12 +338,90 @@ export default function AdminDashboardOverview() {
       });
     });
 
+    properties.forEach((property) => {
+      const propertyLabel = buildPropertyLabel(property);
+      const roofReminderDate = shiftDateByMonths(
+        property.data.roofMaintenanceLastMaintenance,
+        property.data.roofMaintenanceReminderMonths
+      );
+      if (roofReminderDate) {
+        reminderItems.push({
+          dateValue: roofReminderDate,
+          href: `/admin/immobilie/${property.id}`,
+          label: propertyLabel,
+          meta: `Dachwartung · nach ${parseReminderMonths(property.data.roofMaintenanceReminderMonths)} Monaten`,
+          type: 'property',
+        });
+      }
+
+      const gutterReminderDate = shiftDateByMonths(
+        property.data.gutterCleaningLastMaintenance,
+        property.data.gutterCleaningReminderMonths
+      );
+      if (gutterReminderDate) {
+        reminderItems.push({
+          dateValue: gutterReminderDate,
+          href: `/admin/immobilie/${property.id}`,
+          label: propertyLabel,
+          meta: `Regenrinnenreinigung · nach ${parseReminderMonths(property.data.gutterCleaningReminderMonths)} Monaten`,
+          type: 'property',
+        });
+      }
+
+      const heatingEntries = Array.isArray(property.data.heatingEntries)
+        ? property.data.heatingEntries
+        : [];
+      heatingEntries.forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return;
+        const heating = entry as DocumentData;
+        const heatingReminderDate = shiftDateByMonths(
+          heating.lastMaintenance,
+          heating.maintenanceReminderMonths
+        );
+        if (!heatingReminderDate) return;
+        reminderItems.push({
+          dateValue: heatingReminderDate,
+          href: `/admin/immobilie/${property.id}`,
+          label: propertyLabel,
+          meta: `Heizungswartung · ${cleanText(heating.type) || 'Heizung'} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
+          type: 'property',
+        });
+      });
+
+      const units = Array.isArray(property.data.units) ? property.data.units : [];
+      units.forEach((unit) => {
+        if (!unit || typeof unit !== 'object') return;
+        const unitRecord = unit as DocumentData;
+        const unitId = cleanText(unitRecord.id);
+        const unitLabel = [cleanText(unitRecord.unitLabel), cleanText(unitRecord.floor), cleanText(unitRecord.unitPosition)]
+          .filter(Boolean)
+          .join(' · ');
+        const unitHeatingEntries = Array.isArray(unitRecord.heatingEntries) ? unitRecord.heatingEntries : [];
+        unitHeatingEntries.forEach((entry) => {
+          if (!entry || typeof entry !== 'object') return;
+          const heating = entry as DocumentData;
+          const heatingReminderDate = shiftDateByMonths(
+            heating.lastMaintenance,
+            heating.maintenanceReminderMonths
+          );
+          if (!heatingReminderDate) return;
+          reminderItems.push({
+            dateValue: heatingReminderDate,
+            href: unitId ? `/admin/einheit/${property.id}/${unitId}` : `/admin/immobilie/${property.id}`,
+            label: propertyLabel,
+            meta: `Heizungswartung ${unitLabel ? `· ${unitLabel}` : ''} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
+            type: 'property',
+          });
+        });
+      });
+    });
+
     return reminderItems.sort((left, right) => {
       const leftDate = parseDateInput(left.dateValue)?.getTime() ?? Number.MAX_SAFE_INTEGER;
       const rightDate = parseDateInput(right.dateValue)?.getTime() ?? Number.MAX_SAFE_INTEGER;
       return leftDate - rightDate;
     });
-  }, [messages, tenants, themes]);
+  }, [messages, properties, tenants, themes]);
 
   const dueSoonReminders = useMemo(
     () =>
@@ -1002,4 +1092,9 @@ export default function AdminDashboardOverview() {
       </section>
     </div>
   );
+}
+
+function buildPropertyLabel(record?: WorkflowRecord | null) {
+  if (!record) return 'Ohne Immobilie';
+  return cleanText(record.data.name) || cleanText(record.data.propertyNumber) || record.id;
 }

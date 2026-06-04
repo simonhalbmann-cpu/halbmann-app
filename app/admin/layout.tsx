@@ -8,16 +8,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         {
           links: [
             { href: '/admin', label: 'Dashboard' },
-            { href: '/admin/nachrichten', label: 'Nachrichten' },
+            { href: '/admin/nachrichten', label: 'Nachrichten', permissionKey: 'messages.read' },
           ],
         },
         {
           label: 'Hinzufuegen',
           links: [
-            { href: '/admin/firma', label: 'Firma' },
-            { href: '/admin/immobilie', label: 'Immobilie' },
-            { href: '/admin/mieter', label: 'Mieter' },
-            { href: '/admin/personen', label: 'Dritte & Dienstleister' },
+            { href: '/admin/firma', label: 'Firma', permissionKey: 'companies.create' },
+            { href: '/admin/immobilie', label: 'Immobilie', permissionKey: 'properties.create' },
+            { href: '/admin/mieter', label: 'Mieter', permissionKey: 'tenants.create' },
+            { href: '/admin/personen', label: 'Dritte & Dienstleister', permissionKey: 'contacts.create' },
           ],
         },
       ]}

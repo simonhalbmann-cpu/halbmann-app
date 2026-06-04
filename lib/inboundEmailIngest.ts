@@ -21,6 +21,21 @@ function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+const MAX_FIRESTORE_TEXT_FIELD_BYTES = 900_000;
+const MAX_BODY_TEXT_CHARS = 200_000;
+
+function byteLength(value: string) {
+  return Buffer.byteLength(value, 'utf8');
+}
+
+function limitForFirestoreField(value: string, maxBytes = MAX_FIRESTORE_TEXT_FIELD_BYTES) {
+  let nextValue = value;
+  while (byteLength(nextValue) > maxBytes) {
+    nextValue = nextValue.slice(0, Math.floor(nextValue.length * 0.8));
+  }
+  return nextValue;
+}
+
 function toReceivedAt(value: Date | string | undefined) {
   if (value instanceof Date) {
     return Timestamp.fromDate(value);
@@ -161,11 +176,16 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
     tenantData = tenantDoc?.data() ?? null;
   }
 
+  const bodyHtml = cleanText(payload.html);
+  const limitedBodyHtml = limitForFirestoreField(bodyHtml);
+  const bodyText = cleanText(payload.text).slice(0, MAX_BODY_TEXT_CHARS);
+
   const messagePayload = {
     analysis: null,
     attachments: [],
-    bodyHtml: cleanText(payload.html),
-    bodyText: cleanText(payload.text),
+    bodyHtml: limitedBodyHtml,
+    bodyHtmlTruncated: bodyHtml.length > limitedBodyHtml.length,
+    bodyText,
     category: '',
     channel: 'email',
     createdAt: hasFirebaseAdminConfig() ? FieldValue.serverTimestamp() : new Date().toISOString(),

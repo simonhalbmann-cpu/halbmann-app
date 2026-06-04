@@ -48,6 +48,27 @@ export async function createAuthUserWithRest(email: string, password: string) {
   };
 }
 
+export async function signInAuthUserWithRest(email: string, password: string) {
+  const result = await callAuth('accounts:signInWithPassword', {
+    email,
+    password,
+    returnSecureToken: true,
+  });
+
+  return {
+    email: result.email || email,
+    idToken: result.idToken || '',
+    uid: result.localId || '',
+  };
+}
+
+export async function deleteAuthUserWithRest(email: string, password: string) {
+  const signIn = await signInAuthUserWithRest(email, password);
+  await callAuth('accounts:delete', {
+    idToken: signIn.idToken,
+  });
+}
+
 export async function updateAuthUserWithRest(args: {
   currentEmail: string;
   currentPassword: string;

@@ -42,6 +42,8 @@ export default function AdminLetterTemplateSettings() {
   const [companies, setCompanies] = useState<CompanyRecord[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [moveInProtocolFile, setMoveInProtocolFile] = useState<File | null>(null);
+  const [moveOutProtocolFile, setMoveOutProtocolFile] = useState<File | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -152,10 +154,86 @@ export default function AdminLetterTemplateSettings() {
     });
   }
 
+  function uploadHandoverTemplate(kind: 'moveIn' | 'moveOut') {
+    if (!selectedCompany) {
+      setError('Bitte eine Firma auswaehlen.');
+      return;
+    }
+    const file = kind === 'moveIn' ? moveInProtocolFile : moveOutProtocolFile;
+    if (!file) {
+      setError('Bitte eine Word-Vorlage auswaehlen.');
+      return;
+    }
+
+    setMessage('');
+    setError('');
+    startTransition(async () => {
+      try {
+        const formData = new FormData();
+        formData.append('companyId', selectedCompany.id);
+        formData.append('file', file);
+
+        const response = await authorizedUpload(formData);
+        const result = (await response.json()) as {
+          error?: string;
+          fileName?: string;
+          ok?: boolean;
+          originalName?: string;
+          size?: number;
+          uploadedAt?: string;
+          url?: string;
+        };
+        if (!response.ok || !result.ok || !result.url) {
+          throw new Error(result.error || 'handover_template_upload_failed');
+        }
+
+        const prefix = kind === 'moveIn' ? 'handoverMoveInTemplate' : 'handoverMoveOutTemplate';
+        await updateDoc(doc(db, 'companies', selectedCompany.id), {
+          [`${prefix}FileName`]: cleanText(result.fileName),
+          [`${prefix}OriginalName`]: cleanText(result.originalName) || file.name,
+          [`${prefix}Size`]: Number(result.size) || file.size,
+          [`${prefix}UploadedAt`]: cleanText(result.uploadedAt) || new Date().toISOString(),
+          [`${prefix}Url`]: result.url,
+        });
+
+        if (kind === 'moveIn') setMoveInProtocolFile(null);
+        if (kind === 'moveOut') setMoveOutProtocolFile(null);
+        setMessage(kind === 'moveIn' ? 'Uebergabeprotokoll Einzug wurde gespeichert.' : 'Uebergabeprotokoll Auszug wurde gespeichert.');
+      } catch (caughtError) {
+        console.error('Fehler beim Speichern der Uebergabeprotokoll-Vorlage:', caughtError);
+        setError(caughtError instanceof Error ? caughtError.message : 'Die Vorlage konnte nicht gespeichert werden.');
+      }
+    });
+  }
+
+  function clearHandoverTemplate(kind: 'moveIn' | 'moveOut') {
+    if (!selectedCompany) return;
+    setMessage('');
+    setError('');
+    startTransition(async () => {
+      try {
+        const prefix = kind === 'moveIn' ? 'handoverMoveInTemplate' : 'handoverMoveOutTemplate';
+        await updateDoc(doc(db, 'companies', selectedCompany.id), {
+          [`${prefix}FileName`]: '',
+          [`${prefix}OriginalName`]: '',
+          [`${prefix}Size`]: 0,
+          [`${prefix}UploadedAt`]: '',
+          [`${prefix}Url`]: '',
+        });
+        if (kind === 'moveIn') setMoveInProtocolFile(null);
+        if (kind === 'moveOut') setMoveOutProtocolFile(null);
+        setMessage('Vorlage wurde entfernt.');
+      } catch (caughtError) {
+        console.error('Fehler beim Entfernen der Uebergabeprotokoll-Vorlage:', caughtError);
+        setError(caughtError instanceof Error ? caughtError.message : 'Die Vorlage konnte nicht entfernt werden.');
+      }
+    });
+  }
+
   return (
     <section className="rounded-[32px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Brief</p>
-      <h2 className="mt-2 text-3xl text-slate-950">Briefvorlagen je Firma</h2>
+      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Vorlagen</p>
+      <h2 className="mt-2 text-3xl text-slate-950">Vorlagen je Firma</h2>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
         <aside className="rounded-[24px] border border-stone-200 bg-stone-50 p-3">
@@ -257,6 +335,58 @@ export default function AdminLetterTemplateSettings() {
                 >
                   Vorlage entfernen
                 </button>
+              </div>
+
+              <div className="mt-6 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-4">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Uebergabeprotokoll Einzug</p>
+                  {cleanText(selectedCompany.data.handoverMoveInTemplateUrl) ? (
+                    <a className="mt-2 block truncate text-sm font-medium text-slate-950 underline-offset-4 hover:underline" href={cleanText(selectedCompany.data.handoverMoveInTemplateUrl)}>
+                      {cleanText(selectedCompany.data.handoverMoveInTemplateOriginalName) || cleanText(selectedCompany.data.handoverMoveInTemplateFileName)}
+                    </a>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">Noch keine Vorlage hinterlegt.</p>
+                  )}
+                  <input
+                    accept=".doc,.docx,.dot,.dotx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="mt-3 block w-full rounded-[18px] border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition file:mr-3 file:rounded-full file:border-0 file:bg-stone-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 focus:border-amber-700/60"
+                    onChange={(event) => setMoveInProtocolFile(event.target.files?.[0] ?? null)}
+                    type="file"
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60" disabled={isPending || !moveInProtocolFile} onClick={() => uploadHandoverTemplate('moveIn')} type="button">
+                      Speichern
+                    </button>
+                    <button className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60" disabled={isPending || !cleanText(selectedCompany.data.handoverMoveInTemplateUrl)} onClick={() => clearHandoverTemplate('moveIn')} type="button">
+                      Entfernen
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-4">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Uebergabeprotokoll Auszug</p>
+                  {cleanText(selectedCompany.data.handoverMoveOutTemplateUrl) ? (
+                    <a className="mt-2 block truncate text-sm font-medium text-slate-950 underline-offset-4 hover:underline" href={cleanText(selectedCompany.data.handoverMoveOutTemplateUrl)}>
+                      {cleanText(selectedCompany.data.handoverMoveOutTemplateOriginalName) || cleanText(selectedCompany.data.handoverMoveOutTemplateFileName)}
+                    </a>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">Noch keine Vorlage hinterlegt.</p>
+                  )}
+                  <input
+                    accept=".doc,.docx,.dot,.dotx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="mt-3 block w-full rounded-[18px] border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition file:mr-3 file:rounded-full file:border-0 file:bg-stone-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 focus:border-amber-700/60"
+                    onChange={(event) => setMoveOutProtocolFile(event.target.files?.[0] ?? null)}
+                    type="file"
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60" disabled={isPending || !moveOutProtocolFile} onClick={() => uploadHandoverTemplate('moveOut')} type="button">
+                      Speichern
+                    </button>
+                    <button className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60" disabled={isPending || !cleanText(selectedCompany.data.handoverMoveOutTemplateUrl)} onClick={() => clearHandoverTemplate('moveOut')} type="button">
+                      Entfernen
+                    </button>
+                  </div>
+                </div>
               </div>
             </>
           ) : (

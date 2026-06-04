@@ -19,7 +19,7 @@ import {
   type SignatureRecord,
 } from '../../lib/signatures';
 import { buildExternalMessageKey } from '../../lib/mailIdentity';
-import { applyAdminSenderToSignature, resolveAdminSenderName } from './adminSenderSignature';
+import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
 import { appendDeliveryLabel } from './messageDeliveryLabel';
 import TenantDetailView from './TenantDetailView';
@@ -1166,7 +1166,7 @@ export default function MessagesWorkspace() {
       for (const recipient of composeRecipients) {
         const recipientSignature = applyAdminSenderToSignature(
           buildRecipientSignature(companies, recipient.companyId, composeCompanyId),
-          resolveAdminSenderName(profile, user)
+          resolveAdminSenderContact(profile, user)
         );
         const tenantRecord = recipient.tenantId
           ? tenants.find((entry) => entry.id === recipient.tenantId) ?? null
@@ -1904,5 +1904,6 @@ export default function MessagesWorkspace() {
     </div>
   );
 }
+
 
 

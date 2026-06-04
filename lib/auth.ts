@@ -5,16 +5,26 @@ import {
   setDoc,
   type DocumentData,
 } from 'firebase/firestore';
+import {
+  getDefaultAdminLevel,
+  normalizeAdminPermissions,
+  type AdminLevel,
+  type AdminPermissions,
+} from './adminPermissions';
 import { db } from './firebase';
 import type { PortalTargetType } from './portalAccess';
 
 export type UserRole = 'admin' | 'portal';
 
 export type UserProfile = {
+  adminLevel?: AdminLevel | null;
+  adminPermissions?: AdminPermissions | null;
   authEmail?: string | null;
   contactEmail?: string | null;
   displayName?: string | null;
   email: string | null;
+  mobilePhone?: string | null;
+  phone?: string | null;
   role: UserRole;
   targetId?: string | null;
   targetType?: PortalTargetType | null;
@@ -32,11 +42,20 @@ function parseUserProfile(data: DocumentData | undefined): UserProfile | null {
     return null;
   }
 
+  const adminLevel = data.role === 'admin' ? getDefaultAdminLevel(data.adminLevel, 'super_admin') : null;
+
   return {
+    adminLevel,
+    adminPermissions:
+      data.role === 'admin'
+        ? normalizeAdminPermissions(data.adminPermissions, adminLevel === 'super_admin')
+        : null,
     authEmail: typeof data.authEmail === 'string' ? data.authEmail : null,
     contactEmail: typeof data.contactEmail === 'string' ? data.contactEmail : null,
     displayName: typeof data.displayName === 'string' ? data.displayName : null,
     email: typeof data.email === 'string' ? data.email : null,
+    mobilePhone: typeof data.mobilePhone === 'string' ? data.mobilePhone : null,
+    phone: typeof data.phone === 'string' ? data.phone : null,
     role: data.role,
     targetId: typeof data.targetId === 'string' ? data.targetId : null,
     targetType:
@@ -86,7 +105,7 @@ export async function ensureUserProfile({
 }
 
 export function getDefaultRouteForRole(role: UserRole) {
-  return role === 'admin' ? '/admin' : '/mieterportal/nachrichten';
+  return role === 'admin' ? '/admin' : '/login';
 }
 
 export function getLoginRouteForRole(role: UserRole) {

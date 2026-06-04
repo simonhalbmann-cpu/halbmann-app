@@ -12,12 +12,19 @@ import {
   updateDoc,
   type DocumentData,
 } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
+import {
+  cleanStoredDocuments,
+  sanitizeStorageFileName,
+  type StoredDocumentEntry,
+} from '../../lib/tenantDocuments';
 import type { AdminField, OverviewVariant, PreviewField } from './adminFormTypes';
+import DocumentUploadControl from './DocumentUploadControl';
 
 type Props = {
   collectionName: string;
@@ -223,7 +230,30 @@ export default function AdminCollectionManager({
   );
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [pendingCompanyDocumentFiles, setPendingCompanyDocumentFiles] = useState<File[]>([]);
   const [isPending, startTransition] = useTransition();
+  const isCompanyCollection = collectionName === 'companies';
+  const hiddenCompanyUploadFieldNames = useMemo(
+    () =>
+      new Set([
+        'companyUploadSection',
+        'uploadCompanyContract',
+        'uploadCommercialRegisterExtract',
+        'uploadShareholderList',
+        'uploadTaxDocuments',
+        'uploadRepresentationProof',
+        'uploadBankDocuments',
+        'uploadOtherCompanyDocuments',
+      ]),
+    []
+  );
+  const visibleFields = useMemo(
+    () =>
+      isCompanyCollection
+        ? fields.filter((field) => !hiddenCompanyUploadFieldNames.has(field.name))
+        : fields,
+    [fields, hiddenCompanyUploadFieldNames, isCompanyCollection]
+  );
 
   const relationFields = useMemo(
     () =>
@@ -425,6 +455,33 @@ export default function AdminCollectionManager({
     }
   }
 
+  async function uploadCompanyDocuments(recordId: string, files: File[]) {
+    if (files.length === 0) return [];
+
+    const uploadedDocuments: StoredDocumentEntry[] = [];
+
+    for (const file of files) {
+      const safeName = sanitizeStorageFileName(file.name);
+      const storagePath = `company-documents/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, file, {
+        contentType: file.type || 'application/octet-stream',
+      });
+
+      uploadedDocuments.push({
+        contentType: file.type || 'application/octet-stream',
+        name: file.name,
+        path: storagePath,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedByEmail: user?.email ?? '',
+        url: await getDownloadURL(storageRef),
+      });
+    }
+
+    return uploadedDocuments;
+  }
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (role !== 'admin' || !user) {
@@ -481,8 +538,8 @@ export default function AdminCollectionManager({
           : '';
       }
     });
-    const portalPasswordInput = String(values.portalPassword ?? '');
     if (collectionName === 'people') {
+      delete values.portalUsername;
       delete values.portalPassword;
     }
     setMessage('');
@@ -490,6 +547,7 @@ export default function AdminCollectionManager({
     startTransition(async () => {
       try {
         let savedRecordId = documentId ?? '';
+        let nextInitialValues = values;
         if (editMode && documentId) {
           await updateDoc(doc(db, collectionName, documentId), {
             ...values,
@@ -497,7 +555,22 @@ export default function AdminCollectionManager({
             updatedByEmail: user.email ?? null,
             updatedByUid: user.uid,
           });
-          setInitialValues(values);
+          if (isCompanyCollection && pendingCompanyDocumentFiles.length > 0) {
+            const uploadedDocuments = await uploadCompanyDocuments(documentId, pendingCompanyDocumentFiles);
+            const nextCompanyDocuments = [
+              ...cleanStoredDocuments(initialValues.companyDocuments),
+              ...uploadedDocuments,
+            ];
+            await updateDoc(doc(db, collectionName, documentId), {
+              companyDocuments: nextCompanyDocuments,
+              updatedAt: serverTimestamp(),
+              updatedByEmail: user.email ?? null,
+              updatedByUid: user.uid,
+            });
+            nextInitialValues = { ...values, companyDocuments: nextCompanyDocuments };
+            setPendingCompanyDocumentFiles([]);
+          }
+          setInitialValues(nextInitialValues);
           setFormKey(`${documentId}-${Date.now()}`);
           setMessage(`${recordLabel} wurde aktualisiert.`);
           if (redirectPathAfterSave) router.push(redirectPathAfterSave);
@@ -510,46 +583,20 @@ export default function AdminCollectionManager({
             updatedAt: serverTimestamp(),
           });
           savedRecordId = createdRecord.id;
+          if (isCompanyCollection && pendingCompanyDocumentFiles.length > 0) {
+            const uploadedDocuments = await uploadCompanyDocuments(savedRecordId, pendingCompanyDocumentFiles);
+            await updateDoc(doc(db, collectionName, savedRecordId), {
+              companyDocuments: uploadedDocuments,
+              updatedAt: serverTimestamp(),
+              updatedByEmail: user.email ?? null,
+              updatedByUid: user.uid,
+            });
+            setPendingCompanyDocumentFiles([]);
+          }
           form.reset();
           setFormKey(`new-${Date.now()}`);
           setMessage(`${submitLabel} wurde gespeichert.`);
           window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        if (collectionName === 'people' && savedRecordId) {
-          const portalUsername = cleanSpaces(String(values.portalUsername ?? '')).toLowerCase();
-          const email = cleanSpaces(String(values.email ?? '')).toLowerCase();
-
-          if (portalUsername && email) {
-            const token = await user.getIdToken();
-            const response = await fetch('/api/admin/portal-access', {
-              body: JSON.stringify({
-                password: portalPasswordInput,
-                targetId: savedRecordId,
-                targetType: 'contact',
-                username: portalUsername,
-              }),
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              method: 'POST',
-            });
-            const result = (await response.json()) as { error?: string; ok?: boolean };
-
-            if (!response.ok || !result.ok) {
-              setError(
-                `Datensatz wurde gespeichert. Portalzugang konnte nicht eingerichtet werden: ${result.error || 'Fehler'}`
-              );
-              return;
-            }
-
-            setMessage((current) =>
-              current
-                ? `${current} Portalzugang wurde eingerichtet.`
-                : 'Datensatz wurde gespeichert. Portalzugang wurde eingerichtet.'
-            );
-          }
         }
       } catch (caughtError) {
         console.error(`Fehler beim Speichern in ${collectionName}:`, caughtError);
@@ -718,7 +765,7 @@ export default function AdminCollectionManager({
         <form autoComplete="off" className="mt-8 grid gap-5 md:grid-cols-2" key={formKey} onSubmit={handleSubmit} ref={formRef}>
           <input autoComplete="username" className="hidden" name={`${collectionName}-fake-username`} tabIndex={-1} type="text" />
           <input autoComplete="current-password" className="hidden" name={`${collectionName}-fake-password`} tabIndex={-1} type="password" />
-          {fields.map((field) => {
+          {visibleFields.map((field) => {
             const fieldType = field.type ?? 'text';
             const isWide =
               fieldType === 'textarea' ||
@@ -727,6 +774,31 @@ export default function AdminCollectionManager({
               fieldType === 'text-list';
             return <div className={isWide ? 'space-y-2 md:col-span-2' : 'space-y-2'} key={field.name}>{renderField(field)}</div>;
           })}
+          {isCompanyCollection ? (
+            <div className="space-y-3 md:col-span-2">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Dokumente</label>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Dateien werden beim Speichern der Firma hochgeladen.
+                </p>
+              </div>
+              <DocumentUploadControl
+                onUpload={(files) => {
+                  setPendingCompanyDocumentFiles((currentFiles) => [...currentFiles, ...files]);
+                  setMessage(
+                    files.length === 1
+                      ? '1 Datei fuer den Upload vorgemerkt.'
+                      : `${files.length} Dateien fuer den Upload vorgemerkt.`
+                  );
+                }}
+              />
+              {pendingCompanyDocumentFiles.length > 0 ? (
+                <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-xs text-slate-600">
+                  {pendingCompanyDocumentFiles.map((file) => file.name).join(', ')}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 md:col-span-2">{error}</div> : null}
           {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 md:col-span-2">{message}</div> : null}
           <div className="flex flex-wrap gap-3 md:col-span-2">

@@ -4,6 +4,7 @@ import { getAdminAuth, getAdminDb, hasFirebaseAdminConfig } from '../../../../li
 import { deleteLocalMailboxSettings, writeLocalMailboxSettings } from '../../../../lib/localMailboxConfig';
 import { getMailboxSettingsStateServer } from '../../../../lib/mailboxConfigServer';
 import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID } from '../../../../lib/mailboxSettings';
+import { getFirestoreDocument } from '../../../../lib/firestoreRest';
 
 export const runtime = 'nodejs';
 
@@ -41,18 +42,29 @@ function cleanText(value: unknown) {
 }
 
 async function requireAdmin(request: Request) {
+  const authorization = request.headers.get('authorization') ?? '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+
   if (!hasFirebaseAdminConfig() && process.env.NODE_ENV !== 'production') {
+    if (!token) {
+      return {
+        error: NextResponse.json({ ok: false, error: 'missing_auth_token' }, { status: 401 }),
+        token: '',
+        uid: '',
+      };
+    }
+
     return {
       error: null,
+      token,
       uid: 'local-dev-admin',
     };
   }
 
-  const authorization = request.headers.get('authorization') ?? '';
-  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
   if (!token) {
     return {
       error: NextResponse.json({ ok: false, error: 'missing_auth_token' }, { status: 401 }),
+      token: '',
       uid: '',
     };
   }
@@ -69,12 +81,14 @@ async function requireAdmin(request: Request) {
 
     return {
       error: null,
+      token,
       uid: decoded.uid,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'invalid_auth_token';
     return {
       error: NextResponse.json({ ok: false, error: message }, { status: 401 }),
+      token: '',
       uid: '',
     };
   }
@@ -84,6 +98,23 @@ export async function GET(request: Request) {
   const adminCheck = await requireAdmin(request);
   if (adminCheck.error) {
     return adminCheck.error;
+  }
+
+  if (!hasFirebaseAdminConfig() && process.env.NODE_ENV !== 'production') {
+    try {
+      const remoteSettings = await getFirestoreDocument(
+        ADMIN_SETTINGS_COLLECTION,
+        MAILBOX_SETTINGS_DOC_ID,
+        adminCheck.token
+      );
+      return NextResponse.json({
+        ok: true,
+        exists: !remoteSettings.data.deletedAt,
+        settings: remoteSettings.data,
+      });
+    } catch {
+      // Fall back to local/env settings below.
+    }
   }
 
   const state = await getMailboxSettingsStateServer();

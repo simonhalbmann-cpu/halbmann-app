@@ -1,7 +1,11 @@
 'use client';
 
+import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { db } from '../../lib/firebase';
+import { PORTAL_INBOX_EMAIL } from '../../lib/mailbox';
+import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID } from '../../lib/mailboxSettings';
 
 type TextAlign = 'center' | 'left';
 
@@ -53,8 +57,8 @@ const defaultValues: FormState = {
   imapHost: 'imap.ionos.de',
   imapPassword: '',
   imapPort: '993',
-  imapUser: '',
-  inboxEmail: '',
+  imapUser: PORTAL_INBOX_EMAIL,
+  inboxEmail: PORTAL_INBOX_EMAIL,
   mailFooterBold: false,
   mailFooterDivider: true,
   mailFooterFontFamily: fontOptions[0],
@@ -68,13 +72,17 @@ const defaultValues: FormState = {
   mailHeaderFontFamily: fontOptions[0],
   mailHeaderFontSize: '14',
   mailHeaderItalic: false,
-  mailHeaderText: 'Holen Sie sich die App oder nutzen Sie das Online-Mieterportal f?r ein besseres Erlebnis.',
+  mailHeaderText: 'Bitte senden Sie Antworten und Unterlagen direkt per E-Mail an die Verwaltung.',
   mailHeaderTextAlign: 'center',
   mailHeaderUnderline: false,
   smtpHost: 'smtp.ionos.de',
   smtpPassword: '',
   smtpPort: '587',
-  smtpUser: '',
+  smtpUser: PORTAL_INBOX_EMAIL,
+};
+
+type MailboxSettingsDocument = Partial<FormState> & {
+  deletedAt?: unknown;
 };
 
 function cleanText(value: unknown) {
@@ -82,13 +90,20 @@ function cleanText(value: unknown) {
 }
 
 function mapSettingsToForm(data?: Partial<FormState> | null): FormState {
+  const inboxEmail = cleanText(data?.inboxEmail);
+  const resolvedInboxEmail = inboxEmail || defaultValues.inboxEmail;
+  const imapUser = cleanText(data?.imapUser) || resolvedInboxEmail;
+  const smtpUser = cleanText(data?.smtpUser) || imapUser || inboxEmail;
+  const imapPassword = cleanText(data?.imapPassword) || cleanText(data?.smtpPassword);
+  const smtpPassword = cleanText(data?.smtpPassword) || imapPassword;
+
   return {
     active: data?.active !== false,
     imapHost: cleanText(data?.imapHost) || defaultValues.imapHost,
-    imapPassword: cleanText(data?.imapPassword),
+    imapPassword,
     imapPort: cleanText(data?.imapPort) || defaultValues.imapPort,
-    imapUser: cleanText(data?.imapUser),
-    inboxEmail: cleanText(data?.inboxEmail),
+    imapUser,
+    inboxEmail: resolvedInboxEmail,
     mailFooterBold: data?.mailFooterBold === true,
     mailFooterDivider: data?.mailFooterDivider !== false,
     mailFooterFontFamily: cleanText(data?.mailFooterFontFamily) || defaultValues.mailFooterFontFamily,
@@ -106,9 +121,9 @@ function mapSettingsToForm(data?: Partial<FormState> | null): FormState {
     mailHeaderTextAlign: data?.mailHeaderTextAlign === 'left' ? 'left' : 'center',
     mailHeaderUnderline: data?.mailHeaderUnderline === true,
     smtpHost: cleanText(data?.smtpHost) || defaultValues.smtpHost,
-    smtpPassword: cleanText(data?.smtpPassword),
+    smtpPassword,
     smtpPort: cleanText(data?.smtpPort) || defaultValues.smtpPort,
-    smtpUser: cleanText(data?.smtpUser),
+    smtpUser,
   };
 }
 
@@ -121,6 +136,14 @@ function toGermanError(error: string) {
     default:
       return error || 'Die Einstellungen konnten nicht gespeichert werden.';
   }
+}
+
+async function loadMailboxSettingsFromClientFirestore() {
+  const snapshot = await getDoc(doc(db, ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID));
+  if (!snapshot.exists()) return null;
+  const data = snapshot.data() as MailboxSettingsDocument;
+  if (data.deletedAt) return null;
+  return data;
 }
 
 export default function AdminMailboxSettings({ mode = 'full' }: { mode?: 'credentials' | 'layout' | 'full' }) {
@@ -158,8 +181,13 @@ export default function AdminMailboxSettings({ mode = 'full' }: { mode?: 'creden
       const response = await authorizedFetch('/api/admin/mailbox-settings', { method: 'GET' });
       const result = (await response.json()) as MailboxSettingsApiResponse;
       if (!response.ok || !result.ok) throw new Error(result.error || 'mailbox_settings_load_failed');
-      setExists(Boolean(result.exists));
-      setForm(mapSettingsToForm(result.settings));
+      const apiForm = mapSettingsToForm(result.settings);
+      const hasApiPassword = Boolean(cleanText(result.settings?.imapPassword) || cleanText(result.settings?.smtpPassword));
+      const clientSettings = hasApiPassword ? null : await loadMailboxSettingsFromClientFirestore();
+      const nextSettings = clientSettings ?? result.settings;
+
+      setExists(Boolean(result.exists || clientSettings));
+      setForm(clientSettings ? mapSettingsToForm(clientSettings) : apiForm);
     } catch (caughtError) {
       console.error('Fehler beim Laden der Mailbox-Einstellungen:', caughtError);
       setError(toGermanError(caughtError instanceof Error ? caughtError.message : 'Die Einstellungen konnten nicht geladen werden.'));
@@ -269,11 +297,11 @@ export default function AdminMailboxSettings({ mode = 'full' }: { mode?: 'creden
               <Field label="IMAP-Benutzer" value={form.imapUser} onChange={(value) => updateField('imapUser', value)} />
               <Field label="IMAP-Host" value={form.imapHost} onChange={(value) => updateField('imapHost', value)} />
               <Field label="IMAP-Port" value={form.imapPort} onChange={(value) => updateField('imapPort', value)} />
-              <PasswordField label="IMAP-Passwort" value={form.imapPassword} onChange={(value) => updateField('imapPassword', value)} showPassword={showImapPassword} onToggle={() => setShowImapPassword((current) => !current)} />
+              <PasswordField label="IMAP-Passwort" value={form.imapPassword} onChange={(value) => updateField('imapPassword', value)} placeholder="Nicht in der App gespeichert" showPassword={showImapPassword} onToggle={() => setShowImapPassword((current) => !current)} />
               <Field label="SMTP-Benutzer" value={form.smtpUser} onChange={(value) => updateField('smtpUser', value)} />
               <Field label="SMTP-Host" value={form.smtpHost} onChange={(value) => updateField('smtpHost', value)} />
               <Field label="SMTP-Port" value={form.smtpPort} onChange={(value) => updateField('smtpPort', value)} />
-              <PasswordField label="SMTP-Passwort" value={form.smtpPassword} onChange={(value) => updateField('smtpPassword', value)} showPassword={showSmtpPassword} onToggle={() => setShowSmtpPassword((current) => !current)} />
+              <PasswordField label="SMTP-Passwort" value={form.smtpPassword} onChange={(value) => updateField('smtpPassword', value)} placeholder="Nicht in der App gespeichert" showPassword={showSmtpPassword} onToggle={() => setShowSmtpPassword((current) => !current)} />
             </div>
           </SectionCard>
           ) : null}
@@ -367,12 +395,12 @@ function Field({ label, onChange, value }: { label: string; onChange: (value: st
   );
 }
 
-function PasswordField({ label, onChange, onToggle, showPassword, value }: { label: string; onChange: (value: string) => void; onToggle: () => void; showPassword: boolean; value: string }) {
+function PasswordField({ label, onChange, onToggle, placeholder, showPassword, value }: { label: string; onChange: (value: string) => void; onToggle: () => void; placeholder?: string; showPassword: boolean; value: string }) {
   return (
     <label className="space-y-2">
       <span className="text-sm font-medium text-slate-700">{label}</span>
       <div className="flex items-center gap-2">
-        <input className="w-full rounded-[18px] border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => onChange(event.target.value)} type={showPassword ? 'text' : 'password'} value={value} />
+        <input className="w-full rounded-[18px] border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-amber-700/60" onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type={showPassword ? 'text' : 'password'} value={value} />
         <button className="shrink-0 rounded-full border border-stone-300 bg-white px-4 py-3 text-xs font-medium text-slate-700 transition hover:border-amber-700/30 hover:text-slate-950" onClick={onToggle} type="button">{showPassword ? 'Verbergen' : 'Anzeigen'}</button>
       </div>
     </label>

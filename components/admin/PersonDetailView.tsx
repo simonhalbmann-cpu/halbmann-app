@@ -1,21 +1,28 @@
-'use client';
+﻿'use client';
 
-import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, type DocumentData } from 'firebase/firestore';
+import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, type DocumentData } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { formatDateTime, formatTimestampSort, type WorkflowRecord } from '../../lib/adminWorkflow';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
+import {
+  cleanStoredDocuments,
+  sanitizeStorageFileName,
+  type StoredDocumentEntry,
+} from '../../lib/tenantDocuments';
 import { composePortalDraft } from '../../lib/draftComposer';
 import { personDocumentFields } from './personConfig';
 import { buildPortalSignatureText, createSignatureRecord, mergeBodyWithSignature } from '../../lib/signatures';
-import { applyAdminSenderToSignature, resolveAdminSenderName } from './adminSenderSignature';
+import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
+import DocumentUploadControl from './DocumentUploadControl';
 
 type PersonDetailViewProps = {
   personId: string;
 };
 
-type PersonData = Record<string, string>;
+type PersonData = Record<string, unknown>;
 
 const personCategoryLabels: Record<string, string> = {
   electrician: 'Elektriker',
@@ -63,23 +70,32 @@ function stripTrailingSignature(body: string, signatureText: string) {
     : trimmedBody;
 }
 
-function formatValue(value?: string) {
-  return cleanText(value) || '–';
+function formatValue(value?: unknown) {
+  return cleanText(value) || 'â€“';
 }
 
-function translatePersonCategory(value?: string) {
+function translatePersonCategory(value?: unknown) {
   const text = cleanText(value);
   return personCategoryLabels[text] ?? text;
 }
 
-function translatePersonSalutation(value?: string) {
+function translatePersonSalutation(value?: unknown) {
   const text = cleanText(value);
   return personSalutationLabels[text] ?? text;
 }
 
-function translatePreferredContactMethod(value?: string) {
+function translatePreferredContactMethod(value?: unknown) {
   const text = cleanText(value);
   return preferredContactMethodLabels[text] ?? text;
+}
+
+function formatFileSize(value: unknown) {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
 export default function PersonDetailView({ personId }: PersonDetailViewProps) {
@@ -95,6 +111,8 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [deletingDocumentPath, setDeletingDocumentPath] = useState('');
   const [showInvitationSentModal, setShowInvitationSentModal] = useState(false);
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -110,11 +128,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           return;
         }
 
-        const data = Object.fromEntries(
-          Object.entries(snapshot.data()).map(([key, value]) => [key, String(value ?? '')])
-        );
-
-        setPerson(data);
+        setPerson(snapshot.data() as PersonData);
         setError('');
         setIsLoading(false);
       },
@@ -137,7 +151,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         setMessages(snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id })));
       },
       (caughtError) => {
-        console.error(`Fehler beim Laden des Chatverlaufs für Kontakt ${personId}:`, caughtError);
+        console.error(`Fehler beim Laden des Chatverlaufs fÃ¼r Kontakt ${personId}:`, caughtError);
       }
     );
 
@@ -153,6 +167,8 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     if (!person) return [];
     return personDocumentFields.filter((field) => cleanText(person[field.name]).length > 0);
   }, [person]);
+
+  const personDocuments = useMemo(() => cleanStoredDocuments(person?.personDocuments), [person]);
 
   const personMessages = useMemo(
     () =>
@@ -182,7 +198,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   const portalSignature = buildPortalSignatureText(
     applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
-      resolveAdminSenderName(profile, user)
+      resolveAdminSenderContact(profile, user)
     )
   );
 
@@ -199,6 +215,84 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     });
   }
 
+  async function uploadPersonDocuments(files: File[] | FileList | null) {
+    if (!files || files.length === 0 || !person) return;
+
+    setError('');
+    setMessage('');
+    setIsUploadingDocument(true);
+
+    try {
+      const uploadedDocuments: StoredDocumentEntry[] = [];
+
+      for (const file of Array.from(files)) {
+        const safeName = sanitizeStorageFileName(file.name);
+        const storagePath = `person-documents/${personId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, file, {
+          contentType: file.type || 'application/octet-stream',
+        });
+
+        uploadedDocuments.push({
+          contentType: file.type || 'application/octet-stream',
+          name: file.name,
+          path: storagePath,
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+          uploadedByEmail: user?.email ?? '',
+          url: await getDownloadURL(storageRef),
+        });
+      }
+
+      await updateDoc(doc(db, 'people', personId), {
+        personDocuments: [...personDocuments, ...uploadedDocuments],
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      setMessage(uploadedDocuments.length === 1 ? 'Dokument wurde hochgeladen.' : 'Dokumente wurden hochgeladen.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Hochladen von Dokumenten fuer Kontakt ${personId}:`, caughtError);
+      setError('Dokumente konnten nicht hochgeladen werden.');
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  }
+
+  async function deletePersonDocument(targetDocument: StoredDocumentEntry) {
+    const confirmed = window.confirm(`Dokument "${targetDocument.name}" wirklich loeschen?`);
+    if (!confirmed) return;
+
+    setError('');
+    setMessage('');
+    setDeletingDocumentPath(targetDocument.path || targetDocument.url);
+
+    try {
+      if (targetDocument.path) {
+        await deleteObject(ref(storage, targetDocument.path));
+      }
+
+      await updateDoc(doc(db, 'people', personId), {
+        personDocuments: personDocuments.filter(
+          (document) =>
+            (targetDocument.path && document.path !== targetDocument.path) ||
+            (!targetDocument.path && document.url !== targetDocument.url)
+        ),
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      setMessage('Dokument wurde geloescht.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Loeschen eines Dokuments fuer Kontakt ${personId}:`, caughtError);
+      setError('Dokument konnte nicht geloescht werden.');
+    } finally {
+      setDeletingDocumentPath('');
+    }
+  }
+
   async function generateAiDraft() {
     if (!person) return;
     setMessage('');
@@ -213,7 +307,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           currentBody: stripTrailingSignature(cleanText(replyText), portalSignature),
           instruction:
             contextMode === 'new'
-              ? [aiInstruction, 'Es handelt sich um eine neue Nachricht. Frühere Themen nur erwähnen, wenn ich das ausdrücklich sage.']
+              ? [aiInstruction, 'Es handelt sich um eine neue Nachricht. FrÃ¼here Themen nur erwÃ¤hnen, wenn ich das ausdrÃ¼cklich sage.']
                   .filter(Boolean)
                   .join('\n')
               : aiInstruction,
@@ -241,7 +335,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
       );
       setMessage('KI-Entwurf wurde erzeugt.');
     } catch (caughtError) {
-      console.error('Fehler beim KI-Entwurf für Kontakt:', caughtError);
+      console.error('Fehler beim KI-Entwurf fÃ¼r Kontakt:', caughtError);
       setError(caughtError instanceof Error ? caughtError.message : 'Der KI-Entwurf konnte nicht erzeugt werden.');
     } finally {
       setIsGeneratingAiDraft(false);
@@ -256,7 +350,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
       try {
         const signatureRecord = applyAdminSenderToSignature(
           createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
-          resolveAdminSenderName(profile, user)
+          resolveAdminSenderContact(profile, user)
         );
         const baseBody = cleanText(replyText).endsWith(portalSignature)
           ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
@@ -292,7 +386,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           await addDoc(collection(db, 'followUps'), {
             createdAt: serverTimestamp(),
             dueDate: followUpDate,
-            message: 'Rückmeldung vom Dienstleister prüfen',
+            message: 'RÃ¼ckmeldung vom Dienstleister prÃ¼fen',
             propertyId: cleanText(selectedProperty?.id),
             status: 'open',
             targetId: personId,
@@ -394,18 +488,11 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           >
             Bearbeiten
           </Link>
-          <button
-            className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950 cursor-pointer"
-            onClick={sendPortalInvitation}
-            type="button"
-          >
-            Einladung senden
-          </button>
           <Link
             className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
             href="/admin/personen"
           >
-            Zur Übersicht
+            Zur Ãœbersicht
           </Link>
         </div>
       </section>
@@ -444,7 +531,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
               <input
                 className="min-w-0 flex-1 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
                 onChange={(event) => setAiInstruction(event.target.value)}
-                placeholder="z. B. kürzer, verbindlicher, freundlicher"
+                placeholder="z. B. kÃ¼rzer, verbindlicher, freundlicher"
                 value={aiInstruction}
               />
             </div>
@@ -456,7 +543,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
               onClick={generateAiDraft}
               type="button"
             >
-              {isGeneratingAiDraft ? 'KI denkt…' : 'KI-Entwurf'}
+              {isGeneratingAiDraft ? 'KI denktâ€¦' : 'KI-Entwurf'}
             </button>
           </div>
           <textarea
@@ -490,7 +577,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         <div className="mt-4 max-h-[78vh] space-y-3 overflow-y-auto pr-1">
           {personMessages.length === 0 ? (
             <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-slate-600">
-              Für diesen Kontakt liegen noch keine Nachrichten vor.
+              FÃ¼r diesen Kontakt liegen noch keine Nachrichten vor.
             </div>
           ) : (
             personMessages.map((entry) => {
@@ -541,7 +628,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         </DetailCard>
 
         <DetailCard title="Adresse und Kennzeichen">
-          <DetailRow label="Straße" value={[person.street, person.houseNumber].filter(Boolean).join(' ')} />
+          <DetailRow label="StraÃŸe" value={[person.street, person.houseNumber].filter(Boolean).join(' ')} />
           <DetailRow label="PLZ / Ort" value={[person.postalCode, person.city].filter(Boolean).join(' ')} />
           <DetailRow label="Land" value={person.country} />
           <DetailRow label="Aktennummer" value={person.referenceNumber} />
@@ -555,22 +642,65 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
       </div>
 
       <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</p>
-        <h3 className="mt-2 text-2xl text-slate-950">Downloadbereich</h3>
-        {availableDocuments.length === 0 ? (
-          <div className="mt-4 rounded-[20px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm leading-6 text-slate-600">
-            Noch keine Dokumente hinterlegt.
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</p>
+            <h3 className="mt-1 text-xl text-slate-950">Kontaktdateien</h3>
+          </div>
+          <div className="min-w-[min(100%,560px)] flex-1">
+            <DocumentUploadControl
+              disabled={isUploadingDocument}
+              onUpload={(files) => uploadPersonDocuments(files)}
+            />
+          </div>
+        </div>
+
+        {personDocuments.length > 0 ? (
+          <div className="mt-4 divide-y divide-stone-100 overflow-hidden rounded-[18px] border border-stone-200">
+            {personDocuments.map((personDocument) => {
+              const isDeleting = deletingDocumentPath === (personDocument.path || personDocument.url);
+              const meta = [formatFileSize(personDocument.size), cleanText(personDocument.uploadedAt)]
+                .filter(Boolean)
+                .join(' / ');
+
+              return (
+                <div className="grid gap-3 bg-white px-4 py-3 text-sm md:grid-cols-[minmax(0,1fr)_auto] md:items-center" key={`${personDocument.path}-${personDocument.url}`}>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{personDocument.name}</p>
+                    {meta ? <p className="mt-0.5 text-xs text-slate-500">{meta}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <a className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" href={personDocument.url} rel="noreferrer" target="_blank">
+                      Anschauen
+                    </a>
+                    <button className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60" disabled={isDeleting} onClick={() => void deletePersonDocument(personDocument)} type="button">
+                      {isDeleting ? 'Loescht...' : 'Loeschen'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {availableDocuments.map((field) => (
-              <article className="rounded-[20px] border border-stone-200 bg-stone-50 p-4" key={field.name}>
-                <p className="text-sm font-medium text-slate-900">{field.label}</p>
-                <p className="mt-1.5 text-sm leading-6 text-slate-600">{formatValue(person[field.name])}</p>
-              </article>
-            ))}
+          <div className="mt-4 rounded-[18px] border border-dashed border-stone-300 bg-stone-50 p-4 text-sm leading-6 text-slate-600">
+            Noch keine Dokumente hochgeladen.
           </div>
         )}
+
+        {availableDocuments.length > 0 ? (
+          <div className="mt-4 rounded-[18px] border border-amber-200 bg-amber-50 p-4">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-amber-700/80">
+              Alte Dateinamen ohne Upload
+            </p>
+            <div className="mt-2 grid gap-1 text-sm text-slate-700">
+              {availableDocuments.map((field) => (
+                <p key={field.name}>
+                  {field.label}: {formatValue(person[field.name])}
+                </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {message ? (
@@ -596,7 +726,7 @@ function DetailCard({ children, title }: { children: ReactNode; title: string })
   );
 }
 
-function DetailRow({ label, value }: { label: string; value?: string }) {
+function DetailRow({ label, value }: { label: string; value?: unknown }) {
   return (
     <div className="admin-detail-row grid grid-cols-1 gap-1 border-b border-stone-100 py-3 text-sm last:border-b-0 md:grid-cols-[112px_minmax(0,1fr)] md:gap-3">
       <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</dt>
@@ -604,3 +734,4 @@ function DetailRow({ label, value }: { label: string; value?: string }) {
     </div>
   );
 }
+

@@ -6,19 +6,29 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function adminProfilePath() {
-      return /databases/(default)/documents/userProfiles/$(request.auth.uid);
-    }
-
-    function isAdmin() {
-      return signedIn()
-        && exists(adminProfilePath())
-        && get(adminProfilePath()).data.role == 'admin';
-    }
-
     match /company-signatures/{allPaths=**} {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /tenant-documents/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /property-documents/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /company-documents/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /person-documents/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
     }
 
     match /{allPaths=**} {

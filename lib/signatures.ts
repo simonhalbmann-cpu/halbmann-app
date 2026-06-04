@@ -71,6 +71,8 @@
   website: string;
 };
 
+export const PORTAL_SIGNATURE_EMAIL = 'portal@halbmann-holding.de';
+
 export function cleanSignatureText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -278,7 +280,7 @@ function buildDefaultLetterRightBlock(data?: Record<string, unknown> | null) {
   const houseNumber = firstRecordText(data?.houseNumber);
   const postalCode = firstRecordText(data?.postalCode);
   const city = firstRecordText(data?.city);
-  const email = firstRecordText(data?.email);
+  const email = PORTAL_SIGNATURE_EMAIL;
   const phone = firstRecordText(data?.phone);
   const website = firstRecordText(data?.website);
   const registerCourt = formatRegisterCourtDisplay(
@@ -2062,7 +2064,7 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
     companyName: normalizeCompanyDisplayName(firstRecordText(data?.name)),
     country: firstRecordText(data?.country),
     department: cleanSignatureText(data?.signatureDepartment),
-    email: firstRecordText(data?.email),
+    email: PORTAL_SIGNATURE_EMAIL,
     emailTemplateHtml: cleanSignatureText(data?.signatureEmailTemplateHtml),
     fontBold: data?.signatureFontBold === true,
     fontFamily: cleanSignatureText(data?.signatureFontFamily) || 'Segoe UI, Arial, sans-serif',

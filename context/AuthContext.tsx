@@ -14,6 +14,7 @@ type AuthContextType = {
   error: string | null;
   loading: boolean;
   profile: UserProfile | null;
+  refreshProfile: () => Promise<void>;
   role: UserRole | null;
   user: User | null;
 };
@@ -22,6 +23,7 @@ export const AuthContext = createContext<AuthContextType>({
   error: null,
   loading: true,
   profile: null,
+  refreshProfile: async () => undefined,
   role: null,
   user: null,
 });
@@ -32,6 +34,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  async function refreshProfile() {
+    if (!user) return;
+    const nextProfile = await getUserProfile(user.uid);
+    setProfile(nextProfile);
+    setRole(nextProfile?.role ?? null);
+  }
 
   useEffect(() => {
     async function loadLocalPortalSession() {
@@ -113,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ error, loading, profile, role, user }}>
+    <AuthContext.Provider value={{ error, loading, profile, refreshProfile, role, user }}>
       {children}
     </AuthContext.Provider>
   );

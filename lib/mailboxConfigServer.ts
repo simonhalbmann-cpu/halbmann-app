@@ -1,13 +1,52 @@
 import { getAdminDb } from './firebaseAdmin';
 import { readLocalMailboxSettings } from './localMailboxConfig';
+import { PORTAL_INBOX_EMAIL } from './mailbox';
 import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID, type MailboxSettings } from './mailboxSettings';
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function envFallback(): MailboxSettings {
+function normalizeMailboxSettings(data: Partial<MailboxSettings>): MailboxSettings {
+  const inboxEmail = cleanText(data.inboxEmail) || PORTAL_INBOX_EMAIL;
+  const imapUser = cleanText(data.imapUser) || inboxEmail;
+  const smtpUser = cleanText(data.smtpUser) || imapUser || inboxEmail;
+  const imapPassword = cleanText(data.imapPassword) || cleanText(data.smtpPassword);
+  const smtpPassword = cleanText(data.smtpPassword) || imapPassword;
+
   return {
+    ...data,
+    active: data.active !== false,
+    imapHost: cleanText(data.imapHost) || 'imap.ionos.de',
+    imapPassword,
+    imapPort: cleanText(data.imapPort) || '993',
+    imapUser,
+    inboxEmail,
+    mailFooterBold: data.mailFooterBold === true,
+    mailFooterDivider: data.mailFooterDivider !== false,
+    mailFooterFontFamily: cleanText(data.mailFooterFontFamily) || 'Segoe UI, Arial, sans-serif',
+    mailFooterFontSize: cleanText(data.mailFooterFontSize) || '12',
+    mailFooterItalic: data.mailFooterItalic === true,
+    mailFooterText: cleanText(data.mailFooterText),
+    mailFooterTextAlign: data.mailFooterTextAlign === 'left' ? 'left' : 'center',
+    mailFooterUnderline: data.mailFooterUnderline === true,
+    mailHeaderBold: data.mailHeaderBold === true,
+    mailHeaderDivider: data.mailHeaderDivider !== false,
+    mailHeaderFontFamily: cleanText(data.mailHeaderFontFamily) || 'Segoe UI, Arial, sans-serif',
+    mailHeaderFontSize: cleanText(data.mailHeaderFontSize) || '14',
+    mailHeaderItalic: data.mailHeaderItalic === true,
+    mailHeaderText: cleanText(data.mailHeaderText),
+    mailHeaderTextAlign: data.mailHeaderTextAlign === 'left' ? 'left' : 'center',
+    mailHeaderUnderline: data.mailHeaderUnderline === true,
+    smtpHost: cleanText(data.smtpHost) || 'smtp.ionos.de',
+    smtpPassword,
+    smtpPort: cleanText(data.smtpPort) || '587',
+    smtpUser,
+  };
+}
+
+function envFallback(): MailboxSettings {
+  return normalizeMailboxSettings({
     active: Boolean(process.env.IONOS_IMAP_USER),
     imapHost: process.env.IONOS_IMAP_HOST,
     imapPassword: process.env.IONOS_IMAP_PASSWORD,
@@ -21,17 +60,17 @@ function envFallback(): MailboxSettings {
     smtpPassword: process.env.IONOS_SMTP_PASSWORD,
     smtpPort: process.env.IONOS_SMTP_PORT,
     smtpUser: process.env.IONOS_SMTP_USER,
-  };
+  });
 }
 
 function blankMailboxSettings(): MailboxSettings {
-  return {
+  return normalizeMailboxSettings({
     active: false,
-    imapHost: '',
+    imapHost: 'imap.ionos.de',
     imapPassword: '',
-    imapPort: '',
-    imapUser: '',
-    inboxEmail: '',
+    imapPort: '993',
+    imapUser: PORTAL_INBOX_EMAIL,
+    inboxEmail: PORTAL_INBOX_EMAIL,
     mailFooterDivider: true,
     mailFooterFontFamily: 'Segoe UI, Arial, sans-serif',
     mailFooterFontSize: '12',
@@ -42,11 +81,11 @@ function blankMailboxSettings(): MailboxSettings {
     mailHeaderFontSize: '14',
     mailHeaderText: '',
     mailHeaderTextAlign: 'center',
-    smtpHost: '',
+    smtpHost: 'smtp.ionos.de',
     smtpPassword: '',
-    smtpPort: '',
-    smtpUser: '',
-  };
+    smtpPort: '587',
+    smtpUser: PORTAL_INBOX_EMAIL,
+  });
 }
 
 export async function getMailboxSettingsStateServer(): Promise<{
@@ -57,7 +96,7 @@ export async function getMailboxSettingsStateServer(): Promise<{
   if (localSettings) {
     return {
       exists: true,
-      settings: localSettings,
+      settings: normalizeMailboxSettings(localSettings),
     };
   }
 
@@ -84,35 +123,10 @@ export async function getMailboxSettingsStateServer(): Promise<{
 
     return {
       exists: true,
-      settings: {
-        active: data.active !== false,
-        imapHost: cleanText(data.imapHost),
-        imapPassword: cleanText(data.imapPassword),
-        imapPort: cleanText(data.imapPort),
-        imapUser: cleanText(data.imapUser),
-        inboxEmail: cleanText(data.inboxEmail),
-        mailFooterBold: data.mailFooterBold === true,
-        mailFooterDivider: data.mailFooterDivider !== false,
-        mailFooterFontFamily: cleanText(data.mailFooterFontFamily) || 'Segoe UI, Arial, sans-serif',
-        mailFooterFontSize: cleanText(data.mailFooterFontSize) || '12',
-        mailFooterItalic: data.mailFooterItalic === true,
-        mailFooterText: cleanText(data.mailFooterText),
-        mailFooterTextAlign: data.mailFooterTextAlign === 'left' ? 'left' : 'center',
-        mailFooterUnderline: data.mailFooterUnderline === true,
-        mailHeaderBold: data.mailHeaderBold === true,
-        mailHeaderDivider: data.mailHeaderDivider !== false,
-        mailHeaderFontFamily: cleanText(data.mailHeaderFontFamily) || 'Segoe UI, Arial, sans-serif',
-        mailHeaderFontSize: cleanText(data.mailHeaderFontSize) || '14',
-        mailHeaderItalic: data.mailHeaderItalic === true,
-        mailHeaderText: cleanText(data.mailHeaderText),
-        mailHeaderTextAlign: data.mailHeaderTextAlign === 'left' ? 'left' : 'center',
-        mailHeaderUnderline: data.mailHeaderUnderline === true,
-        smtpHost: cleanText(data.smtpHost),
-        smtpPassword: cleanText(data.smtpPassword),
-        smtpPort: cleanText(data.smtpPort),
-        smtpUser: cleanText(data.smtpUser),
+      settings: normalizeMailboxSettings({
+        ...data,
         updatedAt: data.updatedAt,
-      },
+      }),
     };
   } catch (error) {
     console.error('Fehler beim Laden des Mailbox-Status, Fallback auf ENV:', error);

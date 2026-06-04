@@ -10,9 +10,9 @@ export const personFields: AdminField[] = [
     name: 'category',
     options: [
       { label: 'Elektriker', value: 'electrician' },
-      { label: 'Sanitär / Rohrreinigung', value: 'plumbing' },
+      { label: 'Sanitaer / Rohrreinigung', value: 'plumbing' },
       { label: 'Heizungsdienst', value: 'heating_service' },
-      { label: 'Müllabfuhrunternehmen', value: 'waste_collection' },
+      { label: 'Muellabfuhrunternehmen', value: 'waste_collection' },
       { label: 'Abrechnungsunternehmen', value: 'billing_service' },
       { label: 'Winterdienst', value: 'winter_service' },
       { label: 'Reinigungsdienst', value: 'cleaning_service' },
@@ -22,7 +22,7 @@ export const personFields: AdminField[] = [
       { label: 'Partnerfirma / externer Kontakt', value: 'partner_company' },
       { label: 'Hausmeister', value: 'caretaker' },
       { label: 'Steuerberater', value: 'tax_advisor' },
-      { label: 'Bürge', value: 'guarantor' },
+      { label: 'Buerge', value: 'guarantor' },
       { label: 'Verwalter', value: 'manager' },
       { label: 'Sonstige Person', value: 'other' },
     ],
@@ -51,7 +51,7 @@ export const personFields: AdminField[] = [
   {
     label: 'Partnerfirma / Unternehmen',
     name: 'partnerCompanyName',
-    placeholder: 'z. B. Mustermann Sanitär GmbH',
+    placeholder: 'z. B. Mustermann Sanitaer GmbH',
   },
   {
     label: 'Zugeordnete Immobilie',
@@ -71,21 +71,6 @@ export const personFields: AdminField[] = [
     kind: 'credential_email',
     type: 'email',
   },
-  {
-    label: 'Portal-Benutzername',
-    name: 'portalUsername',
-    placeholder: 'z. B. firma.mustermann',
-    helpText: 'Optional. Nur nötig, wenn der Kontakt einen Portalzugang erhalten soll.',
-  },
-  {
-    label: 'Portal-Passwort',
-    name: 'portalPassword',
-    placeholder: 'Passwort festlegen',
-    helpText:
-      'Optional. Wird für den Versand der Einladung im Kontakt gespeichert, damit die Zugangsdaten erneut versendet werden können.',
-    kind: 'credential_password',
-    type: 'password',
-  },
   { label: 'Telefon', name: 'phone', placeholder: '+49 30 1234567', type: 'tel' },
   { label: 'Mobil', name: 'mobile', placeholder: '+49 171 1234567', type: 'tel' },
   {
@@ -95,16 +80,15 @@ export const personFields: AdminField[] = [
       { label: 'E-Mail', value: 'email' },
       { label: 'Telefon', value: 'phone' },
       { label: 'Mobil', value: 'mobile' },
-      { label: 'Portal', value: 'portal' },
       { label: 'Post', value: 'mail' },
     ],
     type: 'select',
   },
   {
-    label: 'Straße',
+    label: 'Strasse',
     name: 'street',
     kind: 'address_street',
-    placeholder: 'Musterstraße',
+    placeholder: 'Musterstrasse',
   },
   {
     label: 'Hausnummer',
@@ -150,7 +134,7 @@ export const personFields: AdminField[] = [
   {
     label: 'Notizen',
     name: 'notes',
-    placeholder: 'Zuständigkeiten, Erreichbarkeit, Besonderheiten, interne Hinweise ...',
+    placeholder: 'Zustaendigkeiten, Erreichbarkeit, Besonderheiten, interne Hinweise ...',
     type: 'textarea',
   },
 ];

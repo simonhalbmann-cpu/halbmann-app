@@ -1,9 +1,17 @@
 'use client';
 
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { db } from '../../lib/firebase';
+import { useAuth } from '../../hooks/useAuth';
+import { db, storage } from '../../lib/firebase';
+import {
+  cleanStoredDocuments,
+  sanitizeStorageFileName,
+  type StoredDocumentEntry,
+} from '../../lib/tenantDocuments';
+import DocumentUploadControl from './DocumentUploadControl';
 import {
   formatCommercialRegisterDisplay,
   formatManagingDirectorDisplay,
@@ -34,10 +42,35 @@ function formatValue(value?: unknown) {
   return text;
 }
 
+function formatDate(value: unknown) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+function formatFileSize(value: unknown) {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
 export default function CompanyDetailView({ companyId }: CompanyDetailViewProps) {
+  const { user } = useAuth();
   const [company, setCompany] = useState<CompanyData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [deletingDocumentPath, setDeletingDocumentPath] = useState('');
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -71,6 +104,86 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
 
     return companyDocumentFields.filter((field) => formatValue(company[field.name]) !== '–');
   }, [company]);
+
+  const companyDocuments = useMemo(() => cleanStoredDocuments(company?.companyDocuments), [company]);
+
+  async function uploadCompanyDocuments(files: FileList | File[] | null) {
+    if (!files || files.length === 0 || !company) return;
+
+    setError('');
+    setMessage('');
+    setIsUploadingDocument(true);
+
+    try {
+      const uploadedDocuments: StoredDocumentEntry[] = [];
+
+      for (const file of Array.from(files)) {
+        const safeName = sanitizeStorageFileName(file.name);
+        const storagePath = `company-documents/${companyId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, file, {
+          contentType: file.type || 'application/octet-stream',
+        });
+
+        uploadedDocuments.push({
+          contentType: file.type || 'application/octet-stream',
+          name: file.name,
+          path: storagePath,
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+          uploadedByEmail: user?.email ?? '',
+          url: await getDownloadURL(storageRef),
+        });
+      }
+
+      await updateDoc(doc(db, 'companies', companyId), {
+        companyDocuments: [...companyDocuments, ...uploadedDocuments],
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      setMessage(uploadedDocuments.length === 1 ? 'Dokument wurde hochgeladen.' : 'Dokumente wurden hochgeladen.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Hochladen von Dokumenten fuer Firma ${companyId}:`, caughtError);
+      setError('Dokumente konnten nicht hochgeladen werden.');
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  }
+
+  async function deleteCompanyDocument(targetDocument: StoredDocumentEntry) {
+    const confirmed = window.confirm(`Dokument "${targetDocument.name}" wirklich löschen?`);
+    if (!confirmed) return;
+
+    setError('');
+    setMessage('');
+    setDeletingDocumentPath(targetDocument.path || targetDocument.url);
+
+    try {
+      if (targetDocument.path) {
+        await deleteObject(ref(storage, targetDocument.path));
+      }
+
+      await updateDoc(doc(db, 'companies', companyId), {
+        companyDocuments: companyDocuments.filter(
+          (document) =>
+            (targetDocument.path && document.path !== targetDocument.path) ||
+            (!targetDocument.path && document.url !== targetDocument.url)
+        ),
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      setMessage('Dokument wurde gelöscht.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Loeschen eines Dokuments fuer Firma ${companyId}:`, caughtError);
+      setError('Dokument konnte nicht gelöscht werden.');
+    } finally {
+      setDeletingDocumentPath('');
+    }
+  }
 
   if (isLoading) {
     return (
@@ -125,6 +238,11 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
           {error}
         </div>
       ) : null}
+      {message ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {message}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 xl:grid-cols-3">
         <DetailCard title="Stammdaten">
@@ -176,6 +294,81 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
       </div>
 
       <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
+              Dokumente
+            </p>
+            <h3 className="mt-1 text-xl text-slate-950">Firmendateien</h3>
+          </div>
+          <div className="min-w-[min(100%,560px)] flex-1">
+            <DocumentUploadControl
+              disabled={isUploadingDocument}
+              onUpload={(files) => uploadCompanyDocuments(files)}
+            />
+          </div>
+          <label className="hidden">
+            {isUploadingDocument ? 'Lädt hoch...' : 'Dokument hochladen'}
+            <input
+              className="hidden"
+              disabled={isUploadingDocument}
+              multiple
+              onChange={(event) => {
+                void uploadCompanyDocuments(event.target.files);
+                event.target.value = '';
+              }}
+              type="file"
+            />
+          </label>
+        </div>
+
+        {companyDocuments.length > 0 ? (
+          <div className="mt-4 divide-y divide-stone-100 overflow-hidden rounded-[18px] border border-stone-200">
+            {companyDocuments.map((companyDocument) => {
+              const isDeleting = deletingDocumentPath === (companyDocument.path || companyDocument.url);
+              const meta = [formatFileSize(companyDocument.size), formatDate(companyDocument.uploadedAt)]
+                .filter(Boolean)
+                .join(' · ');
+
+              return (
+                <div
+                  className="grid gap-3 bg-white px-4 py-3 text-sm md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                  key={`${companyDocument.path}-${companyDocument.url}`}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{companyDocument.name}</p>
+                    {meta ? <p className="mt-0.5 text-xs text-slate-500">{meta}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <a
+                      className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                      href={companyDocument.url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      Anschauen
+                    </a>
+                    <button
+                      className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isDeleting}
+                      onClick={() => void deleteCompanyDocument(companyDocument)}
+                      type="button"
+                    >
+                      {isDeleting ? 'Löscht...' : 'Löschen'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-[18px] border border-dashed border-stone-300 bg-stone-50 p-4 text-sm leading-6 text-slate-600">
+            Noch keine Dokumente hochgeladen.
+          </div>
+        )}
+      </section>
+
+      <section className="hidden">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
           Dokumente
         </p>

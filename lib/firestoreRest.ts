@@ -130,6 +130,20 @@ export async function setFirestoreDocument(
   );
 }
 
+export async function deleteFirestoreDocument(
+  collectionName: string,
+  documentId: string,
+  token: string
+) {
+  await fireRequest(
+    `${getBaseUrl()}/${collectionName}/${documentId}`,
+    token,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
 export async function getFirestoreDocument(
   collectionName: string,
   documentId: string,

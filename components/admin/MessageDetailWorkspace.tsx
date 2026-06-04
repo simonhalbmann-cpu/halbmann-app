@@ -29,7 +29,7 @@ import {
   createSignatureRecord,
   mergeBodyWithSignature,
 } from '../../lib/signatures';
-import { applyAdminSenderToSignature, resolveAdminSenderName } from './adminSenderSignature';
+import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
 import { appendDeliveryLabel } from './messageDeliveryLabel';
 
@@ -234,7 +234,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const portalSignature = buildPortalSignatureText(
     applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
-      resolveAdminSenderName(profile, user)
+      resolveAdminSenderContact(profile, user)
     )
   );
   const letterRecipientOptions = useMemo(() => {
@@ -484,7 +484,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
 
       const signature = applyAdminSenderToSignature(
         createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
-        resolveAdminSenderName(profile, user)
+        resolveAdminSenderContact(profile, user)
       );
       const baseBody = cleanText(replyText).endsWith(portalSignature)
         ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
@@ -870,3 +870,4 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     </div>
   );
 }
+

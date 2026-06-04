@@ -1,8 +1,9 @@
-'use client';
+﻿'use client';
 
 import { collection, doc, onSnapshot, query, updateDoc, type DocumentData } from 'firebase/firestore';
 import Image from 'next/image';
 import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 import { db } from '../../lib/firebase';
 import {
   buildFullEmailSignatureHtml,
@@ -10,8 +11,10 @@ import {
   cleanSignatureText,
   createSignatureRecord,
   EMAIL_SIGNATURE_TOKENS,
+  PORTAL_SIGNATURE_EMAIL,
   type SignatureRecord,
 } from '../../lib/signatures';
+import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 
 type AdminRecord = {
   data: DocumentData;
@@ -30,10 +33,12 @@ const fontOptions = [
 function Field({
   label,
   onChange,
+  readOnly = false,
   value,
 }: {
   label: string;
   onChange: (value: string) => void;
+  readOnly?: boolean;
   value: string;
 }) {
   return (
@@ -42,6 +47,7 @@ function Field({
       <input
         className="mt-2 w-full rounded-[18px] border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
         onChange={(event) => onChange(event.target.value)}
+        readOnly={readOnly}
         value={value}
       />
     </label>
@@ -133,7 +139,7 @@ function FormatToolbar({
           ))}
         </select>
       </label>
-      <Field label="Schriftgröße" onChange={onFontSizeChange} value={fontSize} />
+      <Field label="SchriftgrÃ¶ÃŸe" onChange={onFontSizeChange} value={fontSize} />
       <label className="space-y-2">
         <span className="text-sm font-medium text-slate-700">Ausrichtung</span>
         <select
@@ -156,6 +162,7 @@ function FormatToolbar({
 }
 
 export default function AdminSignatureSettings() {
+  const { profile, user } = useAuth();
   const [companies, setCompanies] = useState<AdminRecord[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [form, setForm] = useState<SignatureRecord>(createSignatureRecord());
@@ -181,7 +188,7 @@ export default function AdminSignatureSettings() {
         );
       },
       (caughtError) => {
-        console.error('Fehler beim Laden der Firmen für Signaturen:', caughtError);
+        console.error('Fehler beim Laden der Firmen fÃ¼r Signaturen:', caughtError);
         setError('Die Firmen konnten nicht geladen werden.');
       }
     );
@@ -211,7 +218,7 @@ export default function AdminSignatureSettings() {
       signatureCompanyName: cleanSignatureText(nextForm.companyName),
       signatureCountry: cleanSignatureText(nextForm.country),
       signatureDepartment: cleanSignatureText(nextForm.department),
-      signatureEmail: cleanSignatureText(nextForm.email),
+      signatureEmail: PORTAL_SIGNATURE_EMAIL,
       signatureEmailTemplateHtml: cleanSignatureText(nextForm.emailTemplateHtml),
       signatureFontBold: nextForm.fontBold,
       signatureFontFamily: cleanSignatureText(nextForm.fontFamily),
@@ -262,8 +269,8 @@ export default function AdminSignatureSettings() {
   <p style="margin:0;">{{CLOSING}}</p>
   <p style="margin:18px 0 0 0;color:#0f172a;">{{NAME}}</p>
   <p style="margin:6px 0 0 0;color:#0f172a;">{{COMPANY_LINE}}</p>
-  <p style="margin:12px 0 0 0;">{{STREET_LINE}} · {{CITY_LINE}}</p>
-  <p style="margin:4px 0 0 0;">Telefon: {{PHONE}} · {{EMAIL}}</p>
+  <p style="margin:12px 0 0 0;">{{STREET_LINE}} Â· {{CITY_LINE}}</p>
+  <p style="margin:4px 0 0 0;">Telefon: {{PHONE}} Â· {{EMAIL}}</p>
 </div>`;
   }
 
@@ -294,10 +301,10 @@ export default function AdminSignatureSettings() {
         };
         setForm(nextForm);
         await persistSignature(nextForm);
-        setMessage('Signatur wurde gelöscht.');
+        setMessage('Signatur wurde gelÃ¶scht.');
       } catch (caughtError) {
-        console.error('Fehler beim Löschen der Signatur:', caughtError);
-        setError('Die Signatur konnte nicht gelöscht werden.');
+        console.error('Fehler beim LÃ¶schen der Signatur:', caughtError);
+        setError('Die Signatur konnte nicht gelÃ¶scht werden.');
       }
     });
   }
@@ -334,15 +341,19 @@ export default function AdminSignatureSettings() {
     }
   }
 
-  const address = buildSignatureAddress(form);
-  const emailPreviewHtml = buildFullEmailSignatureHtml(form);
+  const previewSignature = applyAdminSenderToSignature(
+    form,
+    resolveAdminSenderContact(profile, user)
+  );
+  const address = buildSignatureAddress(previewSignature);
+  const emailPreviewHtml = buildFullEmailSignatureHtml(previewSignature);
   const previewStyle = {
-    fontFamily: form.fontFamily,
-    fontSize: `${form.fontSize || '14'}px`,
-    fontStyle: form.fontItalic ? 'italic' : 'normal',
-    fontWeight: form.fontBold ? 700 : 500,
-    textAlign: form.textAlign,
-    textDecoration: form.fontUnderline ? 'underline' : 'none',
+    fontFamily: previewSignature.fontFamily,
+    fontSize: `${previewSignature.fontSize || '14'}px`,
+    fontStyle: previewSignature.fontItalic ? 'italic' : 'normal',
+    fontWeight: previewSignature.fontBold ? 700 : 500,
+    textAlign: previewSignature.textAlign,
+    textDecoration: previewSignature.fontUnderline ? 'underline' : 'none',
     lineHeight: 1.45,
   } as const;
 
@@ -353,7 +364,7 @@ export default function AdminSignatureSettings() {
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Signaturen</p>
           <h2 className="mt-2 text-3xl text-slate-950">Firmensignaturen</h2>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-            Für jede Firma kann hier eine professionelle E-Mail- und Portal-Signatur gepflegt werden.
+            FÃ¼r jede Firma kann hier eine professionelle E-Mail- und Portal-Signatur gepflegt werden.
           </p>
         </div>
       </div>
@@ -410,20 +421,40 @@ export default function AdminSignatureSettings() {
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <Field label="Abschlussformel" onChange={(value) => updateField('closing', value)} value={form.closing} />
-                <Field label="Name" onChange={(value) => updateField('name', value)} value={form.name} />
+                <Field
+                  label="Name"
+                  onChange={() => undefined}
+                  readOnly
+                  value={previewSignature.name}
+                />
                 <Field label="Firmenname" onChange={(value) => updateField('companyName', value)} value={form.companyName} />
                 <Field label="Rechtsform" onChange={(value) => updateField('legalForm', value)} value={form.legalForm} />
                 <Field label="Abteilung / Zusatz" onChange={(value) => updateField('department', value)} value={form.department} />
-                <Field label="Geschäftsführung" onChange={(value) => updateField('managingDirector', value)} value={form.managingDirector} />
-                <Field label="Straße" onChange={(value) => updateField('street', value)} value={form.street} />
+                <Field label="GeschÃ¤ftsfÃ¼hrung" onChange={(value) => updateField('managingDirector', value)} value={form.managingDirector} />
+                <Field label="StraÃŸe" onChange={(value) => updateField('street', value)} value={form.street} />
                 <Field label="Hausnummer" onChange={(value) => updateField('houseNumber', value)} value={form.houseNumber} />
                 <Field label="PLZ" onChange={(value) => updateField('postalCode', value)} value={form.postalCode} />
                 <Field label="Ort" onChange={(value) => updateField('city', value)} value={form.city} />
                 <Field label="Land" onChange={(value) => updateField('country', value)} value={form.country} />
                 <Field label="Sitz der Gesellschaft" onChange={(value) => updateField('registeredOffice', value)} value={form.registeredOffice} />
-                <Field label="Mobilfunk" onChange={(value) => updateField('mobilePhone', value)} value={form.mobilePhone} />
-                <Field label="Telefon" onChange={(value) => updateField('phone', value)} value={form.phone} />
-                <Field label="E-Mail" onChange={(value) => updateField('email', value)} value={form.email} />
+                <Field
+                  label="Mobilfunk"
+                  onChange={() => undefined}
+                  readOnly
+                  value={previewSignature.mobilePhone}
+                />
+                <Field
+                  label="Telefon"
+                  onChange={() => undefined}
+                  readOnly
+                  value={previewSignature.phone}
+                />
+                <Field
+                  label="E-Mail"
+                  onChange={() => undefined}
+                  readOnly
+                  value={PORTAL_SIGNATURE_EMAIL}
+                />
                 <Field label="Website" onChange={(value) => updateField('website', value)} value={form.website} />
                 <Field label="Registergericht" onChange={(value) => updateField('registerCourt', value)} value={form.registerCourt} />
                 <Field label="Handelsregister / Nummer" onChange={(value) => updateField('commercialRegisterNumber', value)} value={form.commercialRegisterNumber} />
@@ -442,7 +473,7 @@ export default function AdminSignatureSettings() {
                     <p className="mt-1 text-sm text-slate-600">PNG, JPG, WebP oder SVG hochladen.</p>
                   </div>
                   <label className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400">
-                    {isUploading ? 'Logo wird hochgeladen...' : 'Logo auswählen'}
+                    {isUploading ? 'Logo wird hochgeladen...' : 'Logo auswÃ¤hlen'}
                     <input
                       accept="image/*"
                       className="hidden"
@@ -462,6 +493,9 @@ export default function AdminSignatureSettings() {
                     </p>
                     <p className="mt-2 text-sm leading-6 text-slate-600">
                       Die Vorlage darf frei mit HTML und Platzhaltern aufgebaut werden.
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      Logo-Größe steuern: statt des Logo-Tokens ein eigenes Bild mit dem Logo-URL-Token setzen, z. B. Breite 160px.
                     </p>
                   </div>
                   <button
@@ -499,44 +533,44 @@ export default function AdminSignatureSettings() {
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Vorschau</p>
 
                 <div className="mt-5 rounded-[20px] border border-stone-200 bg-stone-50 px-6 py-6 text-slate-700">
-                  {form.emailTemplateHtml && emailPreviewHtml ? (
+                  {previewSignature.emailTemplateHtml && emailPreviewHtml ? (
                     <div dangerouslySetInnerHTML={{ __html: emailPreviewHtml }} />
                   ) : (
                     <>
-                  {form.logoUrl ? (
+                  {previewSignature.logoUrl ? (
                     <div className="mb-5 flex justify-center">
                       <Image
-                        alt={form.logoAlt || form.companyName || 'Logo'}
+                        alt={previewSignature.logoAlt || previewSignature.companyName || 'Logo'}
                         className="h-32 w-auto object-contain"
                         height={128}
-                        src={form.logoUrl}
+                        src={previewSignature.logoUrl}
                         unoptimized
                         width={420}
                       />
                     </div>
                   ) : null}
                   <div
-                    className={`${form.useDivider ? 'border-t border-stone-300 pt-4' : ''}`}
+                    className={`${previewSignature.useDivider ? 'border-t border-stone-300 pt-4' : ''}`}
                     style={previewStyle}
                   >
-                    <p style={{ margin: 0 }}>{form.closing || 'Mit freundlichen Grüßen'}</p>
-                    {form.name ? <p className="text-slate-950" style={{ margin: '14px 0 0 0' }}>{form.name}</p> : null}
-                    <p className="text-slate-950" style={{ margin: form.name ? '6px 0 0 0' : '14px 0 0 0' }}>
-                      {[form.companyName, form.legalForm].filter(Boolean).join(' · ') || 'Firmenname'}
+                    <p style={{ margin: 0 }}>{previewSignature.closing || 'Mit freundlichen GrÃ¼ÃŸen'}</p>
+                    {previewSignature.name ? <p className="text-slate-950" style={{ margin: '14px 0 0 0' }}>{previewSignature.name}</p> : null}
+                    <p className="text-slate-950" style={{ margin: previewSignature.name ? '6px 0 0 0' : '14px 0 0 0' }}>
+                      {[previewSignature.companyName, previewSignature.legalForm].filter(Boolean).join(' Â· ') || 'Firmenname'}
                     </p>
-                    {form.department ? <p style={{ margin: '4px 0 0 0' }}>{form.department}</p> : null}
+                    {previewSignature.department ? <p style={{ margin: '4px 0 0 0' }}>{previewSignature.department}</p> : null}
                     {address ? <p className="whitespace-pre-line" style={{ margin: '12px 0 0 0' }}>{address}</p> : null}
                     <div className="text-slate-600" style={{ marginTop: '12px' }}>
-                      {form.registeredOffice ? <p style={{ margin: 0 }}>Sitz: {form.registeredOffice}</p> : null}
-                      {form.managingDirector ? <p style={{ margin: '2px 0 0 0' }}>Geschäftsführung: {form.managingDirector}</p> : null}
-                      {form.mobilePhone ? <p style={{ margin: '2px 0 0 0' }}>Mobilfunk: {form.mobilePhone}</p> : null}
-                      {form.phone ? <p style={{ margin: '2px 0 0 0' }}>Telefon: {form.phone}</p> : null}
-                      {form.email ? <p style={{ margin: '2px 0 0 0' }}>{form.email}</p> : null}
-                      {form.website ? <p style={{ margin: '2px 0 0 0' }}>{form.website}</p> : null}
-                      {form.registerCourt ? <p style={{ margin: '2px 0 0 0' }}>Registergericht: {form.registerCourt}</p> : null}
-                      {form.commercialRegisterNumber ? <p style={{ margin: '2px 0 0 0' }}>Handelsregister: {form.commercialRegisterNumber}</p> : null}
-                      {form.taxNumber ? <p style={{ margin: '2px 0 0 0' }}>Steuernummer: {form.taxNumber}</p> : null}
-                      {form.vatId ? <p style={{ margin: '2px 0 0 0' }}>USt-IdNr.: {form.vatId}</p> : null}
+                      {previewSignature.registeredOffice ? <p style={{ margin: 0 }}>Sitz: {previewSignature.registeredOffice}</p> : null}
+                      {previewSignature.managingDirector ? <p style={{ margin: '2px 0 0 0' }}>GeschÃ¤ftsfÃ¼hrung: {previewSignature.managingDirector}</p> : null}
+                      {previewSignature.mobilePhone ? <p style={{ margin: '2px 0 0 0' }}>Mobilfunk: {previewSignature.mobilePhone}</p> : null}
+                      {previewSignature.phone ? <p style={{ margin: '2px 0 0 0' }}>Telefon: {previewSignature.phone}</p> : null}
+                      {previewSignature.email ? <p style={{ margin: '2px 0 0 0' }}>{previewSignature.email}</p> : null}
+                      {previewSignature.website ? <p style={{ margin: '2px 0 0 0' }}>{previewSignature.website}</p> : null}
+                      {previewSignature.registerCourt ? <p style={{ margin: '2px 0 0 0' }}>Registergericht: {previewSignature.registerCourt}</p> : null}
+                      {previewSignature.commercialRegisterNumber ? <p style={{ margin: '2px 0 0 0' }}>Handelsregister: {previewSignature.commercialRegisterNumber}</p> : null}
+                      {previewSignature.taxNumber ? <p style={{ margin: '2px 0 0 0' }}>Steuernummer: {previewSignature.taxNumber}</p> : null}
+                      {previewSignature.vatId ? <p style={{ margin: '2px 0 0 0' }}>USt-IdNr.: {previewSignature.vatId}</p> : null}
                     </div>
                   </div>
                     </>
@@ -546,10 +580,10 @@ export default function AdminSignatureSettings() {
                 <div className="mt-5 rounded-[20px] border border-stone-200 bg-white px-6 py-5 text-slate-700">
                   <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Portal-Signatur</p>
                   <div className="mt-4 text-[13px] leading-5 text-slate-700">
-                    <p>{form.portalClosing || 'Mit freundlichen Grüßen'}</p>
-                    {form.portalName ? <p className="mt-3 font-medium text-slate-950">{form.portalName}</p> : null}
-                    <p className={`${form.portalName ? 'mt-1.5' : 'mt-3'} font-medium text-slate-950`}>
-                      {form.portalCompanyName || form.companyName || 'Firmenname'}
+                    <p>{previewSignature.portalClosing || 'Mit freundlichen GrÃ¼ÃŸen'}</p>
+                    {previewSignature.portalName ? <p className="mt-3 font-medium text-slate-950">{previewSignature.portalName}</p> : null}
+                    <p className={`${previewSignature.portalName ? 'mt-1.5' : 'mt-3'} font-medium text-slate-950`}>
+                      {previewSignature.portalCompanyName || previewSignature.companyName || 'Firmenname'}
                     </p>
                   </div>
                 </div>
@@ -570,7 +604,7 @@ export default function AdminSignatureSettings() {
                   onClick={clearSignature}
                   type="button"
                 >
-                  Signatur löschen
+                  Signatur lÃ¶schen
                 </button>
               </div>
             </>
@@ -591,3 +625,4 @@ export default function AdminSignatureSettings() {
     </section>
   );
 }
+
