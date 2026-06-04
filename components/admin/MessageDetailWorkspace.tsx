@@ -9,6 +9,7 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
+import { deleteObject, ref } from 'firebase/storage';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
@@ -20,7 +21,7 @@ import {
   type WorkflowAnalysis,
   type WorkflowRecord,
 } from '../../lib/adminWorkflow';
-import { db } from '../../lib/firebase';
+import { db, storage } from '../../lib/firebase';
 import { composePortalDraft, stripAiEnvelope } from '../../lib/draftComposer';
 import {
   buildLetterHtml,
@@ -32,10 +33,9 @@ import {
 import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
 import { appendDeliveryLabel } from './messageDeliveryLabel';
+import MessageAttachmentPreview, { type MessageAttachmentEntry } from './MessageAttachmentPreview';
 
 type DeliveryMode = 'both' | 'email' | 'letter';
-
-type AttachmentSummary = { name: string; url: string };
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -54,20 +54,6 @@ function readCollection(
       onError(`Daten aus ${name} konnten nicht geladen werden.`);
     }
   );
-}
-
-function readAttachments(value: unknown): AttachmentSummary[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null;
-      const record = entry as Record<string, unknown>;
-      const name = cleanText(record.name);
-      const url = cleanText(record.url ?? record.downloadUrl ?? record.href);
-      if (!name && !url) return null;
-      return { name: name || url, url };
-    })
-    .filter(Boolean) as AttachmentSummary[];
 }
 
 function buildAddressLine(parts: Array<unknown>) {
@@ -618,6 +604,51 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     });
   }
 
+  async function deleteMessageAttachment(messageId: string, attachments: unknown, targetAttachment: MessageAttachmentEntry) {
+    const confirmed = window.confirm(`Anhang "${targetAttachment.name}" wirklich löschen?`);
+    if (!confirmed) return;
+
+    const currentAttachments = Array.isArray(attachments) ? attachments : [];
+
+    try {
+      setError('');
+      if (targetAttachment.path) {
+        await deleteObject(ref(storage, targetAttachment.path));
+      }
+
+      await updateDoc(doc(db, 'messages', messageId), {
+        attachments: currentAttachments.filter((entry) => {
+          if (!entry || typeof entry !== 'object') return true;
+          const record = entry as Record<string, unknown>;
+          const path = cleanText(record.path);
+          const url = cleanText(record.url ?? record.downloadUrl ?? record.href);
+          return targetAttachment.path ? path !== targetAttachment.path : url !== targetAttachment.url;
+        }),
+        updatedAt: serverTimestamp(),
+      });
+      const tenantId = cleanText(selectedMessage?.data.tenantId);
+      if (tenantId) {
+        const tenantDocuments = Array.isArray(selectedTenant?.data.tenantDocuments)
+          ? selectedTenant.data.tenantDocuments
+          : [];
+        await updateDoc(doc(db, 'tenants', tenantId), {
+          tenantDocuments: tenantDocuments.filter((entry) => {
+            if (!entry || typeof entry !== 'object') return true;
+            const record = entry as Record<string, unknown>;
+            const path = cleanText(record.path);
+            const url = cleanText(record.url ?? record.downloadUrl ?? record.href);
+            return targetAttachment.path ? path !== targetAttachment.path : url !== targetAttachment.url;
+          }),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      setMessage('Anhang wurde gelöscht.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Löschen des Anhangs ${targetAttachment.name}:`, caughtError);
+      setError('Anhang konnte nicht gelöscht werden.');
+    }
+  }
+
   if (!selectedMessage || !analysis) {
     return (
       <div className="space-y-6">
@@ -802,30 +833,10 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
                     {cleanText(entry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
                   </div>
                 )}
-                {readAttachments(entry.data.attachments).length ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {readAttachments(entry.data.attachments).map((attachment) =>
-                      attachment.url ? (
-                        <a
-                          className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400"
-                          href={attachment.url}
-                          key={`${attachment.name}-${attachment.url}`}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          {attachment.name}
-                        </a>
-                      ) : (
-                        <span
-                          className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-                          key={attachment.name}
-                        >
-                          {attachment.name}
-                        </span>
-                      )
-                    )}
-                  </div>
-                ) : null}
+                <MessageAttachmentPreview
+                  attachments={entry.data.attachments}
+                  onDelete={(attachment) => deleteMessageAttachment(entry.id, entry.data.attachments, attachment)}
+                />
               </article>
             );
           })}

@@ -23,6 +23,7 @@ import {
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
+import PendingDocumentUploadSection, { type PendingCategorizedFile } from './PendingDocumentUploadSection';
 
 type AdminRecord = {
   data: DocumentData;
@@ -524,8 +525,8 @@ export default function PropertyAdminManager({
   const [tenants, setTenants] = useState<AdminRecord[]>([]);
   const [form, setForm] = useState<PropertyFormState>(() => defaultFormState());
   const [units, setUnits] = useState<UnitForm[]>([]);
-  const [pendingPropertyDocumentFiles, setPendingPropertyDocumentFiles] = useState<File[]>([]);
-  const [pendingUnitDocumentFiles, setPendingUnitDocumentFiles] = useState<Record<string, File[]>>({});
+  const [pendingPropertyDocumentFiles, setPendingPropertyDocumentFiles] = useState<PendingCategorizedFile[]>([]);
+  const [pendingUnitDocumentFiles, setPendingUnitDocumentFiles] = useState<Record<string, PendingCategorizedFile[]>>({});
   const [selectedServiceField, setSelectedServiceField] = useState<ServiceFieldId>('billingServiceId');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -725,24 +726,49 @@ export default function PropertyAdminManager({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function handlePropertyDocumentSelection(files: FileList | null) {
-    setPendingPropertyDocumentFiles(files ? Array.from(files) : []);
+  function addPendingPropertyDocuments(files: File[], category: string) {
+    setPendingPropertyDocumentFiles((current) => [
+      ...current,
+      ...files.map((file) => ({
+        category,
+        file,
+        id: `${Date.now()}-${crypto.randomUUID()}-${file.name}`,
+      })),
+    ]);
   }
 
-  function handleUnitDocumentSelection(unitId: string, files: FileList | null) {
+  function addPendingUnitDocuments(unitId: string, files: File[], category: string) {
     setPendingUnitDocumentFiles((current) => ({
       ...current,
-      [unitId]: files ? Array.from(files) : [],
+      [unitId]: [
+        ...(current[unitId] ?? []),
+        ...files.map((file) => ({
+          category,
+          file,
+          id: `${unitId}-${Date.now()}-${crypto.randomUUID()}-${file.name}`,
+        })),
+      ],
     }));
   }
 
+  function handlePropertyDocumentSelection(files: FileList | null) {
+    if (!files) return;
+    addPendingPropertyDocuments(Array.from(files), 'Sonstiges');
+  }
+
+  function handleUnitDocumentSelection(unitId: string, files: FileList | null) {
+    if (!files) return;
+    addPendingUnitDocuments(unitId, Array.from(files), 'Sonstiges');
+  }
+
   async function uploadDocumentFiles(
-    files: File[],
+    files: PendingCategorizedFile[],
     storageBasePath: string
   ): Promise<StoredDocumentEntry[]> {
     const uploadedDocuments: StoredDocumentEntry[] = [];
 
-    for (const file of files) {
+    for (const pendingFile of files) {
+      const file = pendingFile.file;
       const safeName = sanitizeStorageFileName(file.name);
       const storagePath = `${storageBasePath}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
       const storageRef = ref(storage, storagePath);
@@ -751,10 +777,12 @@ export default function PropertyAdminManager({
       });
 
       uploadedDocuments.push({
+        category: pendingFile.category,
         contentType: file.type || 'application/octet-stream',
         name: file.name,
         path: storagePath,
         size: file.size,
+        source: 'upload',
         uploadedAt: new Date().toISOString(),
         uploadedByEmail: user?.email ?? '',
         url: await getDownloadURL(storageRef),
@@ -1457,7 +1485,7 @@ export default function PropertyAdminManager({
             {form.meters.length === 0 ? <div className="mt-4 rounded-[22px] border border-dashed border-stone-300 bg-white px-4 py-4 text-sm text-slate-600">Noch keine Objekt-Zähler hinzugefügt.</div> : null}
           </div>
 
-          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+          <div className="hidden">
             <p className="text-sm font-medium text-slate-900">Dokumente zur Immobilie</p>
             <p className="mt-1 text-xs leading-6 text-slate-500">
               Hier kannst du beliebige Dateien direkt am Objekt hinterlegen.
@@ -1475,8 +1503,8 @@ export default function PropertyAdminManager({
               <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">Zum Speichern vorgemerkt</p>
                 <div className="mt-3 grid gap-2">
-                  {pendingPropertyDocumentFiles.map((file) => (
-                    <p className="text-sm text-slate-700" key={`${file.name}-${file.size}`}>{file.name}</p>
+                  {pendingPropertyDocumentFiles.map((entry) => (
+                    <p className="text-sm text-slate-700" key={entry.id}>{entry.file.name}</p>
                   ))}
                 </div>
               </div>
@@ -1626,7 +1654,7 @@ export default function PropertyAdminManager({
                       </div>
                     </div>
                   ) : null}
-                  <div className="mt-4 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+                  <div className="hidden">
                     <p className="text-sm font-medium text-slate-900">Dokumente der Einheit</p>
                     <label className="mt-3 block space-y-2">
                       <span className="text-sm font-medium text-slate-700">Dateien hochladen</span>
@@ -1643,9 +1671,9 @@ export default function PropertyAdminManager({
                           Zum Speichern vorgemerkt
                         </p>
                         <div className="mt-3 grid gap-2">
-                          {(pendingUnitDocumentFiles[unit.id] ?? []).map((file) => (
-                            <p className="text-sm text-slate-700" key={`${unit.id}-${file.name}-${file.size}`}>
-                              {file.name}
+                          {(pendingUnitDocumentFiles[unit.id] ?? []).map((entry) => (
+                            <p className="text-sm text-slate-700" key={entry.id}>
+                              {entry.file.name}
                             </p>
                           ))}
                         </div>
@@ -1673,6 +1701,19 @@ export default function PropertyAdminManager({
                     ) : null}
                   </div>
                   <textarea className="mt-4 min-h-24 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnit(unit.id, 'notes', event.target.value)} placeholder="Notizen zur Einheit" value={unit.notes} />
+                  <div className="mt-4">
+                    <PendingDocumentUploadSection
+                      files={pendingUnitDocumentFiles[unit.id] ?? []}
+                      onAddFiles={(files, category) => addPendingUnitDocuments(unit.id, files, category)}
+                      onRemoveFile={(id) =>
+                        setPendingUnitDocumentFiles((current) => ({
+                          ...current,
+                          [unit.id]: (current[unit.id] ?? []).filter((entry) => entry.id !== id),
+                        }))
+                      }
+                      title="Dokumente der Einheit"
+                    />
+                  </div>
                 </article>
               ))}
             </div>
@@ -1736,6 +1777,15 @@ export default function PropertyAdminManager({
             <span className="text-sm font-medium text-slate-700">Notizen</span>
             <textarea className="min-h-28 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('notes', event.target.value)} placeholder="Besondere Hinweise zum Objekt ..." value={form.notes} />
           </label>
+
+          <PendingDocumentUploadSection
+            files={pendingPropertyDocumentFiles}
+            onAddFiles={addPendingPropertyDocuments}
+            onRemoveFile={(id) =>
+              setPendingPropertyDocumentFiles((current) => current.filter((entry) => entry.id !== id))
+            }
+            title="Dokumente zur Immobilie"
+          />
 
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
           {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}

@@ -24,7 +24,7 @@ import {
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
 import type { AdminField, OverviewVariant, PreviewField } from './adminFormTypes';
-import DocumentUploadControl from './DocumentUploadControl';
+import PendingDocumentUploadSection, { type PendingCategorizedFile } from './PendingDocumentUploadSection';
 
 type Props = {
   collectionName: string;
@@ -230,7 +230,7 @@ export default function AdminCollectionManager({
   );
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [pendingCompanyDocumentFiles, setPendingCompanyDocumentFiles] = useState<File[]>([]);
+  const [pendingCompanyDocumentFiles, setPendingCompanyDocumentFiles] = useState<PendingCategorizedFile[]>([]);
   const [isPending, startTransition] = useTransition();
   const isCompanyCollection = collectionName === 'companies';
   const hiddenCompanyUploadFieldNames = useMemo(
@@ -455,12 +455,13 @@ export default function AdminCollectionManager({
     }
   }
 
-  async function uploadCompanyDocuments(recordId: string, files: File[]) {
+  async function uploadCompanyDocuments(recordId: string, files: PendingCategorizedFile[]) {
     if (files.length === 0) return [];
 
     const uploadedDocuments: StoredDocumentEntry[] = [];
 
-    for (const file of files) {
+    for (const entry of files) {
+      const file = entry.file;
       const safeName = sanitizeStorageFileName(file.name);
       const storagePath = `company-documents/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
       const storageRef = ref(storage, storagePath);
@@ -469,10 +470,12 @@ export default function AdminCollectionManager({
       });
 
       uploadedDocuments.push({
+        category: entry.category,
         contentType: file.type || 'application/octet-stream',
         name: file.name,
         path: storagePath,
         size: file.size,
+        source: 'upload',
         uploadedAt: new Date().toISOString(),
         uploadedByEmail: user?.email ?? '',
         url: await getDownloadURL(storageRef),
@@ -775,28 +778,29 @@ export default function AdminCollectionManager({
             return <div className={isWide ? 'space-y-2 md:col-span-2' : 'space-y-2'} key={field.name}>{renderField(field)}</div>;
           })}
           {isCompanyCollection ? (
-            <div className="space-y-3 md:col-span-2">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Dokumente</label>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Dateien werden beim Speichern der Firma hochgeladen.
-                </p>
-              </div>
-              <DocumentUploadControl
-                onUpload={(files) => {
-                  setPendingCompanyDocumentFiles((currentFiles) => [...currentFiles, ...files]);
+            <div className="md:col-span-2">
+              <PendingDocumentUploadSection
+                files={pendingCompanyDocumentFiles}
+                onAddFiles={(files, category) => {
+                  const nextEntries = Array.from(files).map((file) => ({
+                    category,
+                    file,
+                    id: crypto.randomUUID(),
+                  }));
+                  setPendingCompanyDocumentFiles((currentFiles) => [...currentFiles, ...nextEntries]);
                   setMessage(
                     files.length === 1
                       ? '1 Datei fuer den Upload vorgemerkt.'
                       : `${files.length} Dateien fuer den Upload vorgemerkt.`
                   );
                 }}
+                onRemoveFile={(id) =>
+                  setPendingCompanyDocumentFiles((currentFiles) =>
+                    currentFiles.filter((entry) => entry.id !== id)
+                  )
+                }
+                title="Dokumente zur Firma"
               />
-              {pendingCompanyDocumentFiles.length > 0 ? (
-                <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-xs text-slate-600">
-                  {pendingCompanyDocumentFiles.map((file) => file.name).join(', ')}
-                </div>
-              ) : null}
             </div>
           ) : null}
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 md:col-span-2">{error}</div> : null}

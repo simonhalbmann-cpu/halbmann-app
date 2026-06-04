@@ -71,7 +71,10 @@ type RentChartPoint = {
 };
 
 type UnitOption = {
+  currentTenantId: string;
+  currentTenantName: string;
   label: string;
+  occupancyLabel: string;
   ownerName: string;
   propertyId: string;
   propertyName: string;
@@ -133,7 +136,7 @@ type TenantFormState = {
 
 const statusOptions = [
   { label: 'Aktiv', value: 'active' },
-  { label: 'In Vorbereitung', value: 'pending' },
+  { label: 'Zukuenftig / in Vorbereitung', value: 'pending' },
   { label: 'Beendet', value: 'inactive' },
 ];
 
@@ -588,9 +591,11 @@ export default function TenantAdminManager({
     propertyId: string;
     unitId: string;
   } | null>(null);
+  const [originalStatus, setOriginalStatus] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [overviewPropertyFilter, setOverviewPropertyFilter] = useState('all');
+  const [overviewStatusFilter, setOverviewStatusFilter] = useState<'active' | 'all' | 'inactive' | 'pending'>('active');
   const [isLoadingInitialValues, setIsLoadingInitialValues] = useState(
     () => editMode && Boolean(documentId)
   );
@@ -656,6 +661,7 @@ export default function TenantAdminManager({
         propertyId: String(data.propertyId ?? ''),
         unitId: String(data.unitId ?? ''),
       });
+      setOriginalStatus(String(data.status ?? 'active'));
       if (nextForm.portalUsername) {
         try {
           const secret = await loadStoredPortalPassword(currentDocumentId, nextForm.portalUsername);
@@ -694,8 +700,6 @@ export default function TenantAdminManager({
       units.forEach((unit, index) => {
         if (!unit || typeof unit !== 'object') return;
         const assignedTenantId = String(unit.tenantId ?? '').trim();
-        if (assignedTenantId && (!editMode || assignedTenantId !== documentId)) return;
-
         const unitLabel = String(unit.unitLabel ?? '').trim();
         const floor = String(unit.floor ?? '').trim();
         const position = String(unit.unitPosition ?? '').trim();
@@ -703,8 +707,27 @@ export default function TenantAdminManager({
         const fullUnitLabel = [unitLabel, floor, position, section].filter(Boolean).join(' · ');
         const unitId = String(unit.id ?? '').trim();
         if (!unitId) return;
+        const linkedTenants = tenants.filter(
+          (tenant) =>
+            String(tenant.data.propertyId ?? '').trim() === property.id &&
+            String(tenant.data.unitId ?? '').trim() === unitId
+        );
+        const assignedTenant = tenants.find((tenant) => tenant.id === assignedTenantId) ?? null;
+        const currentTenant =
+          linkedTenants.find((tenant) => String(tenant.data.status ?? '').trim() === 'active') ??
+          (String(assignedTenant?.data.status ?? '').trim() === 'active' ? assignedTenant : null);
+        const isOccupiedByOther = Boolean(currentTenant?.id && currentTenant.id !== documentId);
+        const currentTenantName = currentTenant
+          ? [currentTenant.data.lastName, currentTenant.data.firstName].filter(Boolean).join(', ')
+          : '';
+        const occupancyLabel = isOccupiedByOther
+          ? `belegt durch ${currentTenantName || 'aktuellen Mieter'}`
+          : 'frei';
 
         options.push({
+          currentTenantId: isOccupiedByOther ? currentTenant?.id ?? '' : '',
+          currentTenantName: isOccupiedByOther ? currentTenantName : '',
+          occupancyLabel,
           label: [String(property.data.name ?? ''), fullUnitLabel].filter(Boolean).join(' · '),
           ownerName: String(property.data.ownerName ?? '').trim(),
           propertyId: property.id,
@@ -717,7 +740,7 @@ export default function TenantAdminManager({
     });
 
     return options.sort((left, right) => left.label.localeCompare(right.label, 'de'));
-  }, [documentId, editMode, properties]);
+  }, [documentId, properties, tenants]);
 
   const overviewPropertyOptions = useMemo(
     () =>
@@ -738,6 +761,11 @@ export default function TenantAdminManager({
             overviewPropertyFilter === 'all' ||
             String(tenant.data.propertyId ?? '').trim() === overviewPropertyFilter
         )
+        .filter(
+          (tenant) =>
+            overviewStatusFilter === 'all' ||
+            String(tenant.data.status ?? 'active').trim() === overviewStatusFilter
+        )
         .map((tenant) => ({
           id: tenant.id,
           name: [tenant.data.lastName, tenant.data.firstName].filter(Boolean).join(', '),
@@ -754,7 +782,7 @@ export default function TenantAdminManager({
             .join(' - '),
         }))
         .sort((left, right) => left.name.localeCompare(right.name, 'de')),
-    [overviewPropertyFilter, tenants]
+    [overviewPropertyFilter, overviewStatusFilter, tenants]
   );
 
   const guarantorOptions = useMemo<GuarantorOption[]>(
@@ -1055,6 +1083,7 @@ export default function TenantAdminManager({
     setForm(defaultFormState());
     setLastName('');
     setOriginalAssignment(null);
+    setOriginalStatus('');
     setShowPortalPassword(false);
   }
 
@@ -1260,10 +1289,12 @@ export default function TenantAdminManager({
       const url = await getDownloadURL(storageRef);
 
       uploadedDocuments.push({
+        category: 'Sonstiges',
         contentType: file.type || 'application/octet-stream',
         name: file.name,
         path: storagePath,
         size: file.size,
+        source: 'upload',
         uploadedAt: new Date().toISOString(),
         uploadedByEmail: user?.email ?? '',
         url,
@@ -1291,7 +1322,8 @@ export default function TenantAdminManager({
 
       const clearedUnits = property.data.units.map((unit: unknown) => {
         if (!unit || typeof unit !== 'object') return unit;
-        return String((unit as DocumentData).id ?? '') === assignment.unitId
+        return String((unit as DocumentData).id ?? '') === assignment.unitId &&
+          String((unit as DocumentData).tenantId ?? '') === tenantId
           ? { ...(unit as DocumentData), tenantId: '', tenantName: '' }
           : unit;
       });
@@ -1324,6 +1356,10 @@ export default function TenantAdminManager({
   async function clearTenantAssignment(tenantRecord: AdminRecord) {
     const propertyId = String(tenantRecord.data.propertyId ?? '');
     const unitId = String(tenantRecord.data.unitId ?? '');
+    await clearTenantAssignmentById(tenantRecord.id, propertyId, unitId);
+  }
+
+  async function clearTenantAssignmentById(tenantId: string, propertyId: string, unitId: string) {
     if (!propertyId || !unitId) return;
 
     const property = properties.find((entry) => entry.id === propertyId);
@@ -1331,7 +1367,8 @@ export default function TenantAdminManager({
 
     const nextUnits = property.data.units.map((unit: unknown) => {
       if (!unit || typeof unit !== 'object') return unit;
-      return String((unit as DocumentData).id ?? '') === unitId
+      return String((unit as DocumentData).id ?? '') === unitId &&
+        String((unit as DocumentData).tenantId ?? '') === tenantId
         ? { ...(unit as DocumentData), tenantId: '', tenantName: '' }
         : unit;
     });
@@ -1376,6 +1413,13 @@ export default function TenantAdminManager({
     );
     if (!selectedUnit) {
       setError('Bitte eine vorhandene Einheit auswählen.');
+      return;
+    }
+
+    if (form.status === 'active' && selectedUnit.currentTenantId) {
+      setError(
+        `Diese Einheit ist aktuell durch ${selectedUnit.currentTenantName || 'einen anderen Mieter'} belegt. Lege den neuen Mieter zuerst als zukuenftig / in Vorbereitung an.`
+      );
       return;
     }
 
@@ -1516,16 +1560,24 @@ export default function TenantAdminManager({
             updatedByUid: user.uid,
           });
 
-          await syncTenantAssignment(
-            currentDocumentId,
-            {
-              propertyId: selectedUnit.propertyId,
-              tenantName,
-              unitId: selectedUnit.unitId,
-              unitIndex: selectedUnit.unitIndex,
-            },
-            originalAssignment
-          );
+          if (payload.status === 'active') {
+            await syncTenantAssignment(
+              currentDocumentId,
+              {
+                propertyId: selectedUnit.propertyId,
+                tenantName,
+                unitId: selectedUnit.unitId,
+                unitIndex: selectedUnit.unitIndex,
+              },
+              originalAssignment
+            );
+          } else if (originalAssignment && originalStatus === 'active') {
+            await clearTenantAssignmentById(
+              currentDocumentId,
+              originalAssignment.propertyId,
+              originalAssignment.unitId
+            );
+          }
 
           setPendingDocumentFiles([]);
           setForm((current) => ({ ...current, tenantDocuments: nextTenantDocuments }));
@@ -1554,7 +1606,7 @@ export default function TenantAdminManager({
             });
           }
 
-          if (selectedProperty) {
+          if (selectedProperty && payload.status === 'active') {
             const nextUnits = propertyUnits.map((unit, index) =>
               index === selectedUnit.unitIndex
                 ? {
@@ -1596,21 +1648,38 @@ export default function TenantAdminManager({
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Uebersicht</p>
             <h3 className="mt-2 text-3xl text-slate-950">Mieter</h3>
           </div>
-          <label className="block min-w-[240px]">
-            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Objekt</span>
-            <select
-              className="mt-2 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-              onChange={(event) => setOverviewPropertyFilter(event.target.value)}
-              value={overviewPropertyFilter}
-            >
-              <option value="all">Alle</option>
-              {overviewPropertyOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block min-w-[220px]">
+              <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Status</span>
+              <select
+                className="mt-2 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                onChange={(event) =>
+                  setOverviewStatusFilter(event.target.value as 'active' | 'all' | 'inactive' | 'pending')
+                }
+                value={overviewStatusFilter}
+              >
+                <option value="active">Aktuelle</option>
+                <option value="pending">Zukuenftige</option>
+                <option value="inactive">Ehemalige</option>
+                <option value="all">Alle</option>
+              </select>
+            </label>
+            <label className="block min-w-[240px]">
+              <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Objekt</span>
+              <select
+                className="mt-2 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                onChange={(event) => setOverviewPropertyFilter(event.target.value)}
+                value={overviewPropertyFilter}
+              >
+                <option value="all">Alle Objekte</option>
+                {overviewPropertyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
         {tenantOverview.length === 0 ? (
           <div className="mt-6 rounded-[24px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-slate-600">
@@ -1759,13 +1828,23 @@ export default function TenantAdminManager({
               <span className="text-sm font-medium text-slate-700">Nachname</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => setLastName(titleCase(event.target.value))} placeholder="Mustermann" required value={lastName} />
             </label>
-            <label className="block space-y-2 xl:col-span-3">
+            <label className="block space-y-2 xl:col-span-2">
               <span className="text-sm font-medium text-slate-700">Einheit</span>
               <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('selectedUnitKey', event.target.value)} required value={form.selectedUnitKey}>
                 <option value="">Bitte freie Einheit auswählen</option>
                 {unitOptions.map((unit) => (
                   <option key={`${unit.propertyId}::${unit.unitId}`} value={`${unit.propertyId}::${unit.unitId}`}>
-                    {unit.label}
+                    {unit.label} - {unit.occupancyLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Mietverhaeltnis</span>
+              <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('status', event.target.value)} required value={form.status}>
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -1957,7 +2036,7 @@ export default function TenantAdminManager({
               <span className="text-sm font-medium text-slate-700">Warmmiete (netto)</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-slate-700 outline-none" readOnly value={calculatedWarmRent} />
             </label>
-            <label className="block space-y-2">
+            <label className="hidden">
               <span className="text-sm font-medium text-slate-700">Status</span>
               <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('status', event.target.value)} required value={form.status}>
                 {statusOptions.map((option) => (

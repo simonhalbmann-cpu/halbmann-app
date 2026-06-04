@@ -1358,7 +1358,7 @@ export default function MessagesWorkspace() {
 
   function renderInbox() {
     const globalThemesPanel = (
-      <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3">
+      <div className="px-0 py-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
@@ -1378,7 +1378,7 @@ export default function MessagesWorkspace() {
             value={search}
           />
         </div>
-        <div className="mt-3 max-h-[72vh] space-y-2 overflow-y-auto pr-1">
+        <div className="mt-3 max-h-[72vh] divide-y divide-stone-200 overflow-y-auto border-y border-stone-200 pr-1">
           {activeThemeList.length === 0 ? (
             <div className="rounded-[16px] border border-dashed border-stone-300 bg-white px-3 py-6 text-sm text-slate-600">
               {currentTab === 'archive'
@@ -1396,10 +1396,10 @@ export default function MessagesWorkspace() {
                 'Unbekannter Mieter';
               return (
                 <div
-                  className={`relative rounded-[16px] border border-l-4 px-3 py-3 transition ${
+                  className={`relative px-3 py-3 transition ${
                     isSelected
-                      ? 'border-l-amber-500 border-amber-300 bg-amber-50/70 ring-2 ring-amber-200 shadow-[0_18px_42px_-28px_rgba(148,119,77,0.4)]'
-                      : 'border-l-stone-200 border-stone-200 bg-white hover:border-stone-300'
+                      ? 'bg-amber-50/70'
+                      : 'hover:bg-stone-50'
                   }`}
                   key={theme.id}
                 >
@@ -1458,7 +1458,7 @@ export default function MessagesWorkspace() {
             activeThemeListMode={currentTab === 'archive' ? 'archive' : 'open'}
             detailLayout="messages"
             externalThemesPanel={globalThemesPanel}
-            headerClassName="flex flex-wrap items-center justify-end gap-4 pl-64 pr-14 md:pl-80 xl:pr-16"
+            headerClassName="flex flex-wrap items-center justify-end gap-4 pr-14 xl:pr-16"
             messageHrefBuilder={(_tenantId, messageId) =>
               messageId ? `${pathname}?themeId=${messageId}` : pathname
             }

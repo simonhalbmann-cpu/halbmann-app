@@ -12,6 +12,7 @@ import {
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
 import DocumentUploadControl from './DocumentUploadControl';
+import DocumentLibrarySection from './DocumentLibrarySection';
 
 type UnitDetailViewProps = {
   propertyId: string;
@@ -228,20 +229,28 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
       tenants.find(
         (tenant) =>
           cleanText(tenant.data.unitId) === unitId && cleanText(tenant.data.status) === 'active'
-      ) ??
-      tenants.find((tenant) => cleanText(tenant.data.unitId) === unitId) ??
-      null
+      ) ?? null
     );
   }, [tenants, unit, unitId]);
+
+  const upcomingTenants = useMemo(
+    () =>
+      tenants
+        .filter((tenant) => cleanText(tenant.data.unitId) === unitId && cleanText(tenant.data.status) === 'pending')
+        .sort((left, right) =>
+          cleanText(left.data.moveInDate).localeCompare(cleanText(right.data.moveInDate), 'de')
+        ),
+    [tenants, unitId]
+  );
 
   const pastTenants = useMemo(
     () =>
       tenants
-        .filter((tenant) => cleanText(tenant.data.unitId) === unitId && tenant.id !== currentTenant?.id)
+        .filter((tenant) => cleanText(tenant.data.unitId) === unitId && cleanText(tenant.data.status) === 'inactive')
         .sort((left, right) =>
           cleanText(right.data.moveInDate).localeCompare(cleanText(left.data.moveInDate), 'de')
         ),
-    [currentTenant?.id, tenants, unitId]
+    [tenants, unitId]
   );
 
   const unitMeters = useMemo(() => (unit && Array.isArray(unit.meters) ? unit.meters : []), [unit]);
@@ -308,7 +317,7 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
     setSelectedServicePartnerId(serviceAssignments[selectedServiceField] || '');
   }, [selectedServiceField, serviceAssignments]);
 
-  async function uploadUnitDocuments(files: FileList | File[] | null) {
+  async function uploadUnitDocuments(files: FileList | File[] | null, category = 'Sonstiges') {
     if (!files || files.length === 0 || !property || !unit) return;
 
     setError('');
@@ -327,10 +336,12 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
         });
 
         uploadedDocuments.push({
+          category,
           contentType: file.type || 'application/octet-stream',
           name: file.name,
           path: storagePath,
           size: file.size,
+          source: 'upload',
           uploadedAt: new Date().toISOString(),
           uploadedByEmail: user?.email ?? '',
           url: await getDownloadURL(storageRef),
@@ -359,6 +370,41 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
       setError('Dokumente konnten nicht hochgeladen werden.');
     } finally {
       setIsUploadingDocument(false);
+    }
+  }
+
+  async function updateUnitDocumentCategory(targetDocument: StoredDocumentEntry, category: string) {
+    if (!property || !unit) return;
+
+    setError('');
+    setMessage('');
+
+    try {
+      const nextDocuments = unitDocuments.map((document) =>
+        (targetDocument.path && document.path === targetDocument.path) ||
+        (!targetDocument.path && document.url === targetDocument.url)
+          ? { ...document, category }
+          : document
+      );
+      const nextUnits = Array.isArray(property.units)
+        ? property.units.map((entry: DocumentData) =>
+            entry && typeof entry === 'object' && cleanText(entry.id) === unitId
+              ? { ...entry, documents: nextDocuments }
+              : entry
+          )
+        : [];
+
+      await updateDoc(doc(db, 'properties', propertyId), {
+        units: nextUnits,
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      setMessage('Kategorie wurde aktualisiert.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Aktualisieren der Dokumentkategorie fuer Einheit ${propertyId}/${unitId}:`, caughtError);
+      setError('Kategorie konnte nicht gespeichert werden.');
     }
   }
 
@@ -613,11 +659,11 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
 
   return (
     <div className="admin-page space-y-4">
-      <section className="admin-hero rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
+      <section className="admin-hero rounded-[24px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-4 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Einheit ansehen</p>
-        <div className="mt-2 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
+        <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <MiniStat label="Objekt" value={property.name} />
               <MiniStat label="Geschoss" value={unit.floor} />
               <MiniStat label="Position" value={unit.unitPosition} />
@@ -643,6 +689,41 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
         </div>
       </section>
 
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Einheitsdaten</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Field label="Einheit" value={[unit.unitLabel, unit.section, unit.floor, unit.unitPosition].filter(Boolean).join(' / ')} />
+          <Field label="Nutzung" value={[unit.unitType, unit.rooms ? `${unit.rooms} Zimmer` : '', unit.areaSqm ? `${unit.areaSqm} m2` : ''].filter(Boolean).join(' / ')} />
+          <Field label="Positionen" value={[cleanText(unit.basementPosition) ? `Keller ${cleanText(unit.basementPosition)}` : '', cleanText(unit.mailboxPosition) ? `Briefkasten ${cleanText(unit.mailboxPosition)}` : ''].filter(Boolean).join(' / ')} />
+          <Field
+            label="Aktueller Mieter"
+            value={
+              currentTenant
+                ? [currentTenant.data.lastName, currentTenant.data.firstName, currentTenant.data.moveInDate ? `seit ${currentTenant.data.moveInDate}` : ''].filter(Boolean).join(', ')
+                : 'Kein Mieter zugeordnet'
+            }
+          />
+          <Field label="Kontakt" value={currentTenant ? [currentTenant.data.email, currentTenant.data.phone].filter(Boolean).join(' / ') : ''} />
+          <Field
+            label="Vorgemerkter Mieter"
+            value={
+              upcomingTenants.length === 0
+                ? ''
+                : upcomingTenants.map((tenant) => [tenant.data.lastName, tenant.data.firstName, tenant.data.moveInDate ? `ab ${tenant.data.moveInDate}` : ''].filter(Boolean).join(', ')).filter(Boolean).join(' / ')
+            }
+          />
+          <Field
+            label="Letzte Mieter"
+            value={
+              pastTenants.length === 0
+                ? 'Keine frueheren Mieter hinterlegt'
+                : pastTenants.map((tenant) => [tenant.data.lastName, tenant.data.firstName].filter(Boolean).join(', ')).filter(Boolean).join(' / ')
+            }
+          />
+          <Field label="Notizen" value={unit.notes} />
+        </div>
+      </section>
+
       <MeterSection
         drafts={meterReadingDrafts}
         meters={unitMeters}
@@ -653,7 +734,18 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
         unitId={unitId}
       />
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      {false ? (
+        <DocumentLibrarySection
+          documents={unitDocuments}
+          isUploading={isUploadingDocument}
+          onDelete={deleteUnitDocument}
+          onUpdateCategory={updateUnitDocumentCategory}
+          onUpload={(files, category) => uploadUnitDocuments(files, category)}
+          title="Einheitsdateien"
+        />
+      ) : null}
+
+      <section className="hidden">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Wartungen dokumentieren</p>
         <div className="mt-4 grid gap-3">
           {unitHeatingEntries.length > 0 ? (
@@ -746,7 +838,7 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
         </DetailCard>
       </div>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="hidden">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</p>
@@ -830,7 +922,7 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
         ) : null}
       </section>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="hidden">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Einheitsdaten</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Field label="Einheit" value={[unit.unitLabel, unit.section, unit.floor, unit.unitPosition].filter(Boolean).join(' / ')} />
@@ -923,6 +1015,15 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
           )}
         </div>
       </section>
+
+      <DocumentLibrarySection
+        documents={unitDocuments}
+        isUploading={isUploadingDocument}
+        onDelete={deleteUnitDocument}
+        onUpdateCategory={updateUnitDocumentCategory}
+        onUpload={(files, category) => uploadUnitDocuments(files, category)}
+        title="Einheitsdateien"
+      />
     </div>
   );
 }
@@ -1096,9 +1197,9 @@ function Field({ label, value }: { label: string; value?: unknown }) {
 
 function MiniStat({ label, value }: { label: string; value?: unknown }) {
   return (
-    <div className="admin-field rounded-[14px] border border-stone-200 bg-white/72 px-3 py-2">
+    <div className="admin-field rounded-[12px] border border-stone-200 bg-white/72 px-3 py-1.5">
       <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</p>
-      <p className="admin-field-value mt-1 min-w-0 whitespace-normal break-words text-sm leading-6 text-slate-900">{formatValue(value)}</p>
+      <p className="admin-field-value mt-0.5 min-w-0 whitespace-normal break-words text-sm leading-5 text-slate-900">{formatValue(value)}</p>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import {
   addDoc,
+  arrayUnion,
   collection,
   getDocs,
   query,
@@ -11,14 +12,22 @@ import {
   doc,
   type DocumentData,
 } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import {
   inferMessageAnalysis,
   type WorkflowRecord,
 } from './adminWorkflow';
-import { db } from './firebase';
+import { db, storage } from './firebase';
 import { buildExternalMessageKey } from './mailIdentity';
+import { sanitizeStorageFileName, type StoredDocumentEntry } from './tenantDocuments';
 
 export type SyncedInboundEmail = {
+  attachments?: Array<{
+    contentBase64?: string;
+    contentType?: string;
+    name?: string;
+    size?: number;
+  }>;
   from?: string;
   fromEmail?: string;
   fromName?: string;
@@ -54,6 +63,51 @@ async function loadCollection(name: string): Promise<WorkflowRecord[]> {
   return snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id }));
 }
 
+function base64ToBlob(contentBase64: string, contentType: string) {
+  const binary = atob(contentBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: contentType || 'application/octet-stream' });
+}
+
+async function uploadSyncedEmailAttachments(messageId: string, email: SyncedInboundEmail) {
+  const attachments = Array.isArray(email.attachments) ? email.attachments : [];
+  if (attachments.length === 0) return [];
+
+  const uploadedAttachments: StoredDocumentEntry[] = [];
+  const fromEmail = cleanText(email.fromEmail).toLowerCase();
+
+  for (const attachment of attachments) {
+    const name = cleanText(attachment.name) || 'anhang';
+    const contentBase64 = cleanText(attachment.contentBase64);
+    if (!contentBase64) continue;
+
+    const contentType = cleanText(attachment.contentType) || 'application/octet-stream';
+    const blob = base64ToBlob(contentBase64, contentType);
+    const safeName = sanitizeStorageFileName(name);
+    const storagePath = `message-attachments/${messageId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const storageRef = ref(storage, storagePath);
+
+    await uploadBytes(storageRef, blob, { contentType });
+
+    uploadedAttachments.push({
+      category: 'Mailanhang',
+      contentType,
+      name,
+      path: storagePath,
+      size: Number(attachment.size) || blob.size,
+      source: 'mail',
+      uploadedAt: new Date().toISOString(),
+      uploadedByEmail: fromEmail,
+      url: await getDownloadURL(storageRef),
+    });
+  }
+
+  return uploadedAttachments;
+}
+
 export async function persistInboundEmailsClient(emails: SyncedInboundEmail[]) {
   if (!emails.length) {
     return { count: 0 };
@@ -82,6 +136,24 @@ export async function persistInboundEmailsClient(emails: SyncedInboundEmail[]) {
         query(collection(db, 'messages'), where('messageId', '==', normalizedMessageId))
       );
       if (!existingSnapshot.empty) {
+        const existingDocument = existingSnapshot.docs[0]!;
+        const existingAttachments = existingDocument.data().attachments;
+        if (!Array.isArray(existingAttachments) || existingAttachments.length === 0) {
+          const uploadedAttachments = await uploadSyncedEmailAttachments(existingDocument.id, email);
+          if (uploadedAttachments.length > 0) {
+            await updateDoc(doc(db, 'messages', existingDocument.id), {
+              attachments: uploadedAttachments,
+              updatedAt: serverTimestamp(),
+            });
+            const existingTenantId = cleanText(existingDocument.data().tenantId);
+            if (existingTenantId) {
+              await updateDoc(doc(db, 'tenants', existingTenantId), {
+                tenantDocuments: arrayUnion(...uploadedAttachments),
+                updatedAt: serverTimestamp(),
+              });
+            }
+          }
+        }
         continue;
       }
     }
@@ -98,6 +170,24 @@ export async function persistInboundEmailsClient(emails: SyncedInboundEmail[]) {
         query(collection(db, 'messages'), where('externalMessageKey', '==', externalMessageKey))
       );
       if (!existingByExternalKey.empty) {
+        const existingDocument = existingByExternalKey.docs[0]!;
+        const existingAttachments = existingDocument.data().attachments;
+        if (!Array.isArray(existingAttachments) || existingAttachments.length === 0) {
+          const uploadedAttachments = await uploadSyncedEmailAttachments(existingDocument.id, email);
+          if (uploadedAttachments.length > 0) {
+            await updateDoc(doc(db, 'messages', existingDocument.id), {
+              attachments: uploadedAttachments,
+              updatedAt: serverTimestamp(),
+            });
+            const existingTenantId = cleanText(existingDocument.data().tenantId);
+            if (existingTenantId) {
+              await updateDoc(doc(db, 'tenants', existingTenantId), {
+                tenantDocuments: arrayUnion(...uploadedAttachments),
+                updatedAt: serverTimestamp(),
+              });
+            }
+          }
+        }
         continue;
       }
     }
@@ -144,6 +234,19 @@ export async function persistInboundEmailsClient(emails: SyncedInboundEmail[]) {
       unitId: cleanText(tenant?.data.unitId),
       updatedAt: serverTimestamp(),
     });
+    const uploadedAttachments = await uploadSyncedEmailAttachments(messageRef.id, email);
+    if (uploadedAttachments.length > 0) {
+      await updateDoc(doc(db, 'messages', messageRef.id), {
+        attachments: uploadedAttachments,
+        updatedAt: serverTimestamp(),
+      });
+      if (tenant?.id) {
+        await updateDoc(doc(db, 'tenants', tenant.id), {
+          tenantDocuments: arrayUnion(...uploadedAttachments),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
 
     const messageRecord: WorkflowRecord = {
       id: messageRef.id,

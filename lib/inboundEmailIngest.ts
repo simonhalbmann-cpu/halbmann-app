@@ -1,11 +1,23 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { getAdminDb, hasFirebaseAdminConfig } from './firebaseAdmin';
+import { getDownloadURL } from 'firebase-admin/storage';
+import { getAdminDb, getAdminStorageBucket, hasFirebaseAdminConfig } from './firebaseAdmin';
 import { extractFirstEmail, normalizeEmail, PORTAL_INBOX_EMAIL } from './mailbox';
 import { ensureWorkflowForMessage } from './workflowAutomation';
 import { addFirestoreDocument, queryFirestoreEquals } from './firestoreRest';
 import { buildExternalMessageKey } from './mailIdentity';
+import { sanitizeStorageFileName, type StoredDocumentEntry } from './tenantDocuments';
+
+export type InboundEmailAttachmentPayload = {
+  contentBase64?: string;
+  contentType?: string;
+  dataBase64?: string;
+  filename?: string;
+  name?: string;
+  size?: number;
+};
 
 export type InboundEmailPayload = {
+  attachments?: InboundEmailAttachmentPayload[];
   from?: string;
   fromEmail?: string;
   fromName?: string;
@@ -46,6 +58,73 @@ function toReceivedAt(value: Date | string | undefined) {
   return Number.isNaN(parsed.getTime()) ? FieldValue.serverTimestamp() : Timestamp.fromDate(parsed);
 }
 
+function normalizeInboundAttachments(value: unknown): InboundEmailAttachmentPayload[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const record = entry as Record<string, unknown>;
+      const name = cleanText(record.name) || cleanText(record.filename);
+      const contentBase64 = cleanText(record.contentBase64) || cleanText(record.dataBase64);
+      if (!name || !contentBase64) return null;
+
+      return {
+        contentBase64,
+        contentType: cleanText(record.contentType) || 'application/octet-stream',
+        name,
+        size: Number(record.size) || 0,
+      };
+    })
+    .filter(Boolean) as InboundEmailAttachmentPayload[];
+}
+
+async function uploadInboundEmailAttachments(
+  messageId: string,
+  attachments: InboundEmailAttachmentPayload[],
+  fromEmail: string
+) {
+  if (!hasFirebaseAdminConfig() || attachments.length === 0) return [];
+
+  const bucket = getAdminStorageBucket();
+  const uploadedAttachments: StoredDocumentEntry[] = [];
+
+  for (const attachment of attachments) {
+    const name = cleanText(attachment.name) || cleanText(attachment.filename) || 'anhang';
+    const contentBase64 = cleanText(attachment.contentBase64) || cleanText(attachment.dataBase64);
+    if (!contentBase64) continue;
+
+    const content = Buffer.from(contentBase64, 'base64');
+    const contentType = cleanText(attachment.contentType) || 'application/octet-stream';
+    const safeName = sanitizeStorageFileName(name);
+    const storagePath = `message-attachments/${messageId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const file = bucket.file(storagePath);
+
+    await file.save(content, {
+      contentType,
+      metadata: {
+        cacheControl: 'private, max-age=3600',
+        contentDisposition: `inline; filename="${safeName.replace(/"/g, '')}"`,
+      },
+      resumable: false,
+    });
+
+    uploadedAttachments.push({
+      category: 'Mailanhang',
+      contentType,
+      name,
+      path: storagePath,
+      size: Number(attachment.size) || content.length,
+      source: 'mail',
+      uploadedAt: new Date().toISOString(),
+      uploadedByEmail: fromEmail,
+      url: await getDownloadURL(file),
+    });
+  }
+
+  return uploadedAttachments;
+}
+
 export async function ingestInboundEmail(payload: InboundEmailPayload, authToken?: string) {
   const toEmail = extractFirstEmail(payload.to);
   if (toEmail !== PORTAL_INBOX_EMAIL) {
@@ -64,6 +143,7 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
     subject: payload.subject,
     text: payload.text,
   });
+  const inboundAttachments = normalizeInboundAttachments(payload.attachments);
 
   if (normalizedMessageId || externalMessageKey) {
     if (!hasFirebaseAdminConfig()) {
@@ -137,12 +217,34 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
           : existingSnapshotByExternalKey;
 
       if (existingSnapshot && !existingSnapshot.empty) {
+        const existingMessage = existingSnapshot.docs[0]!;
+        const existingAttachments = existingMessage.data().attachments;
+        if (
+          inboundAttachments.length > 0 &&
+          (!Array.isArray(existingAttachments) || existingAttachments.length === 0)
+        ) {
+          const uploadedAttachments = await uploadInboundEmailAttachments(existingMessage.id, inboundAttachments, fromEmail);
+          if (uploadedAttachments.length > 0) {
+            await existingMessage.ref.update({
+              attachments: uploadedAttachments,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            const existingTenantId = cleanText(existingMessage.data().tenantId);
+            if (existingTenantId) {
+              await getAdminDb().collection('tenants').doc(existingTenantId).update({
+                tenantDocuments: FieldValue.arrayUnion(...uploadedAttachments),
+                updatedAt: FieldValue.serverTimestamp(),
+              });
+            }
+          }
+        }
+
         return {
           duplicated: true,
-          matchedTenantId: cleanText(existingSnapshot.docs[0]?.data().tenantId),
-          messageId: existingSnapshot.docs[0]!.id,
+          matchedTenantId: cleanText(existingMessage.data().tenantId),
+          messageId: existingMessage.id,
           receiver: PORTAL_INBOX_EMAIL,
-          status: cleanText(existingSnapshot.docs[0]?.data().status) || 'new',
+          status: cleanText(existingMessage.data().status) || 'new',
         };
       }
     }
@@ -210,6 +312,22 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
   const createdId = hasFirebaseAdminConfig()
     ? (await getAdminDb().collection('messages').add(messagePayload)).id
     : await addFirestoreDocument('messages', messagePayload, authToken!);
+
+  if (inboundAttachments.length > 0 && hasFirebaseAdminConfig()) {
+    const uploadedAttachments = await uploadInboundEmailAttachments(createdId, inboundAttachments, fromEmail);
+    if (uploadedAttachments.length > 0) {
+      await getAdminDb().collection('messages').doc(createdId).update({
+        attachments: uploadedAttachments,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      if (tenantDoc?.id) {
+        await getAdminDb().collection('tenants').doc(tenantDoc.id).update({
+          tenantDocuments: FieldValue.arrayUnion(...uploadedAttachments),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+    }
+  }
 
   await ensureWorkflowForMessage(createdId, authToken);
 

@@ -1,6 +1,7 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 
 function readServiceAccount() {
   const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
@@ -51,6 +52,7 @@ function getAdminApp() {
       privateKey: serviceAccount.privateKey,
       projectId: serviceAccount.projectId,
     }),
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   });
 }
 
@@ -60,4 +62,8 @@ export function getAdminDb() {
 
 export function getAdminAuth() {
   return getAuth(getAdminApp());
+}
+
+export function getAdminStorageBucket() {
+  return getStorage(getAdminApp()).bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
 }

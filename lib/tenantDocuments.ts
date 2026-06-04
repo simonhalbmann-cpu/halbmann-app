@@ -1,10 +1,13 @@
 import type { DocumentData } from 'firebase/firestore';
+import { cleanDocumentCategory, DEFAULT_DOCUMENT_CATEGORY } from './documentCategories';
 
 export type TenantDocumentEntry = {
+  category?: string;
   contentType: string;
   name: string;
   path: string;
   size: number;
+  source?: 'mail' | 'upload' | string;
   uploadedAt: string;
   uploadedByEmail: string;
   url: string;
@@ -36,10 +39,12 @@ export function cleanTenantDocuments(value: unknown): TenantDocumentEntry[] {
       if (!name || !url) return null;
 
       return {
+        category: cleanDocumentCategory(record.category),
         contentType: typeof record.contentType === 'string' ? record.contentType : '',
         name,
         path: typeof record.path === 'string' ? record.path : '',
         size: typeof record.size === 'number' ? record.size : 0,
+        source: typeof record.source === 'string' ? record.source : 'upload',
         uploadedAt: typeof record.uploadedAt === 'string' ? record.uploadedAt : '',
         uploadedByEmail: typeof record.uploadedByEmail === 'string' ? record.uploadedByEmail : '',
         url,
@@ -56,9 +61,11 @@ export function getLegacyTenantDocumentNames(data: DocumentData | null | undefin
   return legacyTenantDocumentFields
     .map((field) => {
       const value = typeof data[field.name] === 'string' ? data[field.name].trim() : '';
-      return value ? { label: field.label, name: value } : null;
+      return value
+        ? { category: DEFAULT_DOCUMENT_CATEGORY, fieldName: field.name, label: field.label, name: value }
+        : null;
     })
-    .filter(Boolean) as Array<{ label: string; name: string }>;
+    .filter(Boolean) as Array<{ category: string; fieldName: string; label: string; name: string }>;
 }
 
 export function sanitizeStorageFileName(name: string) {

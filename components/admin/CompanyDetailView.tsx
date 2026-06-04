@@ -12,6 +12,7 @@ import {
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
 import DocumentUploadControl from './DocumentUploadControl';
+import DocumentLibrarySection from './DocumentLibrarySection';
 import {
   formatCommercialRegisterDisplay,
   formatManagingDirectorDisplay,
@@ -107,7 +108,7 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
 
   const companyDocuments = useMemo(() => cleanStoredDocuments(company?.companyDocuments), [company]);
 
-  async function uploadCompanyDocuments(files: FileList | File[] | null) {
+  async function uploadCompanyDocuments(files: FileList | File[] | null, category = 'Sonstiges') {
     if (!files || files.length === 0 || !company) return;
 
     setError('');
@@ -126,10 +127,12 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
         });
 
         uploadedDocuments.push({
+          category,
           contentType: file.type || 'application/octet-stream',
           name: file.name,
           path: storagePath,
           size: file.size,
+          source: 'upload',
           uploadedAt: new Date().toISOString(),
           uploadedByEmail: user?.email ?? '',
           url: await getDownloadURL(storageRef),
@@ -149,6 +152,29 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
       setError('Dokumente konnten nicht hochgeladen werden.');
     } finally {
       setIsUploadingDocument(false);
+    }
+  }
+
+  async function updateCompanyDocumentCategory(targetDocument: StoredDocumentEntry, category: string) {
+    setError('');
+    setMessage('');
+
+    try {
+      await updateDoc(doc(db, 'companies', companyId), {
+        companyDocuments: companyDocuments.map((document) =>
+          (targetDocument.path && document.path === targetDocument.path) ||
+          (!targetDocument.path && document.url === targetDocument.url)
+            ? { ...document, category }
+            : document
+        ),
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+      setMessage('Kategorie wurde aktualisiert.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Aktualisieren der Dokumentkategorie fuer Firma ${companyId}:`, caughtError);
+      setError('Kategorie konnte nicht gespeichert werden.');
     }
   }
 
@@ -293,7 +319,22 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
         </DetailCard>
       </div>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <DocumentLibrarySection
+        documents={companyDocuments}
+        isUploading={isUploadingDocument}
+        legacyDocuments={availableDocuments.map((field) => ({
+          category: 'Firma',
+          fieldName: field.name,
+          label: field.label,
+          name: formatValue(company[field.name]),
+        }))}
+        onDelete={deleteCompanyDocument}
+        onUpdateCategory={updateCompanyDocumentCategory}
+        onUpload={(files, category) => uploadCompanyDocuments(files, category)}
+        title="Firmendateien"
+      />
+
+      <section className="hidden">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">

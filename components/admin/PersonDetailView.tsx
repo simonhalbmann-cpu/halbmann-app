@@ -17,6 +17,7 @@ import { personDocumentFields } from './personConfig';
 import { buildPortalSignatureText, createSignatureRecord, mergeBodyWithSignature } from '../../lib/signatures';
 import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import DocumentUploadControl from './DocumentUploadControl';
+import DocumentLibrarySection from './DocumentLibrarySection';
 
 type PersonDetailViewProps = {
   personId: string;
@@ -215,7 +216,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     });
   }
 
-  async function uploadPersonDocuments(files: File[] | FileList | null) {
+  async function uploadPersonDocuments(files: File[] | FileList | null, category = 'Sonstiges') {
     if (!files || files.length === 0 || !person) return;
 
     setError('');
@@ -234,10 +235,12 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         });
 
         uploadedDocuments.push({
+          category,
           contentType: file.type || 'application/octet-stream',
           name: file.name,
           path: storagePath,
           size: file.size,
+          source: 'upload',
           uploadedAt: new Date().toISOString(),
           uploadedByEmail: user?.email ?? '',
           url: await getDownloadURL(storageRef),
@@ -257,6 +260,29 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
       setError('Dokumente konnten nicht hochgeladen werden.');
     } finally {
       setIsUploadingDocument(false);
+    }
+  }
+
+  async function updatePersonDocumentCategory(targetDocument: StoredDocumentEntry, category: string) {
+    setError('');
+    setMessage('');
+
+    try {
+      await updateDoc(doc(db, 'people', personId), {
+        personDocuments: personDocuments.map((document) =>
+          (targetDocument.path && document.path === targetDocument.path) ||
+          (!targetDocument.path && document.url === targetDocument.url)
+            ? { ...document, category }
+            : document
+        ),
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+      setMessage('Kategorie wurde aktualisiert.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Aktualisieren der Dokumentkategorie fuer Kontakt ${personId}:`, caughtError);
+      setError('Kategorie konnte nicht gespeichert werden.');
     }
   }
 
@@ -497,7 +523,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         </div>
       </section>
 
-      <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="hidden">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Chatverlauf</p>
         <div className="mt-4 rounded-[18px] border border-stone-200 bg-stone-50 px-4 py-4">
           <p className="text-sm font-medium text-slate-950">Direkt an den Kontakt schreiben</p>
@@ -641,7 +667,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         </DetailCard>
       </div>
 
-      <section className="rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="hidden">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</p>
@@ -702,6 +728,21 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           </div>
         ) : null}
       </section>
+
+      <DocumentLibrarySection
+        documents={personDocuments}
+        isUploading={isUploadingDocument}
+        legacyDocuments={availableDocuments.map((field) => ({
+          category: 'Sonstiges',
+          fieldName: field.name,
+          label: field.label,
+          name: formatValue(person[field.name]),
+        }))}
+        onDelete={deletePersonDocument}
+        onUpdateCategory={updatePersonDocumentCategory}
+        onUpload={(files, category) => uploadPersonDocuments(files, category)}
+        title="Kontaktdateien"
+      />
 
       {message ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">

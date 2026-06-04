@@ -1,11 +1,12 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import { ingestInboundEmail } from './inboundEmailIngest';
+import { ingestInboundEmail, type InboundEmailAttachmentPayload } from './inboundEmailIngest';
 import { PORTAL_INBOX_EMAIL } from './mailbox';
 import { getMailboxSettingsServer } from './mailboxConfigServer';
 import { hasFirebaseAdminConfig } from './firebaseAdmin';
 
 export type SyncedEmailPayload = {
+  attachments?: InboundEmailAttachmentPayload[];
   from: string;
   fromEmail: string;
   fromName: string;
@@ -81,6 +82,12 @@ export async function syncInboxFromImap(authToken?: string) {
 
       const parsed = await simpleParser(message.source);
       const emailPayload: SyncedEmailPayload = {
+        attachments: parsed.attachments.map((attachment) => ({
+          contentBase64: attachment.content.toString('base64'),
+          contentType: attachment.contentType || 'application/octet-stream',
+          name: attachment.filename || 'anhang',
+          size: attachment.size || attachment.content.length,
+        })),
         from: parsed.from?.text ?? '',
         fromEmail: parsed.from?.value?.[0]?.address ?? '',
         fromName: parsed.from?.value?.[0]?.name ?? '',

@@ -20,6 +20,7 @@ import {
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
 import DocumentUploadControl from './DocumentUploadControl';
+import DocumentLibrarySection from './DocumentLibrarySection';
 
 type PropertyDetailViewProps = {
   propertyId: string;
@@ -343,15 +344,16 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
 
       const currentTenant =
         linkedTenants.find((tenant) => cleanText(tenant.data.status) === 'active') ??
-        linkedTenants[0] ??
         null;
+      const upcomingTenants = linkedTenants.filter((tenant) => cleanText(tenant.data.status) === 'pending');
 
       return {
         currentTenant,
         id: unitId,
         isSelected: Boolean(selectedUnitId && selectedUnitId === unitId),
         label: unitDisplayLabel(unit) || unitId || 'Einheit',
-        pastTenants: linkedTenants.filter((tenant) => tenant.id !== currentTenant?.id),
+        pastTenants: linkedTenants.filter((tenant) => cleanText(tenant.data.status) === 'inactive'),
+        upcomingTenants,
       };
     });
   }, [property, selectedUnitId, tenants]);
@@ -361,7 +363,7 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
     [property]
   );
 
-  async function uploadPropertyDocuments(files: FileList | File[] | null) {
+  async function uploadPropertyDocuments(files: FileList | File[] | null, category = 'Sonstiges') {
     if (!files || files.length === 0 || !property) return;
 
     setError('');
@@ -380,10 +382,12 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         });
 
         uploadedDocuments.push({
+          category,
           contentType: file.type || 'application/octet-stream',
           name: file.name,
           path: storagePath,
           size: file.size,
+          source: 'upload',
           uploadedAt: new Date().toISOString(),
           uploadedByEmail: user?.email ?? '',
           url: await getDownloadURL(storageRef),
@@ -403,6 +407,29 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
       setError('Dokumente konnten nicht hochgeladen werden.');
     } finally {
       setIsUploadingDocument(false);
+    }
+  }
+
+  async function updatePropertyDocumentCategory(targetDocument: StoredDocumentEntry, category: string) {
+    setError('');
+    setSaveMessage('');
+
+    try {
+      await updateDoc(doc(db, 'properties', propertyId), {
+        propertyDocuments: propertyDocuments.map((document) =>
+          (targetDocument.path && document.path === targetDocument.path) ||
+          (!targetDocument.path && document.url === targetDocument.url)
+            ? { ...document, category }
+            : document
+        ),
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+      setSaveMessage('Kategorie wurde aktualisiert.');
+    } catch (caughtError) {
+      console.error(`Fehler beim Aktualisieren der Dokumentkategorie fuer Immobilie ${propertyId}:`, caughtError);
+      setError('Kategorie konnte nicht gespeichert werden.');
     }
   }
 
@@ -640,6 +667,35 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
       </section>
 
       <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Objektdaten</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Field label="Adresse" value={[property.street, property.houseNumber, property.postalCode, property.city].filter(Boolean).join(', ')} />
+          <Field label="Bestand" value={`${translateUsageType(property.usageType)} / ${Array.isArray(property.units) ? property.units.length : 0} Einheiten`} />
+          <Field label="Leerstand" value={String((Array.isArray(property.units) ? property.units : []).filter((unit) => unit && typeof unit === 'object' && !cleanText(unit.tenantId)).length)} />
+          <Field label="Eigentum" value={[translateOwnershipType(property.ownershipType), ownerLabel].filter(Boolean).join(' / ')} />
+          <Field label="Wirtschaftlichkeit" value={[cleanText(property.purchasePrice) ? `Kaufpreis ${cleanText(property.purchasePrice)}` : '', cleanText(property.initialYieldPercent) ? `Rendite ${cleanText(property.initialYieldPercent)}` : ''].filter(Boolean).join(' / ')} />
+          <Field label="Technik" value={[cleanText(property.propertyNumber) ? `Objekt ${cleanText(property.propertyNumber)}` : '', property.hasCentralHeating === 'no' ? 'Keine Zentralheizung' : 'Zentralheizung'].filter(Boolean).join(' / ')} />
+          {cleanText(property.ownershipType) === 'partial_ownership' ? (
+            <>
+              <Field label="Position Keller" value={property.basementPosition} />
+              <Field label="Position Briefkasten" value={property.mailboxPosition} />
+            </>
+          ) : null}
+        </div>
+      </section>
+
+      {false ? (
+        <DocumentLibrarySection
+          documents={propertyDocuments}
+          isUploading={isUploadingDocument}
+          onDelete={deletePropertyDocument}
+          onUpdateCategory={updatePropertyDocumentCategory}
+          onUpload={(files, category) => uploadPropertyDocuments(files, category)}
+          title="Immobiliendateien"
+        />
+      ) : null}
+
+      <section className="hidden">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Einheiten</p>
         <div className="mt-4 grid gap-3 xl:grid-cols-2">
           {unitCards.length === 0 ? (
@@ -676,6 +732,19 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
                   />
                   <Field label="Einheits-ID" value={unit.id} />
                 </div>
+                {unit.upcomingTenants.length > 0 ? (
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {unit.upcomingTenants.slice(0, 4).map((tenant) => (
+                      <Field
+                        key={tenant.id}
+                        label="Vorgemerkt"
+                        value={[cleanText(tenant.data.lastName), cleanText(tenant.data.firstName), cleanText(tenant.data.moveInDate) ? `ab ${cleanText(tenant.data.moveInDate)}` : '']
+                          .filter(Boolean)
+                          .join(', ')}
+                      />
+                    ))}
+                  </div>
+                ) : null}
                 {unit.pastTenants.length > 0 ? (
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
                     {unit.pastTenants.slice(0, 4).map((tenant) => (
@@ -908,7 +977,18 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </div>
       </section>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      {false ? (
+        <DocumentLibrarySection
+          documents={propertyDocuments}
+          isUploading={isUploadingDocument}
+          onDelete={deletePropertyDocument}
+          onUpdateCategory={updatePropertyDocumentCategory}
+          onUpload={(files, category) => uploadPropertyDocuments(files, category)}
+          title="Immobiliendateien"
+        />
+      ) : null}
+
+      <section className="hidden">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</p>
@@ -1037,7 +1117,7 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </div>
       </section>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section className="hidden">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Objektdaten</p>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Field label="Adresse" value={[property.street, property.houseNumber, property.postalCode, property.city].filter(Boolean).join(', ')} />
@@ -1136,6 +1216,15 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
           {error}
         </div>
       ) : null}
+
+      <DocumentLibrarySection
+        documents={propertyDocuments}
+        isUploading={isUploadingDocument}
+        onDelete={deletePropertyDocument}
+        onUpdateCategory={updatePropertyDocumentCategory}
+        onUpload={(files, category) => uploadPropertyDocuments(files, category)}
+        title="Immobiliendateien"
+      />
     </div>
   );
 }
