@@ -1792,3 +1792,83 @@ pm run build (gruen).
 - Platzhalter u.a. {{NAME}} und {{SIGNATURE_NAME}} werden gerendert; der Name kommt in den normalen Versandpfaden aus dem eingeloggten Admin, weil applyAdminSenderToSignature den Signaturdatensatz vorher ueberschreibt.
 - Signatur kann in den Einstellungen geloescht werden; alte feste Signatur bleibt nur Fallback, wenn keine freie Vorlage hinterlegt ist.
 - Build mit npm.cmd run build war erfolgreich.
+
+## 04.06.2026 - Aktueller Stand nach Dokumenten- und Nachrichten-Ausbau
+
+### Git / Build / Dev-Server
+- Aktueller sauberer Commit vor dieser Kontext-Aktualisierung: c736d54 Fix Dashboard Reminder Keys.
+- Davor wurde der groessere Sicherungsstand 5b5f0c2 Sicherung Verwaltungsbereich und Dokumente erstellt.
+- git status war nach c736d54 sauber.
+- npm.cmd run build war erfolgreich.
+- Der lokale Dev-Server laeuft wieder unter http://localhost:3000.
+- Nach dem Dashboard-Key-Fix wurde der Next-Dev-Server neu gestartet, weil der Browser noch ein altes Bundle mit der alten React-Key-Warnung angezeigt hatte.
+
+### Dokumente / Uploads / Firebase Storage
+- Firebase Storage ist aktiviert und die Storage-Regeln wurden erweitert.
+- Dokumentuploads funktionieren jetzt tatsaechlich ueber Firebase Storage.
+- Es gibt eine gemeinsame Dokumentbibliothek mit Kategorien.
+- Dateien koennen je nach Bereich hochgeladen, angesehen/geoeffnet und geloescht werden.
+- Dokumentkategorien: Standardkategorien, neue Kategorien hinzufuegen, Kategorien wieder loeschen.
+- Im Filter-Dropdown erscheinen nur Kategorien, in denen wirklich Dateien vorhanden sind.
+- Die neue Dokumentbibliothek wird fuer mehrere Bereiche genutzt, unter anderem Mieter, Immobilien, Einheiten, Firmen und Dritte/Dienstleister.
+- Alte Uploadfelder wurden weitgehend durch die neue Kategorie-Dokumentbibliothek ersetzt.
+- Dokumentupload-Kacheln sollen in Detailansichten moeglichst ganz unten stehen.
+
+### E-Mail-Anhaenge
+- Eingehende Mailanhaenge werden verarbeitet und als Dokumente im passenden Kontext abgelegt, soweit eine Zuordnung moeglich ist.
+- Bilder, PDFs, Docs, Videos und sonstige Dateien sollen nicht durch die App blockiert werden. Wenn der Mailserver eine Mail ablehnt, liegt das ausserhalb der App.
+- Im Nachrichtenverlauf werden Anhaenge direkt an der jeweiligen Nachricht angezeigt.
+- Vorschaufaehige Dateien werden klein angezeigt, damit der Chat nicht ueberladen wird.
+- Nicht direkt vorschaufaehige Dateien erscheinen als klickbare Datei.
+- Anhaenge koennen im Chat/Verlauf geloescht werden; dabei wird auch die zugehoerige Dokumentreferenz entfernt.
+- In der Dokumentbibliothek erscheinen alte reine Dateinamen ohne echten Upload separat und koennen geloescht werden.
+
+### Nachrichten- und Chat-Oberflaeche
+- Die allgemeine Nachrichtenansicht und die Mieter-Chatansicht wurden umgebaut.
+- Nachrichten-/Themenliste steht links.
+- Verlauf steht ueber dem Eingabefeld.
+- Aktionen wie Erledigt, Splitten, Thema zusammenfuehren und Thementitel speichern stehen zwischen Verlauf und Eingabefeld.
+- Das Eingabefeld sitzt unter Verlauf und Aktionsleiste.
+- Die Ansicht wurde optisch flacher gemacht: weniger verschachtelte Karten, mehr horizontale Trenner.
+- Einzelne Nachrichten in Liste und Verlauf haben keine eigenen grossen Kartenrahmen mehr.
+
+### Mieterwechsel / ehemalige Mieter
+- Einheit, Immobilie und Mieter bleiben getrennte Datenbereiche.
+- Ehemalige Mieter bleiben als Profile erhalten.
+- Chatverlauf, Chatfunktion und Dateien bleiben auch nach Ende des Mietverhaeltnisses erhalten.
+- In der Mieteruebersicht gibt es Filter fuer aktive, zukuenftige/in Vorbereitung befindliche, ehemalige und alle Mieter.
+- Beim Anlegen eines Mieters kann eine bereits belegte Einheit als zukuenftiges Mietverhaeltnis genutzt werden.
+- Bei bestehenden Mietern gibt es eine Funktion, das Mietverhaeltnis zu beenden, ohne das Profil zu loeschen.
+- Beim Beenden wird die Einheit nur dann freigegeben, wenn der beendete Mieter dort aktuell als aktiver Mieter hinterlegt war.
+
+### Immobilien / Einheiten / Wartungen / Zaehler
+- Immobilien-Detailansicht wurde umsortiert: Objektdaten oben, Einheiten weit oben, Zaehleruebersicht ueber Wartungen dokumentieren, Dokumentupload unten.
+- Einheit-Detailansicht wurde kompakter: Einheitdaten oben; Objekt, Geschoss, Position und Status nebeneinander.
+- Objektzaehler liegen auf Hauptimmobilienebene, nicht mehr doppelt in Einheiten.
+- Einheiten koennen weiterhin eigene Heizungen/Thermen mit Wartungsdatum und Erinnerungsintervall haben.
+- Wartungen fuer Heizung, Dach und Regenrinnenreinigung haben ein einstellbares Erinnerungsintervall in Monaten.
+- Dashboard-Erinnerungen nutzen jetzt eindeutige interne Keys, damit mehrere Erinnerungen an derselben Immobilie am selben Datum keine React-Key-Warnung mehr ausloesen.
+
+### Dienstleister / Gewerke
+- Dienstleisterzuordnung wurde kompakter als Dropdown-Workflow umgesetzt: Dienstleisterart auswaehlen, Firma/Person auswaehlen, speichern.
+- Zugeordnete Dienstleister erscheinen als Zeile, fuehren zur Detailseite und koennen wieder geloescht werden.
+- Dienstleisterarten wurden erweitert und alphabetisch gedacht, inklusive Tischler und Sonstiges.
+- Diese Zuordnungslogik soll bei Immobilien und Einheiten gleich funktionieren.
+
+### Vorlagen / Uebergabeprotokoll
+- Einstellungen > Brief wurde fachlich in Richtung Vorlagen erweitert.
+- Uebergabeprotokolle fuer Einzug und Auszug sind als Vorlagen vorgesehen.
+- In der Mieteransicht gibt es eine schlanke Uebergabe-Auswahl oben in der Nachrichtenzeile: Dropdown fuer Einzug/Auszug plus Bestaetigungsbutton.
+- Das Uebergabeprotokoll ist nicht mehr Teil der Dokumentenkachel selbst.
+
+### Rechte / Mitarbeiter
+- Mitarbeiterrechte sind so gedacht, dass deaktivierte Bereiche fuer Mitarbeiter ausgeblendet werden.
+- Direkte Einstellungszugriffe ueber Profil/Zahnrad wurden nachgezogen, damit gesperrte Einstellungsbereiche nicht ueber Umwege erreichbar sind.
+- Super-Admin-Daten sollen im Programm bearbeitbar sein.
+- Signaturen, Mails und Briefe nutzen die Daten des aktuell eingeloggten Verwalters fuer Name, Telefon und Mobilnummer, soweit im Profil vorhanden.
+
+### Wichtig fuer den naechsten Einstieg
+- .env.local enthaelt lokale Geheimnisse und darf nicht committed werden.
+- Bei Next.js-Aenderungen weiterhin zuerst die lokale Doku unter node_modules/next/dist/docs/ lesen.
+- Wenn ein rotes Next-Overlay nach einem Fix unveraendert bleibt, erst Dev-Server neu starten und im Browser hart neu laden: Strg + F5.
+- Nach jeder groesseren Aenderung npm.cmd run build ausfuehren.

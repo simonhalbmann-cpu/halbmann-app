@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
@@ -218,6 +218,7 @@ export default function AdminCollectionManager({
 }: Props) {
   const { role, user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const formRef = useRef<HTMLFormElement | null>(null);
   const [records, setRecords] = useState<AdminRecord[]>([]);
   const [relatedCollections, setRelatedCollections] = useState<RelatedMap>({});
@@ -233,6 +234,10 @@ export default function AdminCollectionManager({
   const [pendingCompanyDocumentFiles, setPendingCompanyDocumentFiles] = useState<PendingCategorizedFile[]>([]);
   const [isPending, startTransition] = useTransition();
   const isCompanyCollection = collectionName === 'companies';
+  const isPersonCollection = collectionName === 'people';
+  const isDocumentUploadCollection = isCompanyCollection || isPersonCollection;
+  const documentCollectionField = isPersonCollection ? 'personDocuments' : 'companyDocuments';
+  const documentStoragePrefix = isPersonCollection ? 'person-documents' : 'company-documents';
   const hiddenCompanyUploadFieldNames = useMemo(
     () =>
       new Set([
@@ -249,10 +254,10 @@ export default function AdminCollectionManager({
   );
   const visibleFields = useMemo(
     () =>
-      isCompanyCollection
-        ? fields.filter((field) => !hiddenCompanyUploadFieldNames.has(field.name))
+      isDocumentUploadCollection
+        ? fields.filter((field) => !hiddenCompanyUploadFieldNames.has(field.name) && !(isPersonCollection && field.type === 'file'))
         : fields,
-    [fields, hiddenCompanyUploadFieldNames, isCompanyCollection]
+    [fields, hiddenCompanyUploadFieldNames, isDocumentUploadCollection, isPersonCollection]
   );
 
   const relationFields = useMemo(
@@ -313,6 +318,14 @@ export default function AdminCollectionManager({
       );
     });
   }, [collectionName, hideOverview, overviewTitleFields, previewFields]);
+
+  useEffect(() => {
+    if (editMode || collectionName !== 'people') return;
+    const email = cleanSpaces(searchParams.get('email') ?? '').toLowerCase();
+    if (!email) return;
+    setInitialValues((current) => (cleanSpaces(String(current.email ?? '')) ? current : { ...current, email }));
+    setFormKey(`new-${email}`);
+  }, [collectionName, editMode, searchParams]);
 
   useEffect(() => {
     if (relationFields.length === 0) return;
@@ -455,7 +468,7 @@ export default function AdminCollectionManager({
     }
   }
 
-  async function uploadCompanyDocuments(recordId: string, files: PendingCategorizedFile[]) {
+  async function uploadCategorizedDocuments(recordId: string, files: PendingCategorizedFile[]) {
     if (files.length === 0) return [];
 
     const uploadedDocuments: StoredDocumentEntry[] = [];
@@ -463,7 +476,7 @@ export default function AdminCollectionManager({
     for (const entry of files) {
       const file = entry.file;
       const safeName = sanitizeStorageFileName(file.name);
-      const storagePath = `company-documents/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const storagePath = `${documentStoragePrefix}/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
       const storageRef = ref(storage, storagePath);
       await uploadBytes(storageRef, file, {
         contentType: file.type || 'application/octet-stream',
@@ -558,19 +571,19 @@ export default function AdminCollectionManager({
             updatedByEmail: user.email ?? null,
             updatedByUid: user.uid,
           });
-          if (isCompanyCollection && pendingCompanyDocumentFiles.length > 0) {
-            const uploadedDocuments = await uploadCompanyDocuments(documentId, pendingCompanyDocumentFiles);
+          if (isDocumentUploadCollection && pendingCompanyDocumentFiles.length > 0) {
+            const uploadedDocuments = await uploadCategorizedDocuments(documentId, pendingCompanyDocumentFiles);
             const nextCompanyDocuments = [
-              ...cleanStoredDocuments(initialValues.companyDocuments),
+              ...cleanStoredDocuments(initialValues[documentCollectionField]),
               ...uploadedDocuments,
             ];
             await updateDoc(doc(db, collectionName, documentId), {
-              companyDocuments: nextCompanyDocuments,
+              [documentCollectionField]: nextCompanyDocuments,
               updatedAt: serverTimestamp(),
               updatedByEmail: user.email ?? null,
               updatedByUid: user.uid,
             });
-            nextInitialValues = { ...values, companyDocuments: nextCompanyDocuments };
+            nextInitialValues = { ...values, [documentCollectionField]: nextCompanyDocuments };
             setPendingCompanyDocumentFiles([]);
           }
           setInitialValues(nextInitialValues);
@@ -586,10 +599,10 @@ export default function AdminCollectionManager({
             updatedAt: serverTimestamp(),
           });
           savedRecordId = createdRecord.id;
-          if (isCompanyCollection && pendingCompanyDocumentFiles.length > 0) {
-            const uploadedDocuments = await uploadCompanyDocuments(savedRecordId, pendingCompanyDocumentFiles);
+          if (isDocumentUploadCollection && pendingCompanyDocumentFiles.length > 0) {
+            const uploadedDocuments = await uploadCategorizedDocuments(savedRecordId, pendingCompanyDocumentFiles);
             await updateDoc(doc(db, collectionName, savedRecordId), {
-              companyDocuments: uploadedDocuments,
+              [documentCollectionField]: uploadedDocuments,
               updatedAt: serverTimestamp(),
               updatedByEmail: user.email ?? null,
               updatedByUid: user.uid,
@@ -777,7 +790,7 @@ export default function AdminCollectionManager({
               fieldType === 'text-list';
             return <div className={isWide ? 'space-y-2 md:col-span-2' : 'space-y-2'} key={field.name}>{renderField(field)}</div>;
           })}
-          {isCompanyCollection ? (
+          {isDocumentUploadCollection ? (
             <div className="md:col-span-2">
               <PendingDocumentUploadSection
                 files={pendingCompanyDocumentFiles}
@@ -799,7 +812,7 @@ export default function AdminCollectionManager({
                     currentFiles.filter((entry) => entry.id !== id)
                   )
                 }
-                title="Dokumente zur Firma"
+                title={isPersonCollection ? 'Dokumente zum Dienstleister' : 'Dokumente zur Firma'}
               />
             </div>
           ) : null}

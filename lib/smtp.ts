@@ -21,9 +21,10 @@ export async function getSmtpTransport() {
 export async function sendPortalEmail(args: {
   attachments?: Array<{
     cid?: string;
-    content: Buffer | string;
+    content?: Buffer | string;
     contentType?: string;
     filename?: string;
+    path?: string;
   }>;
   html?: string;
   subject: string;

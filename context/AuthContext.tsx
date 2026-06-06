@@ -28,6 +28,21 @@ export const AuthContext = createContext<AuthContextType>({
   user: null,
 });
 
+function isFirebasePermissionError(value: unknown) {
+  const code =
+    typeof value === 'object' && value !== null && 'code' in value
+      ? (value as { code?: unknown }).code
+      : '';
+  const message =
+    value instanceof Error
+      ? value.message
+      : typeof value === 'object' && value !== null && 'message' in value
+        ? String((value as { message?: unknown }).message ?? '')
+        : String(value ?? '');
+
+  return code === 'permission-denied' || message.includes('Missing or insufficient permissions');
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -118,6 +133,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.removeEventListener('portal-local-session-changed', handlePortalSessionChanged);
       }
       unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    function handleUnhandledRejection(event: PromiseRejectionEvent) {
+      if (!isFirebasePermissionError(event.reason)) return;
+      console.warn('Firebase-Berechtigungsfehler wurde abgefangen:', event.reason);
+      event.preventDefault();
+    }
+
+    function handleError(event: ErrorEvent) {
+      if (!isFirebasePermissionError(event.error ?? event.message)) return;
+      console.warn('Firebase-Berechtigungsfehler wurde abgefangen:', event.error ?? event.message);
+      event.preventDefault();
+    }
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    window.addEventListener('error', handleError);
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener('error', handleError);
     };
   }, []);
 

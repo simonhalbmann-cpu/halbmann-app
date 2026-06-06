@@ -72,6 +72,17 @@ const settingsLinks: Array<{
 const cleanText = (value: unknown) =>
   typeof value === 'string' ? value.trim() : '';
 
+const LOGOUT_IN_PROGRESS_KEY = 'halbmann-logout-in-progress';
+
+function isPermissionDenied(caughtError: unknown) {
+  return (
+    typeof caughtError === 'object' &&
+    caughtError !== null &&
+    'code' in caughtError &&
+    (caughtError as { code?: unknown }).code === 'permission-denied'
+  );
+}
+
 function resolveActiveNavHref(pathname: string, hrefs: string[]) {
   const matches = hrefs.filter((href) => {
     if (href === '/admin') {
@@ -180,6 +191,7 @@ function resolveRequiredAdminPermission(
   if (/^\/admin\/firma\/[^/]+$/.test(pathname)) return 'companies.read';
 
   if (pathname === '/admin/immobilie' || pathname === '/admin/objekte') return 'properties.create';
+  if (/^\/admin\/immobilie\/[^/]+\/dienstleister$/.test(pathname)) return 'contacts.read';
   if (/^\/admin\/immobilie\/[^/]+\/bearbeiten$/.test(pathname)) return 'properties.update';
   if (/^\/admin\/immobilie\/[^/]+$/.test(pathname)) return 'properties.read';
   if (/^\/admin\/einheit\/[^/]+\/[^/]+$/.test(pathname)) return 'properties.read';
@@ -219,6 +231,9 @@ function resolveAdminSidebarTitle(
   }
   if (pathname === '/admin/firma' || pathname === '/admin/firmen' || pathname.startsWith('/admin/firma/')) {
     return 'Firma';
+  }
+  if (/^\/admin\/immobilie\/[^/]+\/dienstleister$/.test(pathname)) {
+    return 'Dienstleister';
   }
   if (
     pathname === '/admin/immobilie' ||
@@ -310,8 +325,9 @@ export default function ProtectedAreaLayout({
   const canReadCompanies = requiredRole !== 'admin' || hasAdminPermission(profile, 'companies.read');
   const canReadProperties = requiredRole !== 'admin' || hasAdminPermission(profile, 'properties.read');
   const canReadTenants = requiredRole !== 'admin' || hasAdminPermission(profile, 'tenants.read');
+  const canReadContacts = requiredRole !== 'admin' || hasAdminPermission(profile, 'contacts.read');
   const canViewInventoryTree =
-    requiredRole === 'admin' && (canReadCompanies || canReadProperties || canReadTenants);
+    requiredRole === 'admin' && (canReadCompanies || canReadProperties || canReadTenants || canReadContacts);
   const isCompactHeaderRoute = isMessageRoute || isTenantOverviewRoute || isTenantDetailRoute || isBriefSettingsRoute;
   const propertyDetailId = useMemo(() => {
     const match = pathname.match(/^\/admin\/immobilie\/([^/]+)$/);
@@ -477,39 +493,61 @@ export default function ProtectedAreaLayout({
   }, [loading, requiredRole, role, router, user]);
 
   useEffect(() => {
-    if (requiredRole !== 'admin') {
+    if (requiredRole !== 'admin' || loading || role !== 'admin' || !user) {
+      setCompanies([]);
+      setProperties([]);
+      setTenants([]);
       return;
     }
 
+    const handleSnapshotError = (caughtError: unknown) => {
+      if (isPermissionDenied(caughtError)) {
+        return;
+      }
+      console.error('Fehler beim Laden der Navigationsdaten:', caughtError);
+    };
+
     const unsubscribers = [
-      onSnapshot(query(collection(db, 'companies')), (snapshot) => {
-        setCompanies(
-          snapshot.docs.map((documentSnapshot) => ({
-            data: documentSnapshot.data(),
-            id: documentSnapshot.id,
-          }))
-        );
-      }),
-      onSnapshot(query(collection(db, 'properties')), (snapshot) => {
-        setProperties(
-          snapshot.docs.map((documentSnapshot) => ({
-            data: documentSnapshot.data(),
-            id: documentSnapshot.id,
-          }))
-        );
-      }),
-      onSnapshot(query(collection(db, 'tenants')), (snapshot) => {
-        setTenants(
-          snapshot.docs.map((documentSnapshot) => ({
-            data: documentSnapshot.data(),
-            id: documentSnapshot.id,
-          }))
-        );
-      }),
+      onSnapshot(
+        query(collection(db, 'companies')),
+        (snapshot) => {
+          setCompanies(
+            snapshot.docs.map((documentSnapshot) => ({
+              data: documentSnapshot.data(),
+              id: documentSnapshot.id,
+            }))
+          );
+        },
+        handleSnapshotError
+      ),
+      onSnapshot(
+        query(collection(db, 'properties')),
+        (snapshot) => {
+          setProperties(
+            snapshot.docs.map((documentSnapshot) => ({
+              data: documentSnapshot.data(),
+              id: documentSnapshot.id,
+            }))
+          );
+        },
+        handleSnapshotError
+      ),
+      onSnapshot(
+        query(collection(db, 'tenants')),
+        (snapshot) => {
+          setTenants(
+            snapshot.docs.map((documentSnapshot) => ({
+              data: documentSnapshot.data(),
+              id: documentSnapshot.id,
+            }))
+          );
+        },
+        handleSnapshotError
+      ),
     ];
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [requiredRole]);
+  }, [loading, requiredRole, role, user]);
 
   useEffect(() => {
     if (requiredRole !== 'admin' || loading || role !== 'admin' || !user) {
@@ -575,12 +613,28 @@ export default function ProtectedAreaLayout({
   }, [loading, requiredRole, role, user]);
 
   async function handleLogout() {
+    const loginRoute = getLoginRouteForRole(requiredRole);
+
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(LOGOUT_IN_PROGRESS_KEY, '1');
+      window.setTimeout(() => {
+        window.sessionStorage.removeItem(LOGOUT_IN_PROGRESS_KEY);
+      }, 5000);
+    }
+
     if (user) {
-      await signOut(auth);
+      setCompanies([]);
+      setProperties([]);
+      setTenants([]);
+      router.replace(loginRoute);
+      window.setTimeout(() => {
+        void signOut(auth);
+      }, 250);
+      return;
     } else if (requiredRole === 'portal') {
       await fetch('/api/portal-local/logout', { method: 'POST' });
     }
-    router.replace(getLoginRouteForRole(requiredRole));
+    router.replace(loginRoute);
   }
 
   function toggleSection(sectionKey: string) {
@@ -619,6 +673,14 @@ export default function ProtectedAreaLayout({
     router.push(`/admin/immobilie/${propertyId}`);
   }
 
+  function openPropertyServices(companyId: string, propertyId: string) {
+    setOpenSections({ Bestand: true, Hinzufuegen: false });
+    setOpenCompanies({ [companyId]: true });
+    setOpenProperties({ [propertyId]: true });
+    setOpenUnits({});
+    router.push(`/admin/immobilie/${propertyId}/dienstleister`);
+  }
+
   function openUnit(companyId: string, propertyId: string, unitId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
     setOpenCompanies({ [companyId]: true });
@@ -636,7 +698,7 @@ export default function ProtectedAreaLayout({
   }
 
   const companyTree = useMemo(() => {
-    if (requiredRole === 'admin' && !canReadCompanies && !canReadProperties && !canReadTenants) {
+    if (requiredRole === 'admin' && !canReadCompanies && !canReadProperties && !canReadTenants && !canReadContacts) {
       return [];
     }
 
@@ -670,28 +732,19 @@ export default function ProtectedAreaLayout({
                     (tenant) =>
                       cleanText(tenant.data.unitId) === unitId &&
                       cleanText(tenant.data.status) === 'active'
-                  ) ??
-                  propertyTenants.find((tenant) => cleanText(tenant.data.unitId) === unitId) ??
-                  null;
-                const pastTenants = propertyTenants.filter(
-                  (tenant) =>
-                    cleanText(tenant.data.unitId) === unitId &&
-                    tenant.id !== currentTenant?.id
-                );
+                  ) ?? null;
 
                 return {
                   currentTenant,
                   id: unitId,
                   label: unitDisplayLabel(unit),
                   menuLabel: unitMenuLabel(unit.floor, unit.unitPosition),
-                  pastTenants,
                 };
               })
               .filter(Boolean) as {
               currentTenant: AdminRecord | null;
               id: string;
               label: string;
-              pastTenants: AdminRecord[];
             }[];
 
             return {
@@ -719,17 +772,9 @@ export default function ProtectedAreaLayout({
                     .filter(Boolean)
                     .join(', ')
                 : '';
-              const pastTenantNames = unit.pastTenants
-                .map((tenant) =>
-                  [cleanText(tenant.data.lastName), cleanText(tenant.data.firstName)]
-                    .filter(Boolean)
-                    .join(', ')
-                )
-                .join(' ');
               return [
                 unit.label.toLowerCase(),
                 currentTenantName.toLowerCase(),
-                pastTenantNames.toLowerCase(),
               ].some((value) => value.includes(searchText));
             }),
           }))
@@ -763,12 +808,12 @@ export default function ProtectedAreaLayout({
           id: string;
           label: string;
           menuLabel: string;
-          pastTenants: AdminRecord[];
         }[];
       }[];
     }[];
   }, [
     canReadCompanies,
+    canReadContacts,
     canReadProperties,
     canReadTenants,
     companies,
@@ -944,9 +989,9 @@ export default function ProtectedAreaLayout({
   }
 
   return (
-    <div className="admin-shell min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.18),_transparent_30%),linear-gradient(180deg,_#f6f1ea_0%,_#f3ede4_100%)] text-slate-900">
+    <div className="admin-shell min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.10),_transparent_30%),linear-gradient(180deg,_#111820_0%,_#16212b_42%,_#eef2f2_42%,_#f6f7f5_100%)] text-slate-900">
       <div className="grid min-h-screen lg:grid-cols-[calc(320px-2cm)_minmax(0,1fr)]">
-        <aside className="border-r border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.94)_0%,rgba(244,236,224,0.92)_100%)] px-6 py-8">
+        <aside className="border-r border-white/10 bg-[linear-gradient(180deg,rgba(17,24,32,0.98)_0%,rgba(26,34,43,0.96)_54%,rgba(31,24,20,0.96)_100%)] px-6 py-8">
           <div className="flex h-full flex-col justify-between">
             <div>
               <div className="-mt-5 rounded-[26px] border border-stone-200/80 bg-white/72 px-4 py-3 shadow-[0_20px_40px_-34px_rgba(148,119,77,0.4)]">
@@ -1096,6 +1141,20 @@ export default function ProtectedAreaLayout({
                                       </div>
                                       {openProperties[property.id] ? (
                                         <div className="ml-3 space-y-2 border-l border-stone-200 pl-3">
+                                          {canReadContacts ? (
+                                            <button
+                                              className={`w-full rounded-[14px] px-3 py-2 text-left text-xs leading-5 transition ${
+                                                isCurrentPath(pathname, `/admin/immobilie/${property.id}/dienstleister`)
+                                                  ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
+                                                  : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
+                                              }`}
+                                              onClick={() => openPropertyServices(company.id, property.id)}
+                                              title={`Dienstleister ${property.label}`}
+                                              type="button"
+                                            >
+                                              Dienstleister
+                                            </button>
+                                          ) : null}
                                           {property.units.map((unit) => {
                                             const unitKey = `${property.id}-${unit.id}`;
                                             return (
@@ -1144,31 +1203,6 @@ export default function ProtectedAreaLayout({
                                                         <p className="mt-1 text-sm text-slate-900">Kein Mieter zugeordnet</p>
                                                       )}
                                                     </div>
-                                                    {unit.pastTenants.length > 0 ? (
-                                                      <div className="rounded-[14px] bg-white px-3 py-2 text-xs leading-5 text-slate-600">
-                                                        <p className="uppercase tracking-[0.22em] text-slate-400">
-                                                          Letzte Mieter
-                                                        </p>
-                                                        <div className="mt-2 space-y-1.5">
-                                                          {unit.pastTenants.map((tenant) => (
-                                                            <button
-                                                              className={`block text-left text-xs transition ${
-                                                                isCurrentPath(pathname, `/admin/mieter/${tenant.id}`)
-                                                                  ? 'text-slate-950 underline decoration-stone-300 underline-offset-4'
-                                                                  : 'text-slate-700 hover:text-amber-800'
-                                                              }`}
-                                                              key={tenant.id}
-                                                              onClick={() => openTenant(company.id, property.id, unit.id, tenant.id)}
-                                                              type="button"
-                                                            >
-                                                              {[cleanText(tenant.data.lastName), cleanText(tenant.data.firstName)]
-                                                                .filter(Boolean)
-                                                                .join(', ')}
-                                                            </button>
-                                                          ))}
-                                                        </div>
-                                                      </div>
-                                                    ) : null}
                                                   </div>
                                                 ) : null}
                                               </div>

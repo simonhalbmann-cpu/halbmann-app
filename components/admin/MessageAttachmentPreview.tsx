@@ -70,8 +70,9 @@ export default function MessageAttachmentPreview({
 
   return (
     <div className="mt-4 space-y-3">
-      {resolvedAttachments.map((attachment) => {
+      {resolvedAttachments.map((attachment, index) => {
         const type = attachment.contentType;
+        const attachmentKey = `${attachment.path || attachment.url}-${attachment.name}-${index}`;
         const deleteButton = onDelete ? (
           <button
             className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-300"
@@ -86,7 +87,7 @@ export default function MessageAttachmentPreview({
           return (
             <div
               className="inline-block overflow-hidden rounded-[14px] border border-stone-200 bg-white align-top"
-              key={`${attachment.name}-${attachment.url}`}
+              key={attachmentKey}
             >
               <a href={attachment.url} rel="noreferrer" target="_blank">
                 <img
@@ -109,7 +110,7 @@ export default function MessageAttachmentPreview({
           return (
             <div
               className="inline-block overflow-hidden rounded-[14px] border border-stone-200 bg-white align-top"
-              key={`${attachment.name}-${attachment.url}`}
+              key={attachmentKey}
             >
               <a className="block h-20 w-28 bg-black" href={attachment.url} rel="noreferrer" target="_blank">
                 <video className="h-20 w-28 object-cover" muted src={attachment.url} />
@@ -128,7 +129,7 @@ export default function MessageAttachmentPreview({
           return (
             <div
               className="inline-flex min-h-20 w-48 flex-col justify-between rounded-[14px] border border-stone-200 bg-white px-3 py-2 align-top"
-              key={`${attachment.name}-${attachment.url}`}
+              key={attachmentKey}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="truncate text-xs font-medium text-slate-700">{attachment.name}</p>
@@ -150,7 +151,7 @@ export default function MessageAttachmentPreview({
           return (
             <div
               className="inline-block overflow-hidden rounded-[14px] border border-stone-200 bg-white align-top"
-              key={`${attachment.name}-${attachment.url}`}
+              key={attachmentKey}
             >
               <a
                 className="flex h-20 w-28 items-center justify-center bg-stone-50 px-3 text-center text-xs font-semibold text-slate-700"
@@ -172,7 +173,7 @@ export default function MessageAttachmentPreview({
         }
 
         return (
-          <div className="inline-flex flex-wrap items-center gap-2 align-top" key={`${attachment.name}-${attachment.url}`}>
+          <div className="inline-flex flex-wrap items-center gap-2 align-top" key={attachmentKey}>
             <DownloadLink attachment={attachment} />
             {deleteButton}
           </div>

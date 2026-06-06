@@ -14,6 +14,7 @@ import {
   type WorkflowRecord,
 } from '../../lib/adminWorkflow';
 import { db, storage } from '../../lib/firebase';
+import { sanitizeAiContext } from '../../lib/aiContext';
 import { composePortalDraft, stripAiEnvelope } from '../../lib/draftComposer';
 import type { LocalMessageTheme } from '../../lib/localMessageThemes';
 import { buildMessageThemes, type MessageTheme } from '../../lib/messageThemes';
@@ -30,6 +31,7 @@ import { appendDeliveryLabel } from './messageDeliveryLabel';
 import DocumentUploadControl from './DocumentUploadControl';
 import DocumentLibrarySection from './DocumentLibrarySection';
 import MessageAttachmentPreview, { type MessageAttachmentEntry } from './MessageAttachmentPreview';
+import OutgoingAttachmentPicker, { type PendingOutgoingAttachment } from './OutgoingAttachmentPicker';
 import RentHistoryChart, { type RentHistoryChartPoint } from './RentHistoryChart';
 import {
   cleanTenantDocuments,
@@ -37,6 +39,7 @@ import {
   sanitizeStorageFileName,
   type TenantDocumentEntry,
 } from '../../lib/tenantDocuments';
+import { uploadOutgoingMessageAttachments } from '../../lib/outgoingMessageAttachments';
 
 type TenantDetailViewProps = {
   activeThemeListMode?: 'archive' | 'open';
@@ -53,7 +56,7 @@ type TenantDetailViewProps = {
   tenantId: string;
 };
 
-type DeliveryMode = 'both' | 'email' | 'letter';
+type DeliveryMode = 'both' | 'email' | 'letter' | 'note';
 type ThemeComposerMode = 'note' | 'tenant' | 'vendor';
 const GENERAL_THREAD_ID = 'general';
 
@@ -329,6 +332,7 @@ export default function TenantDetailView({
   const router = useRouter();
   const { profile, user } = useAuth();
   const [tenant, setTenant] = useState<DocumentData | null>(null);
+  const [allTenants, setAllTenants] = useState<WorkflowRecord[]>([]);
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
   const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
   const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
@@ -337,6 +341,7 @@ export default function TenantDetailView({
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [replyText, setReplyText] = useState('');
   const [aiInstruction, setAiInstruction] = useState('');
+  const [replyAttachments, setReplyAttachments] = useState<PendingOutgoingAttachment[]>([]);
   const [contextMode, setContextMode] = useState<'new' | 'reply'>('reply');
   const [composerMode, setComposerMode] = useState<ThemeComposerMode>('tenant');
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('email');
@@ -347,6 +352,8 @@ export default function TenantDetailView({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [mergeSourceThemeId, setMergeSourceThemeId] = useState('');
+  const [themeAction, setThemeAction] = useState<'done' | 'merge' | 'reassign' | 'save' | 'split'>('save');
+  const [themeActionTargetId, setThemeActionTargetId] = useState('');
   const [themeTitleDraft, setThemeTitleDraft] = useState('');
   const [themeListMode, setThemeListMode] = useState<'open' | 'archive'>('open');
   const [themeSearch, setThemeSearch] = useState('');
@@ -390,6 +397,9 @@ export default function TenantDetailView({
     const unsubscribeCompanies = onSnapshot(query(collection(db, 'companies')), (snapshot) => {
       setCompanies(snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id })));
     });
+    const unsubscribeTenants = onSnapshot(query(collection(db, 'tenants')), (snapshot) => {
+      setAllTenants(snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id })));
+    });
     const unsubscribePeople = onSnapshot(query(collection(db, 'people')), (snapshot) => {
       setPeople(snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id })));
     });
@@ -408,6 +418,7 @@ export default function TenantDetailView({
 
     return () => {
       unsubscribeTenant();
+      unsubscribeTenants();
       unsubscribeCompanies();
       unsubscribePeople();
       unsubscribeProperties();
@@ -672,6 +683,13 @@ export default function TenantDetailView({
       ),
     [requestThemes, selectedTheme?.id]
   );
+  const themeActionMergeOptions = useMemo(
+    () =>
+      requestThemes
+        .filter((theme) => theme.id !== selectedTheme?.id && theme.records.length > 0)
+        .sort((left, right) => cleanText(left.subject).localeCompare(cleanText(right.subject), 'de')),
+    [requestThemes, selectedTheme?.id]
+  );
 
   const splitSourceRecord = useMemo(
     () => (selectedTheme && !selectedTheme!.archived ? selectedTheme.latestEntry : null),
@@ -729,7 +747,7 @@ export default function TenantDetailView({
             return (
               <div
                 className={`py-4 ${isOutbound ? 'pl-10' : 'pr-10'}`}
-                key={entry.id}
+                key={`${tenantId}-${selectedRequest?.id || 'general'}-${entry.id}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm font-medium text-slate-950">
@@ -805,12 +823,19 @@ export default function TenantDetailView({
 
   useEffect(() => {
     setThemeTitleDraft(cleanText(selectedTheme?.subject));
+    setMergeSourceThemeId('');
+    setThemeActionTargetId('');
     setReplyText('');
     setAiInstruction('');
     setFollowUpDate('');
     setVendorContactId('');
     setComposerMode('tenant');
+    setReplyAttachments([]);
   }, [selectedTheme?.id]);
+
+  useEffect(() => {
+    setThemeActionTargetId('');
+  }, [themeAction]);
 
   useEffect(() => {
     setContextMode(isGeneralConversation ? 'new' : 'reply');
@@ -957,6 +982,55 @@ export default function TenantDetailView({
     selectedProperty?.data.plumbingServiceId,
     selectedProperty?.data.roofMaintenanceId,
   ]);
+  const reassignContactOptions = useMemo(() => {
+    const tenantOptions = allTenants.map((entry) => {
+      const label =
+        [cleanText(entry.data.lastName), cleanText(entry.data.firstName)].filter(Boolean).join(', ') ||
+        cleanText(entry.data.email) ||
+        entry.id;
+      const detail = [cleanText(entry.data.propertyName), cleanText(entry.data.unitLabel)]
+        .filter(Boolean)
+        .join(' · ');
+      return {
+        email: cleanText(entry.data.email),
+        id: `tenant:${entry.id}`,
+        label,
+        rawId: entry.id,
+        searchLabel: `${label} ${detail}`,
+        targetType: 'tenant' as const,
+      };
+    });
+    const personOptions = people.map((entry) => {
+      const label =
+        [cleanText(entry.data.lastName), cleanText(entry.data.firstName)].filter(Boolean).join(', ') ||
+        cleanText(entry.data.partnerCompanyName || entry.data.companyName) ||
+        cleanText(entry.data.email) ||
+        entry.id;
+      const detail = cleanText(entry.data.partnerCompanyName || entry.data.companyName);
+      return {
+        email: cleanText(entry.data.email),
+        id: `contact:${entry.id}`,
+        label,
+        rawId: entry.id,
+        searchLabel: `${label} ${detail}`,
+        targetType: 'contact' as const,
+      };
+    });
+    return [
+      {
+        email: cleanText(selectedTheme?.latestInbound?.data.fromEmail),
+        id: `new:${encodeURIComponent(cleanText(selectedTheme?.latestInbound?.data.fromEmail))}`,
+        label: 'Neu',
+        rawId: '__new__',
+        searchLabel: 'Neu',
+        targetType: 'contact' as const,
+      },
+      ...tenantOptions,
+      ...personOptions,
+    ]
+      .filter((entry) => entry.rawId !== tenantId || entry.targetType !== 'tenant')
+      .sort((left, right) => left.label.localeCompare(right.label, 'de'));
+  }, [allTenants, people, tenantId]);
   const propertyServiceRows = useMemo(() => {
     const serviceAssignments = Object.entries(propertyServiceLabelMap)
       .map(([field, label]) => ({
@@ -1393,6 +1467,185 @@ export default function TenantDetailView({
     setThemeTitleDraft(nextTitle);
   }
 
+  function extractThemeAttachmentDocuments(theme: MessageTheme) {
+    const attachmentByKey = new Map<string, TenantDocumentEntry>();
+
+    theme.records.forEach((record) => {
+      const attachments = Array.isArray(record.data.attachments) ? record.data.attachments : [];
+      attachments.forEach((attachment) => {
+        if (!attachment || typeof attachment !== 'object') return;
+        const raw = attachment as Record<string, unknown>;
+        const path = cleanText(raw.path);
+        const url = cleanText(raw.url ?? raw.downloadUrl ?? raw.href);
+        const key = path || url;
+        if (!key || attachmentByKey.has(key)) return;
+        attachmentByKey.set(key, {
+          category: 'Anhänge',
+          contentType: cleanText(raw.contentType) || 'application/octet-stream',
+          name: cleanText(raw.name ?? raw.fileName) || 'Anhang',
+          path,
+          size: Number(raw.size) || 0,
+          source: 'message-attachment',
+          uploadedAt: cleanText(raw.uploadedAt ?? record.data.receivedAt ?? record.data.createdAt) || new Date().toISOString(),
+          uploadedByEmail: user?.email ?? '',
+          url,
+        });
+      });
+    });
+
+    return Array.from(attachmentByKey.values());
+  }
+
+  async function reassignSelectedTheme(targetValue: string) {
+    if (!selectedTheme) return;
+    const [targetType, targetId] = targetValue.split(':');
+    if (targetType === 'new') {
+      const email = decodeURIComponent(targetId || cleanText(selectedTheme.latestInbound?.data.fromEmail));
+      router.push(`/admin/personen?email=${encodeURIComponent(email)}&fromMessageId=${encodeURIComponent(selectedTheme.latestEntry.id)}`);
+      return;
+    }
+    if (!targetId || (targetType !== 'tenant' && targetType !== 'contact')) {
+      throw new Error('Bitte einen Empfaenger fuer die Neu-Zuordnung auswaehlen.');
+    }
+
+    const targetTenant = targetType === 'tenant' ? allTenants.find((entry) => entry.id === targetId) ?? null : null;
+    const targetPerson = targetType === 'contact' ? people.find((entry) => entry.id === targetId) ?? null : null;
+    if (targetType === 'tenant' && !targetTenant) {
+      throw new Error('Der ausgewaehlte Mieter wurde nicht gefunden.');
+    }
+    if (targetType === 'contact' && !targetPerson) {
+      throw new Error('Der ausgewaehlte Kontakt wurde nicht gefunden.');
+    }
+
+    const targetName =
+      targetTenant
+        ? [cleanText(targetTenant.data.lastName), cleanText(targetTenant.data.firstName)].filter(Boolean).join(', ')
+        : targetPerson
+          ? [cleanText(targetPerson.data.lastName), cleanText(targetPerson.data.firstName)].filter(Boolean).join(', ') ||
+            cleanText(targetPerson.data.partnerCompanyName || targetPerson.data.companyName)
+          : '';
+    const targetEmail = targetTenant
+      ? cleanText(targetTenant.data.email)
+      : cleanText(targetPerson?.data.email);
+    const firestoreMessageIds = new Set(firestoreMessages.map((entry) => entry.id));
+    const messageUpdates = selectedTheme.records
+      .filter((record) => firestoreMessageIds.has(record.id))
+      .map((record) =>
+        updateDoc(doc(db, 'messages', record.id), {
+          contactId: targetType === 'contact' ? targetId : '',
+          propertyId: targetTenant ? cleanText(targetTenant.data.propertyId) : cleanText(record.data.propertyId),
+          recipientEmail: targetEmail,
+          recipientId: targetId,
+          recipientName: targetName,
+          recipientType: targetType,
+          tenantId: targetType === 'tenant' ? targetId : '',
+          tenantLabel: targetType === 'tenant' ? targetName : '',
+          unitId: targetTenant ? cleanText(targetTenant.data.unitId) : cleanText(record.data.unitId),
+          updatedAt: serverTimestamp(),
+        })
+      );
+    await Promise.all(messageUpdates);
+
+    const movedDocuments = extractThemeAttachmentDocuments(selectedTheme);
+    if (movedDocuments.length > 0) {
+      const movedKeys = new Set(movedDocuments.map((entry) => entry.path || entry.url).filter(Boolean));
+      await updateDoc(doc(db, 'tenants', tenantId), {
+        tenantDocuments: tenantDocuments.filter((entry) => !movedKeys.has(entry.path || entry.url)),
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+
+      if (targetType === 'tenant' && targetTenant) {
+        const currentDocuments = cleanTenantDocuments(targetTenant.data.tenantDocuments);
+        const existingKeys = new Set(currentDocuments.map((entry) => entry.path || entry.url).filter(Boolean));
+        const nextDocuments = movedDocuments.filter((entry) => !existingKeys.has(entry.path || entry.url));
+        if (nextDocuments.length > 0) {
+          await updateDoc(doc(db, 'tenants', targetId), {
+            tenantDocuments: [...currentDocuments, ...nextDocuments],
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email ?? null,
+            updatedByUid: user?.uid ?? null,
+          });
+        }
+      }
+
+      if (targetType === 'contact' && targetPerson) {
+        const currentDocuments = cleanTenantDocuments(targetPerson.data.personDocuments);
+        const existingKeys = new Set(currentDocuments.map((entry) => entry.path || entry.url).filter(Boolean));
+        const nextDocuments = movedDocuments.filter((entry) => !existingKeys.has(entry.path || entry.url));
+        if (nextDocuments.length > 0) {
+          await updateDoc(doc(db, 'people', targetId), {
+            personDocuments: [...currentDocuments, ...nextDocuments],
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email ?? null,
+            updatedByUid: user?.uid ?? null,
+          });
+        }
+      }
+    }
+
+    const nextTitle =
+      cleanText(themeTitleDraft) ||
+      cleanText(selectedTheme.subject) ||
+      cleanText(selectedTheme.latestEntry?.data.subject) ||
+      'Thema ohne Betreff';
+    if (targetType === 'tenant') {
+      await authorizedFetch('/api/admin/message-themes', {
+        method: 'POST',
+        body: JSON.stringify({
+          archived: Boolean(selectedTheme.archived),
+          id: selectedTheme.id,
+          lastActivityAt: new Date().toISOString(),
+          messageIds: selectedTheme.records.map((entry) => entry.id),
+          reminderDate: cleanText(selectedTheme.reminderDate) || undefined,
+          status: (cleanText(selectedTheme.status) as 'done' | 'in_progress' | 'needs_review' | 'new') || 'in_progress',
+          tenantId: targetId,
+          title: nextTitle,
+        }),
+      });
+      router.push(messageHrefBuilder(targetId, selectedTheme.id));
+      return;
+    }
+
+    router.push(`/admin/personen/${targetId}`);
+  }
+
+  async function runThemeAction() {
+    if (!selectedTheme || isGeneralConversation) return;
+    setMessage('');
+    setError('');
+
+    try {
+      if (themeAction === 'done') {
+        await updateThemeState(selectedTheme.id, 'done', true);
+        router.push(messageHrefBuilder(tenantId, ''));
+        setMessage('Thema wurde ins Archiv verschoben.');
+        return;
+      }
+      if (themeAction === 'split') {
+        await splitSelectedTheme();
+        setMessage('Neues Thema wurde abgesplittet.');
+        return;
+      }
+      if (themeAction === 'merge') {
+        await mergeThemeIntoSelected(themeActionTargetId);
+        setMessage('Themen wurden zusammengefuehrt.');
+        return;
+      }
+      if (themeAction === 'reassign') {
+        await reassignSelectedTheme(themeActionTargetId);
+        setMessage('Thema wurde neu zugeordnet.');
+        return;
+      }
+
+      await saveThemeTitle();
+      setMessage('Thementitel wurde gespeichert.');
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Die Aktion konnte nicht ausgefuehrt werden.');
+    }
+  }
+
   async function appendLocalThemeEntry(payload: {
     bodyText: string;
     entryType: 'admin_message' | 'note' | 'vendor_message';
@@ -1612,6 +1865,38 @@ export default function TenantDetailView({
       visibleToTenant: false,
     });
     setReplyText('');
+    setDeliveryMode('email');
+    setComposerMode('tenant');
+  }
+
+  async function saveOutgoingAttachmentsAsTenantDocuments(
+    uploadedAttachments: Array<{
+      contentType: string;
+      name: string;
+      path: string;
+      size: number;
+      uploadedAt: string;
+      url: string;
+    }>
+  ) {
+    if (uploadedAttachments.length === 0) return;
+    const attachmentDocuments: TenantDocumentEntry[] = uploadedAttachments.map((attachment) => ({
+      category: 'Anhänge',
+      contentType: attachment.contentType,
+      name: attachment.name,
+      path: attachment.path,
+      size: attachment.size,
+      source: 'message-attachment',
+      uploadedAt: attachment.uploadedAt,
+      uploadedByEmail: user?.email ?? '',
+      url: attachment.url,
+    }));
+    await updateDoc(doc(db, 'tenants', tenantId), {
+      tenantDocuments: [...tenantDocuments, ...attachmentDocuments],
+      updatedAt: serverTimestamp(),
+      updatedByEmail: user?.email ?? null,
+      updatedByUid: user?.uid ?? null,
+    });
   }
 
   async function sendVendorMessage() {
@@ -1632,8 +1917,12 @@ export default function TenantDetailView({
       resolveAdminSenderContact(profile, user)
     );
     const subject = cleanText(selectedTheme.subject) || 'Rückfrage zu einem Thema';
+    const uploadedAttachments = await uploadOutgoingMessageAttachments(
+      replyAttachments,
+      `tenant-vendor-${tenantId}-${selectedTheme.id}`
+    );
     const draftRef = await addDoc(collection(db, 'messageDrafts'), {
-      attachments: [],
+      attachments: uploadedAttachments,
       body: mergeBodyWithSignature(cleanText(replyText), signatureRecord),
       createdAt: serverTimestamp(),
       kind: 'reply_to_service',
@@ -1658,6 +1947,7 @@ export default function TenantDetailView({
     if (!response.ok || !result.ok) {
       throw new Error(result.error || 'Das Gewerk konnte nicht benachrichtigt werden.');
     }
+    await saveOutgoingAttachmentsAsTenantDocuments(uploadedAttachments);
 
     await appendLocalThemeEntry({
       bodyText: cleanText(replyText),
@@ -1670,6 +1960,7 @@ export default function TenantDetailView({
       visibleToTenant: false,
     });
     setReplyText('');
+    setReplyAttachments([]);
     setVendorContactId('');
   }
 
@@ -1801,6 +2092,37 @@ export default function TenantDetailView({
                 contextMode,
                 currentBody,
                 deliveryMode,
+                contextBundle: sanitizeAiContext({
+                  selected: {
+                    company: selectedCompany,
+                    property: selectedProperty,
+                    tenant: { data: tenant, id: tenantId },
+                    tenantContact,
+                    unit: selectedUnit,
+                  },
+                  collections: {
+                    companies,
+                    contacts: people,
+                    properties,
+                    tenants: allTenants,
+                  },
+                  documents: tenantDocuments,
+                  messages: selectedThreadMessages.map((entry) => ({
+                    createdAt: entry.data.createdAt,
+                    direction: entry.data.direction,
+                    fromEmail: entry.data.fromEmail,
+                    fromName: entry.data.fromName,
+                    subject: entry.data.subject,
+                    text: entry.data.bodyText,
+                    toEmail: entry.data.toEmail,
+                  })),
+                  themes: requestThemes.map((entry) => ({
+                    id: entry.id,
+                    lastActivityAt: entry.latestActivityAt,
+                    status: entry.status,
+                    subject: entry.subject,
+                  })),
+                }),
                 historyText:
                   contextMode === 'reply'
                     ? selectedThreadMessages
@@ -1899,13 +2221,17 @@ export default function TenantDetailView({
             cleanText(selectedRequest?.data.subject) ||
             'Nachricht von Halbmann Holding';
         const portalBodyText = [baseBody, portalSignature].filter(Boolean).join('\n\n');
+        const uploadedAttachments =
+          deliveryMode === 'email' || deliveryMode === 'both'
+            ? await uploadOutgoingMessageAttachments(replyAttachments, `tenant-${tenantId}-${threadMessageId || Date.now()}`)
+            : [];
 
         if (deliveryMode === 'email' || deliveryMode === 'both') {
           const response = await authorizedFetch('/api/message-drafts/send', {
             method: 'POST',
             body: JSON.stringify({
               draft: {
-                attachments: [],
+                attachments: uploadedAttachments,
                 body: baseBody,
                 deliveryMode,
                 htmlBody: '',
@@ -1927,6 +2253,7 @@ export default function TenantDetailView({
           if (!response.ok || !result.ok) {
             throw new Error(result.error || 'Die Nachricht konnte nicht versendet werden.');
           }
+          await saveOutgoingAttachmentsAsTenantDocuments(uploadedAttachments);
         }
 
         if (deliveryMode === 'letter' || deliveryMode === 'both') {
@@ -1967,6 +2294,7 @@ export default function TenantDetailView({
         setContextMode('reply');
         setDeliveryMode('email');
         setFollowUpDate('');
+        setReplyAttachments([]);
         if (themeId && isGeneralConversation) {
           const now = new Date().toISOString();
           await authorizedFetch('/api/admin/message-themes', {
@@ -2153,7 +2481,7 @@ export default function TenantDetailView({
               onClick={() => void downloadHandoverProtocol(handoverProtocolKind)}
               type="button"
             >
-              ?
+              ✓
             </button>
           </div>
         </div>
@@ -2212,7 +2540,7 @@ export default function TenantDetailView({
               onClick={() => void downloadHandoverProtocol(handoverProtocolKind)}
               type="button"
             >
-              ?
+              ✓
             </button>
           </div>
         </div>
@@ -2379,7 +2707,7 @@ export default function TenantDetailView({
                         >
                           <option value="">Thema zusammenfuehren</option>
                           {mergeableThemes.map((theme) => (
-                            <option key={theme.id} value={theme.id}>
+                            <option key={`${theme.tenantId || tenantId}-${theme.id}-${theme.latestEntry.id}`} value={theme.id}>
                               {cleanText(theme.subject) || 'Thema ohne Betreff'}
                             </option>
                           ))}
@@ -2444,186 +2772,107 @@ export default function TenantDetailView({
             ) : (
             <>
             {threadHistoryPanel}
-            {!isGeneralConversation && selectedTheme ? (
+            {!isGeneralConversation ? (
               <div className="border-b border-stone-200 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  {!selectedTheme!.archived ? (
-                    <>
-                      <button
-                        className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:border-emerald-400"
-                        onClick={() =>
-                          startTransition(async () => {
-                            setMessage('');
-                            setError('');
-                            try {
-                              await updateThemeState(selectedTheme!.id, 'done', true);
-                              router.push(messageHrefBuilder(tenantId, ''));
-                              setMessage('Thema wurde ins Archiv verschoben.');
-                            } catch (caughtError) {
-                              setError(caughtError instanceof Error ? caughtError.message : 'Thema konnte nicht archiviert werden.');
-                            }
-                          })
-                        }
-                        type="button"
-                      >
-                        Erledigt
-                      </button>
-                      {splitSourceRecord ? (
-                        <button
-                          className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400"
-                          onClick={() =>
-                            startTransition(async () => {
-                              setMessage('');
-                              setError('');
-                              try {
-                                await splitSelectedTheme();
-                                setMessage('Neues Thema wurde abgesplittet.');
-                              } catch (caughtError) {
-                                setError(caughtError instanceof Error ? caughtError.message : 'Thema konnte nicht gesplittet werden.');
-                              }
-                            })
-                          }
-                          type="button"
-                        >
-                          Splitten
-                        </button>
-                      ) : null}
-                      {mergeableThemes.length > 0 ? (
-                        <>
-                          <select
-                            className="min-w-[210px] rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none transition focus:border-amber-700/60"
-                            onChange={(event) => setMergeSourceThemeId(event.target.value)}
-                            value={mergeSourceThemeId}
-                          >
-                            <option value="">Thema zusammenfuehren</option>
-                            {mergeableThemes.map((theme) => (
-                              <option key={theme.id} value={theme.id}>
-                                {cleanText(theme.subject) || 'Thema ohne Betreff'}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={!mergeSourceThemeId}
-                            onClick={() =>
-                              startTransition(async () => {
-                                setMessage('');
-                                setError('');
-                                try {
-                                  await mergeThemeIntoSelected(mergeSourceThemeId);
-                                  setMessage('Themen wurden zusammengefuehrt.');
-                                } catch (caughtError) {
-                                  setError(caughtError instanceof Error ? caughtError.message : 'Themen konnten nicht zusammengefuehrt werden.');
-                                }
-                              })
-                            }
-                            type="button"
-                          >
-                            Zusammenfuehren
-                          </button>
-                        </>
-                      ) : null}
-                    </>
-                  ) : null}
+                <div className="grid gap-2 lg:grid-cols-[150px_minmax(180px,280px)_minmax(180px,1fr)_34px] lg:items-center">
+                  <select
+                    className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-amber-700/60"
+                    onChange={(event) => setThemeAction(event.target.value as 'done' | 'merge' | 'reassign' | 'save' | 'split')}
+                    value={themeAction}
+                  >
+                    <option value="save">Betreff</option>
+                    <option value="done">Erledigt</option>
+                    <option value="split">Splitten</option>
+                    <option value="merge">Zusammenführen</option>
+                    <option value="reassign">Neu zuordnen</option>
+                  </select>
+                  <select
+                    className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-700 outline-none transition focus:border-amber-700/60 disabled:bg-stone-100 disabled:text-slate-400"
+                    disabled={themeAction !== 'merge' && themeAction !== 'reassign'}
+                    onChange={(event) => setThemeActionTargetId(event.target.value)}
+                    value={themeActionTargetId}
+                  >
+                    {themeAction === 'merge' ? (
+                      <>
+                        <option value="">Nachricht auswählen</option>
+                        {themeActionMergeOptions.map((theme) => (
+                          <option key={`${theme.tenantId || tenantId}-${theme.id}-${theme.latestEntry.id}`} value={theme.id}>
+                            {cleanText(theme.subject) || 'Thema ohne Betreff'}
+                          </option>
+                        ))}
+                      </>
+                    ) : themeAction === 'reassign' ? (
+                      <>
+                        <option value="">Kontakt auswählen</option>
+                        {reassignContactOptions.map((entry) => (
+                          <option key={entry.id} value={entry.id}>
+                            {entry.label}{entry.targetType === 'tenant' ? ' · Mieter' : ' · Dienstleister'}
+                          </option>
+                        ))}
+                      </>
+                    ) : (
+                      <option value="">Keine Auswahl nötig</option>
+                    )}
+                  </select>
                   <input
-                    className="min-w-[220px] flex-1 rounded-full border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                    className="h-9 rounded-full border border-stone-300 bg-stone-50 px-3 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
                     onChange={(event) => setThemeTitleDraft(event.target.value)}
                     placeholder="Thementitel"
                     value={themeTitleDraft}
                   />
                   <button
-                    className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={!selectedTheme}
+                    aria-label="Aktion ausführen"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-slate-700 transition hover:border-amber-700/50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={
+                      !selectedTheme ||
+                      ((themeAction === 'merge' || themeAction === 'reassign') && !themeActionTargetId) ||
+                      (Boolean(selectedTheme!.archived) && themeAction !== 'save') ||
+                      (themeAction === 'split' && !splitSourceRecord)
+                    }
                     onClick={() =>
                       startTransition(async () => {
-                        setMessage('');
-                        setError('');
-                        try {
-                          await saveThemeTitle();
-                          setMessage('Thementitel wurde gespeichert.');
-                        } catch (caughtError) {
-                          setError(caughtError instanceof Error ? caughtError.message : 'Thementitel konnte nicht gespeichert werden.');
-                        }
+                        await runThemeAction();
                       })
                     }
                     type="button"
                   >
-                    Speichern
+                    <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
                   </button>
                 </div>
               </div>
             ) : null}
             <div className="py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                {composerMode === 'tenant' ? (
-                  <div className="flex min-w-0 flex-1 flex-col gap-2">
-                    <select
-                      className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60 sm:max-w-[220px]"
-                      onChange={(event) => setDeliveryMode(event.target.value as DeliveryMode)}
-                      value={deliveryMode}
-                    >
-                      <option value="email">Mail</option>
-                      <option value="letter">Brief</option>
-                      <option value="both">Beides</option>
-                    </select>
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <button
-                        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={isGeneratingAiDraft || isPending || (!selectedRequest && !isGeneralConversation)}
-                        onClick={generateAiDraft}
-                        type="button"
-                      >
-                        {isGeneratingAiDraft ? 'KI denkt...' : 'KI-Entwurf'}
-                      </button>
-                      <input
-                        className="min-w-[260px] flex-1 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-                        onChange={(event) => setAiInstruction(event.target.value)}
-                        placeholder="z. B. kuerzer, verbindlicher, freundlicher"
-                        value={aiInstruction}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div />
-                )}
-
-                {selectedTheme && !isGeneralConversation ? (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                        composerMode === 'tenant'
-                          ? 'bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] text-stone-100'
-                          : 'border border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                      }`}
-                      onClick={() => setComposerMode('tenant')}
-                      type="button"
-                    >
-                      Mieter
-                    </button>
-                    <button
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                        composerMode === 'note'
-                          ? 'bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] text-stone-100'
-                          : 'border border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                      }`}
-                      onClick={() => setComposerMode('note')}
-                      type="button"
-                    >
-                      Notiz
-                    </button>
-                    <button
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                        composerMode === 'vendor'
-                          ? 'bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] text-stone-100'
-                          : 'border border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                      }`}
-                      onClick={() => setComposerMode('vendor')}
-                      type="button"
-                    >
-                      Gewerk
-                    </button>
-                  </div>
-                ) : null}
+              <div className="grid gap-2 lg:grid-cols-[150px_54px_minmax(180px,1fr)] lg:items-center">
+                <select
+                  className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-900 outline-none transition focus:border-amber-700/60 disabled:bg-stone-100 disabled:text-slate-400"
+                  onChange={(event) => {
+                    const nextMode = event.target.value as DeliveryMode;
+                    setDeliveryMode(nextMode);
+                    setComposerMode(nextMode === 'note' ? 'note' : 'tenant');
+                  }}
+                  value={deliveryMode}
+                >
+                  <option value="email">Mail</option>
+                  <option value="letter">Brief</option>
+                  <option value="both">Mail/Brief</option>
+                  <option value="note">Notiz</option>
+                </select>
+                <button
+                  className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={composerMode !== 'tenant' || isGeneratingAiDraft || isPending || (!selectedRequest && !isGeneralConversation)}
+                  onClick={generateAiDraft}
+                  type="button"
+                >
+                  {isGeneratingAiDraft ? '...' : 'KI'}
+                </button>
+                <input
+                  className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                  onChange={(event) => setAiInstruction(event.target.value)}
+                  placeholder="z. B. kürzer, verbindlicher, freundlicher"
+                  value={aiInstruction}
+                />
               </div>
 
               {composerMode === 'vendor' && selectedTheme && !isGeneralConversation ? (
@@ -2658,6 +2907,15 @@ export default function TenantDetailView({
                 spellCheck={false}
                 value={replyText}
               />
+
+              {composerMode !== 'note' && (deliveryMode === 'email' || deliveryMode === 'both') ? (
+                <OutgoingAttachmentPicker
+                  attachments={replyAttachments}
+                  disabled={isPending}
+                  inputId={`tenant-reply-attachments-${tenantId}`}
+                  onChange={setReplyAttachments}
+                />
+              ) : null}
 
               <div className="mt-3 flex flex-wrap gap-2">
                 {composerMode === 'tenant' ? (
@@ -2757,15 +3015,15 @@ export default function TenantDetailView({
                 </div>
               ) : (
                 filteredVisibleThemes.map((theme) => {
-                  const isSelected = selectedTheme?.id === theme.id;
+                  const isSelected = selectedTheme?.id === theme.id && selectedTheme?.tenantId === theme.tenantId;
                   return (
                     <div
-                      className={`relative px-3 py-3 transition ${
+                      className={`relative px-3 py-3 !text-slate-950 transition ${
                         isSelected
-                          ? 'bg-amber-50/70'
-                          : 'hover:bg-stone-50'
+                          ? '!bg-amber-50 !text-slate-950'
+                          : '!bg-white hover:!bg-stone-50'
                       }`}
-                      key={theme.id}
+                      key={`${theme.tenantId || tenantId}-${theme.id}-${theme.latestEntry.id}`}
                     >
                       <button
                         aria-label="Thema löschen"
@@ -2784,7 +3042,7 @@ export default function TenantDetailView({
                         href={messageHrefBuilder(tenantId, theme.id)}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <p className={`line-clamp-2 text-sm font-medium leading-5 ${isSelected ? 'text-amber-950' : 'text-slate-950'}`}>
+                          <p className={`line-clamp-2 text-sm font-medium leading-5 ${isSelected ? '!text-amber-950' : '!text-slate-950'}`}>
                             {cleanText(theme.subject) || cleanText(theme.latestInbound?.data.fromName) || 'Anfrage ohne Betreff'}
                           </p>
                           <span
@@ -2796,18 +3054,18 @@ export default function TenantDetailView({
                             {getThemeStatusLabel(cleanText(theme.status), Boolean(theme.archived))}
                           </span>
                         </div>
-                        <p className="mt-2 truncate text-[11px] text-slate-500">
+                        <p className="mt-2 truncate text-[11px] !text-slate-800">
                           {cleanText(theme.latestInbound?.data.fromEmail) || 'Mieterportal'}
                         </p>
-                        <p className="mt-1 truncate text-[11px] text-slate-500">
+                        <p className="mt-1 truncate text-[11px] !text-slate-900">
                           {cleanText(theme.latestEntry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
                         </p>
                         {cleanText(theme.reminderDate) ? (
-                          <p className="mt-1 text-[11px] font-medium text-amber-700">
+                          <p className="mt-1 text-[11px] font-medium !text-amber-700">
                             Wiedervorlage: {formatReminderDate(theme.reminderDate)}
                           </p>
                         ) : null}
-                        <p className="mt-2 text-[11px] text-slate-500">
+                        <p className="mt-2 text-[11px] !text-slate-800">
                           {formatDateTime(theme.latestActivityAt)}
                         </p>
                       </Link>

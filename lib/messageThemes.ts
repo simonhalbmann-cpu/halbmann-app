@@ -49,7 +49,10 @@ export function buildMessageThemes(messages: WorkflowRecord[], storedThemes: Loc
   });
 
   messages.forEach((record) => {
-    const tenantId = cleanText(record.data.tenantId);
+    const tenantId =
+      cleanText(record.data.tenantId) ||
+      cleanText(record.data.contactId) ||
+      (cleanText(record.data.fromEmail) ? `unknown:${cleanText(record.data.fromEmail).toLowerCase()}` : '');
     if (!tenantId) return;
     const explicitThemeIds = assignedMessageIds.get(record.id) ?? [];
     const rootIds =
@@ -73,7 +76,10 @@ export function buildMessageThemes(messages: WorkflowRecord[], storedThemes: Loc
       const latestEntry = sorted[0];
       const latestInbound =
         sorted.find((record) => cleanText(record.data.direction || 'inbound') === 'inbound') ?? null;
-      const tenantId = cleanText(latestEntry.data.tenantId);
+      const tenantId =
+        cleanText(latestEntry.data.tenantId) ||
+        cleanText(latestEntry.data.contactId) ||
+        (cleanText(latestEntry.data.fromEmail) ? `unknown:${cleanText(latestEntry.data.fromEmail).toLowerCase()}` : '');
       const themeId = key.split('::')[1] || latestEntry.id;
       const meta = themeMetaById.get(themeId) ?? null;
       const status =

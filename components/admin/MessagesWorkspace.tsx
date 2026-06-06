@@ -1,12 +1,13 @@
 ﻿'use client';
 
-import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, type DocumentData } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, updateDoc, type DocumentData } from 'firebase/firestore';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { formatDateTime, formatTimestampSort, type WorkflowRecord } from '../../lib/adminWorkflow';
 import { db } from '../../lib/firebase';
+import { sanitizeAiContext } from '../../lib/aiContext';
 import type { LocalMessageTheme } from '../../lib/localMessageThemes';
 import { buildMessageThemes, type MessageTheme } from '../../lib/messageThemes';
 import { buildRecipientGreeting, stripAiEnvelope } from '../../lib/draftComposer';
@@ -22,7 +23,10 @@ import { buildExternalMessageKey } from '../../lib/mailIdentity';
 import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
 import { appendDeliveryLabel } from './messageDeliveryLabel';
+import OutgoingAttachmentPicker, { type PendingOutgoingAttachment } from './OutgoingAttachmentPicker';
+import MessageAttachmentPreview from './MessageAttachmentPreview';
 import TenantDetailView from './TenantDetailView';
+import { uploadOutgoingMessageAttachments } from '../../lib/outgoingMessageAttachments';
 
 type MailboxTab = 'archive' | 'compose' | 'inbox';
 type ComposeScope = 'all_tenants' | 'company_tenants' | 'manual' | 'property_tenants' | 'service_contacts';
@@ -62,6 +66,23 @@ function buildMessageTargetHref(record: WorkflowRecord) {
     return `/admin/mieter/${tenantId}?messageId=${record.id}`;
   }
   return `/admin/nachrichten/${record.id}`;
+}
+
+function getCompanyEmail(record?: WorkflowRecord | null) {
+  return (
+    cleanText(record?.data.email) ||
+    cleanText(record?.data.contactEmail) ||
+    cleanText(record?.data.companyEmail) ||
+    cleanText(record?.data.officeEmail)
+  );
+}
+
+function getPersonCompanyId(record?: WorkflowRecord | null) {
+  return (
+    cleanText(record?.data.companyId) ||
+    cleanText(record?.data.partnerCompanyId) ||
+    cleanText(record?.data.serviceCompanyId)
+  );
 }
 
 function readCollection(
@@ -303,12 +324,15 @@ export default function MessagesWorkspace() {
   const [composeBody, setComposeBody] = useState('');
   const [composeAiInstruction, setComposeAiInstruction] = useState('');
   const [composeFollowUpDate, setComposeFollowUpDate] = useState('');
+  const [composeAttachments, setComposeAttachments] = useState<PendingOutgoingAttachment[]>([]);
   const [senderEmail, setSenderEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [pendingDeleteThemeId, setPendingDeleteThemeId] = useState('');
   const [isGeneratingComposeAiDraft, setIsGeneratingComposeAiDraft] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const appliedComposePresetRef = useRef('');
+  const autoDraftPresetRef = useRef('');
   const currentMailboxView: 'archive' | 'inbox' = currentTab === 'archive' ? 'archive' : 'inbox';
 
   useEffect(() => {
@@ -741,6 +765,120 @@ export default function MessagesWorkspace() {
     people,
   ]);
 
+  function resolveServiceRecipient(propertyId: string, serviceField: string) {
+    const property = properties.find((entry) => entry.id === propertyId) ?? null;
+    const rawServiceId = cleanText(property?.data[serviceField]);
+    const normalizedServiceId = rawServiceId.startsWith('company:')
+      ? rawServiceId.slice('company:'.length)
+      : rawServiceId;
+    const contact =
+      people.find((person) => person.id === rawServiceId || person.id === normalizedServiceId) ?? null;
+
+    if (contact) {
+      return {
+        companyId: getPersonCompanyId(contact),
+        contactId: contact.id,
+        email: '',
+      };
+    }
+
+    const company =
+      companies.find((entry) => entry.id === normalizedServiceId || `company:${entry.id}` === rawServiceId) ?? null;
+
+    return {
+      companyId: company?.id || '',
+      contactId: '',
+      email: getCompanyEmail(company),
+    };
+  }
+
+  useEffect(() => {
+    const preset = cleanText(searchParams.get('composePreset'));
+    if (currentTab !== 'compose' || !preset) return;
+
+    const presetKey = searchParams.toString();
+    if (appliedComposePresetRef.current === presetKey) return;
+
+    const propertyId = cleanText(searchParams.get('propertyId'));
+    const tenantId = cleanText(searchParams.get('tenantId'));
+    const serviceField = cleanText(searchParams.get('serviceField'));
+    const subject = cleanText(searchParams.get('subject'));
+    const instruction = cleanText(searchParams.get('instruction'));
+
+    if (preset === 'maintenance') {
+      if (!propertyId || properties.length === 0) return;
+      const serviceRecipient = resolveServiceRecipient(propertyId, serviceField);
+      setComposeScope('service_contacts');
+      setComposeDeliveryMode('email');
+      setComposePropertyId(propertyId);
+      setComposeTenantId('');
+      setComposeCompanyId(serviceRecipient.companyId);
+      setComposeContactId(serviceRecipient.contactId);
+      setComposeRecipientEmail(serviceRecipient.email);
+      setExtraManualRecipients([]);
+      setExtraServiceRecipients([]);
+      setComposeSubject(subject);
+      setComposeAiInstruction(instruction);
+      setComposeBody('');
+      setMessage(serviceRecipient.contactId || serviceRecipient.email ? '' : 'Für diese Frist ist noch kein Dienstleister mit E-Mail hinterlegt.');
+      setError('');
+      appliedComposePresetRef.current = presetKey;
+      return;
+    }
+
+    if (preset === 'tenant') {
+      if (!tenantId || tenants.length === 0) return;
+      const tenant = tenants.find((entry) => entry.id === tenantId) ?? null;
+      setComposeScope('manual');
+      setComposeDeliveryMode('email');
+      setComposePropertyId(propertyId || cleanText(tenant?.data.propertyId));
+      setComposeTenantId(tenantId);
+      setComposeCompanyId(cleanText(tenant?.data.companyId));
+      setComposeContactId('');
+      setComposeRecipientEmail('');
+      setExtraManualRecipients([]);
+      setExtraServiceRecipients([]);
+      setComposeSubject(subject);
+      setComposeAiInstruction(instruction);
+      setComposeBody('');
+      setMessage('');
+      setError('');
+      appliedComposePresetRef.current = presetKey;
+    }
+  }, [companies, currentTab, people, properties, searchParams, tenants]);
+
+  useEffect(() => {
+    if (currentTab !== 'compose' || cleanText(searchParams.get('autoDraft')) !== '1') return;
+    const presetKey = searchParams.toString();
+    if (autoDraftPresetRef.current === presetKey) return;
+    if (!cleanText(composeSubject) || !cleanText(composeAiInstruction) || isGeneratingComposeAiDraft) return;
+
+    const canDraft =
+      composeScope === 'manual'
+        ? Boolean(selectedTenant || cleanText(composeRecipientEmail))
+        : composeScope === 'service_contacts'
+          ? composeRecipients.length > 0
+          : composeRecipients.length > 0;
+
+    if (!canDraft) return;
+
+    autoDraftPresetRef.current = presetKey;
+    window.setTimeout(() => {
+      void generateComposeAiDraft();
+    }, 120);
+  }, [
+    composeAiInstruction,
+    composeRecipientEmail,
+    composeRecipients.length,
+    composeScope,
+    composeSubject,
+    currentTab,
+    isGeneratingComposeAiDraft,
+    searchParams,
+    selectedContact,
+    selectedTenant,
+  ]);
+
   function buildTabHref(tab: MailboxTab) {
     return tab === 'inbox' ? pathname : `${pathname}?tab=${tab}`;
   }
@@ -857,6 +995,7 @@ export default function MessagesWorkspace() {
     setComposeTenantId('');
     setComposePropertyId('');
     setComposeCompanyId('');
+    setComposeAttachments([]);
   }
 
   function addManualRecipientRow() {
@@ -1139,6 +1278,58 @@ export default function MessagesWorkspace() {
     });
   }
 
+  async function saveOutgoingAttachmentsAsRecipientDocuments(
+    recipient: ComposeRecipient,
+    uploadedAttachments: Array<{
+      contentType: string;
+      name: string;
+      path: string;
+      size: number;
+      uploadedAt: string;
+      url: string;
+    }>
+  ) {
+    if (uploadedAttachments.length === 0) return;
+    const attachmentDocuments = uploadedAttachments.map((attachment) => ({
+      category: 'Anhänge',
+      contentType: attachment.contentType,
+      name: attachment.name,
+      path: attachment.path,
+      size: attachment.size,
+      source: 'message-attachment',
+      uploadedAt: attachment.uploadedAt,
+      uploadedByEmail: user?.email ?? '',
+      url: attachment.url,
+    }));
+
+    if (recipient.tenantId) {
+      const tenantRecord = tenants.find((entry) => entry.id === recipient.tenantId) ?? null;
+      const currentDocuments = Array.isArray(tenantRecord?.data.tenantDocuments)
+        ? tenantRecord.data.tenantDocuments
+        : [];
+      await updateDoc(doc(db, 'tenants', recipient.tenantId), {
+        tenantDocuments: [...currentDocuments, ...attachmentDocuments],
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+      return;
+    }
+
+    if (recipient.contactId) {
+      const personRecord = people.find((entry) => entry.id === recipient.contactId) ?? null;
+      const currentDocuments = Array.isArray(personRecord?.data.personDocuments)
+        ? personRecord.data.personDocuments
+        : [];
+      await updateDoc(doc(db, 'people', recipient.contactId), {
+        personDocuments: [...currentDocuments, ...attachmentDocuments],
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+    }
+  }
+
   async function sendMessageNow() {
     if (!composeRecipients.length || !cleanText(composeBody)) {
       setError('Bitte wähle Empfänger und Nachricht aus.');
@@ -1163,6 +1354,10 @@ export default function MessagesWorkspace() {
 
     runAction(async () => {
       const bodyWithoutManualSignature = cleanText(composeBody);
+      const uploadedAttachments =
+        composeDeliveryMode === 'email' || composeDeliveryMode === 'both'
+          ? await uploadOutgoingMessageAttachments(composeAttachments, `compose-${Date.now()}`)
+          : [];
       for (const recipient of composeRecipients) {
         const recipientSignature = applyAdminSenderToSignature(
           buildRecipientSignature(companies, recipient.companyId, composeCompanyId),
@@ -1175,7 +1370,7 @@ export default function MessagesWorkspace() {
 
         if (composeDeliveryMode === 'email' || composeDeliveryMode === 'both') {
           const draftRef = await addDoc(collection(db, 'messageDrafts'), {
-            attachments: [],
+            attachments: uploadedAttachments,
             body: bodyWithoutManualSignature,
             deliveryMode: composeDeliveryMode,
             createdAt: serverTimestamp(),
@@ -1202,6 +1397,7 @@ export default function MessagesWorkspace() {
           if (!response.ok || !result.ok) {
             throw new Error(result.error || 'Die Nachricht konnte nicht versendet werden.');
           }
+          await saveOutgoingAttachmentsAsRecipientDocuments(recipient, uploadedAttachments);
         }
 
         if (composeDeliveryMode === 'both') {
@@ -1283,6 +1479,26 @@ export default function MessagesWorkspace() {
         method: 'POST',
         body: JSON.stringify({
           companyName: cleanText(selectedCompany?.data.name),
+          contextBundle: sanitizeAiContext({
+            selected: {
+              company: selectedCompany,
+              contact: selectedContact,
+              property: selectedProperty,
+              tenant: selectedTenant,
+            },
+            collections: {
+              companies,
+              contacts: people,
+              messages: [...firestoreMessages, ...localPortalMessages].slice(-80),
+              properties,
+              tenants,
+            },
+            currentCompose: {
+              deliveryMode: composeDeliveryMode,
+              scope: composeScope,
+              subject: composeSubject,
+            },
+          }),
           currentBody: cleanText(composeBody),
           deliveryMode: composeDeliveryMode,
           instruction: composeAiInstruction,
@@ -1387,7 +1603,8 @@ export default function MessagesWorkspace() {
             </div>
           ) : (
             activeThemeList.map((theme) => {
-              const isSelected = selectedGlobalTheme?.id === theme.id;
+              const themeListKey = `${theme.tenantId || 'unknown'}-${theme.id}-${theme.latestEntry.id}`;
+              const isSelected = selectedGlobalTheme?.id === theme.id && selectedGlobalTheme?.tenantId === theme.tenantId;
               const linkedTenant =
                 tenants.find((tenant) => tenant.id === cleanText(theme.tenantId)) ?? null;
               const sender =
@@ -1396,12 +1613,12 @@ export default function MessagesWorkspace() {
                 'Unbekannter Mieter';
               return (
                 <div
-                  className={`relative px-3 py-3 transition ${
+                  className={`relative px-3 py-3 !text-slate-950 transition ${
                     isSelected
-                      ? 'bg-amber-50/70'
-                      : 'hover:bg-stone-50'
+                      ? '!bg-amber-50 !text-slate-950'
+                      : '!bg-white hover:!bg-stone-50'
                   }`}
-                  key={theme.id}
+                  key={themeListKey}
                 >
                   <button
                     aria-label="Nachricht löschen"
@@ -1418,10 +1635,10 @@ export default function MessagesWorkspace() {
                   <Link className="block pr-8" href={buildInboxThemeHref(theme.id)}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className={`truncate text-sm font-medium ${isSelected ? 'text-amber-950' : 'text-slate-950'}`}>
+                        <p className={`truncate text-sm font-medium ${isSelected ? '!text-amber-950' : '!text-slate-950'}`}>
                           {sender}
                         </p>
-                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-700">
+                        <p className="mt-1 line-clamp-2 text-sm leading-5 !text-slate-900">
                           {appendDeliveryLabel(
                             cleanText(theme.subject) || 'Nachricht ohne Betreff',
                             theme.latestEntry.data as Record<string, unknown>
@@ -1438,10 +1655,10 @@ export default function MessagesWorkspace() {
                               : 'In Bearbeitung'}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-[11px] text-slate-500">
+                    <p className="mt-1 truncate text-[11px] !text-slate-900">
                       {cleanText(theme.latestEntry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
                     </p>
-                    <p className="mt-2 text-[11px] text-slate-500">{formatDateTime(theme.latestActivityAt)}</p>
+                    <p className="mt-2 text-[11px] !text-slate-800">{formatDateTime(theme.latestActivityAt)}</p>
                   </Link>
                 </div>
               );
@@ -1451,9 +1668,66 @@ export default function MessagesWorkspace() {
       </div>
     );
 
+    const unknownSenderPanel =
+      selectedGlobalTheme && selectedGlobalTenantId.startsWith('unknown:') ? (
+        <section className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
+          <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <aside>{globalThemesPanel}</aside>
+            <div className="min-w-0 border-l border-stone-200 pl-5">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stone-200 pb-3">
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Unbekannter Absender</p>
+                  <h2 className="mt-1 text-xl text-slate-950">
+                    {cleanText(selectedGlobalTheme.latestInbound?.data.fromName) ||
+                      cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail) ||
+                      'Neue E-Mail'}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">{cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail)}</p>
+                </div>
+                <button
+                  className="rounded-full bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] px-4 py-2 text-sm font-medium text-stone-100 transition hover:brightness-105"
+                  onClick={() => {
+                    const email = cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail);
+                    router.push(`/admin/personen?email=${encodeURIComponent(email)}&fromMessageId=${encodeURIComponent(selectedGlobalTheme.latestEntry.id)}`);
+                  }}
+                  type="button"
+                >
+                  Dienstleister neu anlegen
+                </button>
+              </div>
+              <div className="divide-y divide-stone-200 border-b border-stone-200">
+                {selectedGlobalTheme.records
+                  .slice()
+                  .sort(
+                    (left, right) =>
+                      formatTimestampSort(left.data.receivedAt ?? left.data.createdAt) -
+                      formatTimestampSort(right.data.receivedAt ?? right.data.createdAt)
+                  )
+                  .map((entry) => (
+                    <article className="py-4" key={`${selectedGlobalTheme.tenantId || 'unknown'}-${selectedGlobalTheme.id}-${entry.id}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-slate-950">
+                          {cleanText(entry.data.subject) || 'Eingehende E-Mail'}
+                        </p>
+                        <span className="text-xs text-slate-500">{formatDateTime(entry.data.receivedAt ?? entry.data.createdAt)}</span>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                        {cleanText(entry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
+                      </p>
+                      <MessageAttachmentPreview attachments={entry.data.attachments} />
+                    </article>
+                  ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null;
+
     return (
       <div>
-        {selectedGlobalTheme && selectedGlobalTenantId ? (
+        {unknownSenderPanel ? (
+          unknownSenderPanel
+        ) : selectedGlobalTheme && selectedGlobalTenantId ? (
           <TenantDetailView
             activeThemeListMode={currentTab === 'archive' ? 'archive' : 'open'}
             detailLayout="messages"
@@ -1810,6 +2084,15 @@ export default function MessagesWorkspace() {
               value={composeBody}
             />
           </label>
+
+          {composeDeliveryMode === 'email' || composeDeliveryMode === 'both' ? (
+            <OutgoingAttachmentPicker
+              attachments={composeAttachments}
+              disabled={isPending}
+              inputId="compose-message-attachments"
+              onChange={setComposeAttachments}
+            />
+          ) : null}
 
           <div className="mt-6 flex flex-wrap gap-2">
             {(composeRecipients.length > 0 || composeScope === 'manual') ? (

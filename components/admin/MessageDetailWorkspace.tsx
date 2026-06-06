@@ -34,6 +34,8 @@ import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminS
 import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
 import { appendDeliveryLabel } from './messageDeliveryLabel';
 import MessageAttachmentPreview, { type MessageAttachmentEntry } from './MessageAttachmentPreview';
+import OutgoingAttachmentPicker, { type PendingOutgoingAttachment } from './OutgoingAttachmentPicker';
+import { uploadOutgoingMessageAttachments } from '../../lib/outgoingMessageAttachments';
 
 type DeliveryMode = 'both' | 'email' | 'letter';
 
@@ -133,6 +135,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const [messageEvents, setMessageEvents] = useState<WorkflowRecord[]>([]);
   const [replyText, setReplyText] = useState('');
   const [replyAiInstruction, setReplyAiInstruction] = useState('');
+  const [replyAttachments, setReplyAttachments] = useState<PendingOutgoingAttachment[]>([]);
   const [replyContextMode, setReplyContextMode] = useState<'new' | 'reply'>('reply');
   const [replyDeliveryMode, setReplyDeliveryMode] = useState<DeliveryMode>('email');
   const [letterRecipientKey, setLetterRecipientKey] = useState('property');
@@ -476,10 +479,14 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
         : cleanText(replyText);
       const subject = cleanText(selectedMessage.data.subject) || 'Antwort von Halbmann Holding';
+      const uploadedAttachments =
+        replyDeliveryMode === 'email' || replyDeliveryMode === 'both'
+          ? await uploadOutgoingMessageAttachments(replyAttachments, `message-${messageId}-${Date.now()}`)
+          : [];
 
       if (replyDeliveryMode === 'email' || replyDeliveryMode === 'both') {
         const draftRef = await addDoc(collection(db, 'messageDrafts'), {
-          attachments: [],
+          attachments: uploadedAttachments,
           body: baseBody,
           deliveryMode: replyDeliveryMode,
           createdAt: serverTimestamp(),
@@ -505,6 +512,31 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         const result = (await response.json()) as { error?: string; ok?: boolean };
         if (!response.ok || !result.ok) {
           throw new Error(result.error || 'Die Antwort konnte nicht versendet werden.');
+        }
+        const attachmentTenant = selectedTenant;
+        if (uploadedAttachments.length > 0 && attachmentTenant) {
+          const tenantDocuments = Array.isArray(attachmentTenant.data.tenantDocuments)
+            ? attachmentTenant.data.tenantDocuments
+            : [];
+          await updateDoc(doc(db, 'tenants', attachmentTenant.id), {
+            tenantDocuments: [
+              ...tenantDocuments,
+              ...uploadedAttachments.map((attachment) => ({
+                category: 'Anhänge',
+                contentType: attachment.contentType,
+                name: attachment.name,
+                path: attachment.path,
+                size: attachment.size,
+                source: 'message-attachment',
+                uploadedAt: attachment.uploadedAt,
+                uploadedByEmail: user?.email ?? '',
+                url: attachment.url,
+              })),
+            ],
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email ?? null,
+            updatedByUid: user?.uid ?? null,
+          });
         }
       }
 
@@ -584,6 +616,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       setReplyAiInstruction('');
       setReplyContextMode('reply');
       setReplyDeliveryMode('email');
+      setReplyAttachments([]);
       setFollowUpDate('');
       setMessage(
         replyDeliveryMode === 'both'
@@ -771,6 +804,14 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
             spellCheck={false}
             value={replyText}
           />
+          {replyDeliveryMode === 'email' || replyDeliveryMode === 'both' ? (
+            <OutgoingAttachmentPicker
+              attachments={replyAttachments}
+              disabled={isPending}
+              inputId={`message-detail-attachments-${messageId}`}
+              onChange={setReplyAttachments}
+            />
+          ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
               <span>Wiedervorlage</span>

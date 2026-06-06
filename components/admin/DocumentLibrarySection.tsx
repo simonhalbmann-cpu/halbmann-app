@@ -90,17 +90,6 @@ export default function DocumentLibrarySection({
       ),
     [documents, legacyDocuments]
   );
-  const removableCategories = useMemo(
-    () =>
-      localCategories.filter(
-        (category) =>
-          category !== uploadCategory &&
-          !documents.some((document) => (cleanText(document.category) || DEFAULT_DOCUMENT_CATEGORY) === category) &&
-          !legacyDocuments.some((document) => (cleanText(document.category) || DEFAULT_DOCUMENT_CATEGORY) === category)
-      ),
-    [documents, legacyDocuments, localCategories, uploadCategory]
-  );
-
   const filteredDocuments = useMemo(() => {
     const needle = search.toLowerCase();
     return documents.filter((document) => {
@@ -131,10 +120,24 @@ export default function DocumentLibrarySection({
     }
   }, [activeCategory, usedCategories]);
 
-  function removeCustomCategory(category: string) {
+  async function removeSelectedCategory() {
+    const category = cleanText(uploadCategory);
+    if (!category || category === DEFAULT_DOCUMENT_CATEGORY) return;
+
+    const affectedDocuments = documents.filter(
+      (document) => (cleanText(document.category) || DEFAULT_DOCUMENT_CATEGORY) === category
+    );
+    await Promise.all(affectedDocuments.map((document) => onUpdateCategory(document, DEFAULT_DOCUMENT_CATEGORY)));
+    if (false && affectedDocuments.length > 0) {
+      const confirmed = window.confirm(
+        `Kategorie "${category}" löschen? ${affectedDocuments.length} Datei(en) werden auf "${DEFAULT_DOCUMENT_CATEGORY}" gesetzt.`
+      );
+      if (!confirmed) return;
+      await Promise.all(affectedDocuments.map((document) => onUpdateCategory(document, DEFAULT_DOCUMENT_CATEGORY)));
+    }
     setLocalCategories((current) => current.filter((entry) => entry !== category));
     if (activeCategory === category) setActiveCategory('Alle');
-    if (uploadCategory === category) setUploadCategory(DEFAULT_DOCUMENT_CATEGORY);
+    setUploadCategory(DEFAULT_DOCUMENT_CATEGORY);
   }
 
   return (
@@ -145,7 +148,7 @@ export default function DocumentLibrarySection({
           <h3 className="mt-1 text-xl text-slate-950">{title}</h3>
         </div>
         <div className="min-w-[min(100%,620px)] flex-1 space-y-3">
-          <div className="grid gap-2 md:grid-cols-[minmax(160px,220px)_minmax(0,1fr)_auto]">
+          <div className="grid gap-2 md:grid-cols-[minmax(160px,220px)_minmax(120px,260px)_auto_auto]">
             <select
               className="rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
               onChange={(event) => setUploadCategory(event.target.value)}
@@ -168,27 +171,21 @@ export default function DocumentLibrarySection({
               onClick={addCustomCategory}
               type="button"
             >
-              Hinzufuegen
+              Hinzufügen
+            </button>
+            <button
+              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={uploadCategory === DEFAULT_DOCUMENT_CATEGORY}
+              onClick={() => void removeSelectedCategory()}
+              type="button"
+            >
+              Löschen
             </button>
           </div>
           <DocumentUploadControl
             disabled={isUploading}
             onUpload={(files) => onUpload(files, uploadCategory)}
           />
-          {removableCategories.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {removableCategories.map((category) => (
-                <button
-                  className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-300"
-                  key={category}
-                  onClick={() => removeCustomCategory(category)}
-                  type="button"
-                >
-                  {category} loeschen
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -214,7 +211,7 @@ export default function DocumentLibrarySection({
       </div>
 
       {filteredDocuments.length > 0 ? (
-        <div className="mt-4 divide-y divide-stone-100 overflow-hidden rounded-[18px] border border-stone-200">
+        <div className="mt-4 divide-y divide-stone-200 border-y border-stone-200">
           {filteredDocuments.map((document) => {
             const meta = [cleanText(document.source) === 'mail' ? 'Mailanhang' : 'Upload', formatFileSize(document.size), formatUploadDate(document.uploadedAt)]
               .filter(Boolean)
@@ -222,15 +219,21 @@ export default function DocumentLibrarySection({
 
             return (
               <div
-                className="grid gap-3 bg-white px-4 py-3 text-sm xl:grid-cols-[minmax(0,1fr)_220px_auto] xl:items-center"
+                className="grid min-h-10 gap-2 bg-white px-1 py-1.5 text-sm md:grid-cols-[minmax(160px,1fr)_minmax(120px,0.75fr)_150px_34px] md:items-center"
                 key={documentKey(document)}
               >
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-slate-900">{document.name}</p>
-                  {meta ? <p className="mt-0.5 text-xs text-slate-500">{meta}</p> : null}
-                </div>
+                <a
+                  className="min-w-0 truncate font-medium text-slate-900 underline-offset-2 transition hover:text-amber-800 hover:underline"
+                  href={document.url}
+                  rel="noreferrer"
+                  target="_blank"
+                  title={document.name}
+                >
+                  {document.name}
+                </a>
+                <p className="min-w-0 truncate text-xs text-slate-500">{meta}</p>
                 <select
-                  className="rounded-full border border-stone-300 bg-stone-50 px-3 py-2 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                  className="h-8 w-full rounded-none border border-stone-300 bg-stone-50 px-2 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
                   onChange={(event) => void onUpdateCategory(document, event.target.value)}
                   value={cleanText(document.category) || DEFAULT_DOCUMENT_CATEGORY}
                 >
@@ -240,23 +243,21 @@ export default function DocumentLibrarySection({
                     </option>
                   ))}
                 </select>
-                <div className="flex flex-wrap gap-2 xl:justify-end">
-                  <a
-                    className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-                    href={document.url}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Oeffnen
-                  </a>
-                  <button
-                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 transition hover:border-rose-300"
-                    onClick={() => void onDelete(document)}
-                    type="button"
-                  >
-                    Loeschen
-                  </button>
-                </div>
+                <button
+                  aria-label={`${document.name} löschen`}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-none border border-rose-200 bg-rose-50 text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
+                  onClick={() => void onDelete(document)}
+                  title="Löschen"
+                  type="button"
+                >
+                  <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+                    <path d="M4 7h16" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
+                    <path d="M6 7l1 14h10l1-14" />
+                    <path d="M9 7V4h6v3" />
+                  </svg>
+                </button>
               </div>
             );
           })}

@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { NextResponse } from 'next/server';
 import { getAiSettingsServer } from '../../../../lib/aiConfigServer';
+import { formatAiContextForPrompt } from '../../../../lib/aiContext';
 import { getAdminAuth, hasFirebaseAdminConfig } from '../../../../lib/firebaseAdmin';
 
 export const runtime = 'nodejs';
@@ -10,6 +11,7 @@ type MessageDraftPayload = {
   currentBody?: string;
   deliveryMode?: 'both' | 'email' | 'letter';
   instruction?: string;
+  contextBundle?: unknown;
   meters?: string[];
   propertyName?: string;
   recipientCount?: number;
@@ -77,6 +79,7 @@ function buildSystemPrompt(deliveryMode: MessageDraftPayload['deliveryMode']) {
 
 function buildUserPrompt(payload: MessageDraftPayload) {
   const instruction = cleanText(payload.instruction);
+  const aiContext = formatAiContextForPrompt(payload.contextBundle);
   return [
     `Kontext: ${buildScopeLabel(payload.scope)}`,
     `Firma: ${cleanText(payload.companyName) || '–'}`,
@@ -97,6 +100,8 @@ function buildUserPrompt(payload: MessageDraftPayload) {
     '',
     'Zusätzliche Anweisung:',
     instruction || 'Keine',
+    aiContext ? '\nZusätzlicher Verwaltungskontext aus der App:' : '',
+    aiContext,
     instruction ? 'Diese zusätzliche Anweisung ist verbindlich. Setze sie exakt um.' : '',
     '',
     'Schreibe jetzt den passenden Nachrichtentext.',

@@ -24,18 +24,19 @@ type ReminderItem = {
   type: 'message' | 'property' | 'tenant' | 'theme';
 };
 
-type StatCard = {
-  accentClassName: string;
-  href: string;
-  label: string;
-  sublabel: string;
-  value: number;
-};
-
 type RentFilterScope = 'all' | 'companies' | 'properties' | 'tenants';
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isPermissionDenied(caughtError: unknown) {
+  return (
+    typeof caughtError === 'object' &&
+    caughtError !== null &&
+    'code' in caughtError &&
+    (caughtError as { code?: unknown }).code === 'permission-denied'
+  );
 }
 
 function buildDashboardMessageHref(record: WorkflowRecord) {
@@ -44,6 +45,60 @@ function buildDashboardMessageHref(record: WorkflowRecord) {
     return `/admin/mieter/${tenantId}?messageId=${record.id}`;
   }
   return `/admin/nachrichten/${record.id}`;
+}
+
+function buildComposeHref(params: Record<string, string>) {
+  const searchParams = new URLSearchParams({ tab: 'compose' });
+  Object.entries(params).forEach(([key, value]) => {
+    const text = cleanText(value);
+    if (text) searchParams.set(key, text);
+  });
+  return `/admin/nachrichten?${searchParams.toString()}`;
+}
+
+function buildMaintenanceComposeHref({
+  instruction,
+  propertyId,
+  serviceField,
+  subject,
+  unitId,
+}: {
+  instruction: string;
+  propertyId: string;
+  serviceField: string;
+  subject: string;
+  unitId?: string;
+}) {
+  return buildComposeHref({
+    autoDraft: '1',
+    composePreset: 'maintenance',
+    instruction,
+    propertyId,
+    serviceField,
+    subject,
+    unitId: unitId || '',
+  });
+}
+
+function buildTenantComposeHref({
+  instruction,
+  propertyId,
+  subject,
+  tenantId,
+}: {
+  instruction: string;
+  propertyId: string;
+  subject: string;
+  tenantId: string;
+}) {
+  return buildComposeHref({
+    autoDraft: '1',
+    composePreset: 'tenant',
+    instruction,
+    propertyId,
+    subject,
+    tenantId,
+  });
 }
 
 function readCollection(
@@ -55,6 +110,9 @@ function readCollection(
     query(collection(db, name)),
     (snapshot) => setState(snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id }))),
     (caughtError) => {
+      if (isPermissionDenied(caughtError)) {
+        return;
+      }
       console.error(`Fehler beim Laden von ${name}:`, caughtError);
       onError('Ein Teil der Dashboard-Daten konnte nicht geladen werden.');
     }
@@ -107,6 +165,27 @@ function parseMoney(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function formatMoney(value: number) {
+  return new Intl.NumberFormat('de-DE', {
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+    style: 'currency',
+  }).format(value);
+}
+
+function getRentIncreaseTypeLabel(value: unknown) {
+  switch (cleanText(value)) {
+    case 'graduated':
+      return 'Staffelmiete';
+    case 'index':
+      return 'Indexmiete';
+    case 'legal':
+      return 'gesetzliche Erhöhung';
+    default:
+      return 'Mietprüfung';
+  }
+}
+
 function EmptyList({ text }: { text: string }) {
   return (
     <div className="rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-slate-500">
@@ -115,17 +194,48 @@ function EmptyList({ text }: { text: string }) {
   );
 }
 
-function PriorityStat({ accentClassName, href, label, sublabel, value }: StatCard) {
+function DashboardFilterButtons({
+  items,
+  onReset,
+  onToggle,
+  selectedIds,
+}: {
+  items: { id: string; label: string }[];
+  onReset: () => void;
+  onToggle: (id: string) => void;
+  selectedIds: string[];
+}) {
   return (
-    <Link
-      className="rounded-[26px] border border-stone-200 bg-white p-5 shadow-[0_18px_40px_-34px_rgba(148,119,77,0.32)] transition hover:-translate-y-0.5 hover:border-stone-300"
-      href={href}
-    >
-      <div className={`h-1.5 w-14 rounded-full ${accentClassName}`} />
-      <p className="mt-4 text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-3 text-4xl font-semibold text-slate-950">{value}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{sublabel}</p>
-    </Link>
+    <div className="flex flex-wrap gap-2">
+      <button
+        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+          selectedIds.length === 0
+            ? 'border-amber-700 bg-amber-700 text-white'
+            : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+        }`}
+        onClick={onReset}
+        type="button"
+      >
+        Alle
+      </button>
+      {items.map((item) => {
+        const active = selectedIds.includes(item.id);
+        return (
+          <button
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+              active
+                ? 'border-amber-700 bg-amber-700 text-white'
+                : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
+            }`}
+            key={item.id}
+            onClick={() => onToggle(item.id)}
+            type="button"
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -277,16 +387,6 @@ export default function AdminDashboardOverview() {
     [openThemes]
   );
 
-  const needsReviewMessages = useMemo(
-    () => newThemes.filter((theme) => cleanText(theme.status) === 'needs_review'),
-    [newThemes]
-  );
-
-  const themesInProgress = useMemo(
-    () => openThemes.filter((theme) => cleanText(theme.status) === 'in_progress'),
-    [openThemes]
-  );
-
   const today = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -302,7 +402,7 @@ export default function AdminDashboardOverview() {
       if (!parsed) return;
       reminderItems.push({
         dateValue: dueDate,
-        href: `/admin/mieter/${theme.tenantId}?messageId=${theme.id}`,
+        href: `/admin/nachrichten?themeId=${theme.id}`,
         id: `theme-${theme.id}`,
         label: cleanText(theme.subject) || 'Thema ohne Betreff',
         meta: `Thema · ${buildTenantLabel(tenants.find((tenant) => tenant.id === theme.tenantId) ?? null)}`,
@@ -325,6 +425,45 @@ export default function AdminDashboardOverview() {
     });
 
     tenants.forEach((tenant) => {
+      const rentIncreaseNextReview = cleanText(tenant.data.rentIncreaseNextReview);
+      if (parseDateInput(rentIncreaseNextReview)) {
+        reminderItems.push({
+          dateValue: rentIncreaseNextReview,
+          href: buildTenantComposeHref({
+            instruction: `Bitte bereite eine sachliche, kurze Nachricht an ${buildTenantLabel(tenant)} vor. Es geht um die Prüfung der nächsten Mieterhöhung. Bitte keine verbindliche Zusage und keine konkrete neue Miete behaupten, sondern freundlich ankündigen, dass die Vertrags- und Rechtslage geprüft wird und wir uns mit den Details separat melden.`,
+            propertyId: cleanText(tenant.data.propertyId),
+            subject: 'Prüfung Mieterhöhung',
+            tenantId: tenant.id,
+          }),
+          id: `tenant-rent-next-${tenant.id}`,
+          label: buildTenantLabel(tenant),
+          meta: `Mieterhöhung prüfen · ${getRentIncreaseTypeLabel(tenant.data.rentIncreaseType)}`,
+          type: 'tenant',
+        });
+      }
+
+      const rentIncreaseRows = Array.isArray(tenant.data.rentIncreaseRows)
+        ? tenant.data.rentIncreaseRows
+        : [];
+      rentIncreaseRows.forEach((row, rowIndex) => {
+        if (!row || typeof row !== 'object') return;
+        const fromDate = cleanText((row as DocumentData).fromDate);
+        if (!parseDateInput(fromDate)) return;
+        reminderItems.push({
+          dateValue: fromDate,
+          href: buildTenantComposeHref({
+            instruction: `Bitte bereite eine sachliche Nachricht an ${buildTenantLabel(tenant)} zur hinterlegten Staffelmiete ab ${formatDateOnly(fromDate)} vor. Der Ton soll ruhig und klar sein. Bitte keine unnötigen juristischen Details, nur freundliche Information und Hinweis auf die Vertragsgrundlage.`,
+            propertyId: cleanText(tenant.data.propertyId),
+            subject: 'Staffelmiete',
+            tenantId: tenant.id,
+          }),
+          id: `tenant-rent-row-${tenant.id}-${fromDate}-${rowIndex}`,
+          label: buildTenantLabel(tenant),
+          meta: `Staffelmiete · ${cleanText((row as DocumentData).coldRent) || 'neue Kaltmiete'}`,
+          type: 'tenant',
+        });
+      });
+
       const rows = Array.isArray(tenant.data.rentDevelopment) ? tenant.data.rentDevelopment : [];
       rows.forEach((row, rowIndex) => {
         if (!row || typeof row !== 'object') return;
@@ -333,7 +472,12 @@ export default function AdminDashboardOverview() {
         if (!parsed) return;
         reminderItems.push({
           dateValue: reminderDate,
-          href: `/admin/mieter/${tenant.id}`,
+          href: buildTenantComposeHref({
+            instruction: `Bitte bereite eine kurze, professionelle Nachricht an ${buildTenantLabel(tenant)} vor. Anlass ist die Prüfung einer möglichen Mieterhöhung. Bitte zurückhaltend formulieren und keine konkrete Erhöhung zusagen, solange die Prüfung nicht abgeschlossen ist.`,
+            propertyId: cleanText(tenant.data.propertyId),
+            subject: 'Prüfung Mieterhöhung',
+            tenantId: tenant.id,
+          }),
           id: `tenant-rent-${tenant.id}-${reminderDate}-${rowIndex}`,
           label: buildTenantLabel(tenant),
           meta: `Mieterhöhung prüfen · ${cleanText((row as DocumentData).kind) || 'Mietvertrag'}`,
@@ -351,7 +495,12 @@ export default function AdminDashboardOverview() {
       if (roofReminderDate) {
         reminderItems.push({
           dateValue: roofReminderDate,
-          href: `/admin/immobilie/${property.id}`,
+          href: buildMaintenanceComposeHref({
+            instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Dachwartung am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
+            propertyId: property.id,
+            serviceField: 'roofMaintenanceId',
+            subject: `Termin Dachwartung ${propertyLabel}`,
+          }),
           id: `property-roof-${property.id}`,
           label: propertyLabel,
           meta: `Dachwartung · nach ${parseReminderMonths(property.data.roofMaintenanceReminderMonths)} Monaten`,
@@ -366,7 +515,12 @@ export default function AdminDashboardOverview() {
       if (gutterReminderDate) {
         reminderItems.push({
           dateValue: gutterReminderDate,
-          href: `/admin/immobilie/${property.id}`,
+          href: buildMaintenanceComposeHref({
+            instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Regenrinnenreinigung am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
+            propertyId: property.id,
+            serviceField: 'gutterCleaningId',
+            subject: `Termin Regenrinnenreinigung ${propertyLabel}`,
+          }),
           id: `property-gutter-${property.id}`,
           label: propertyLabel,
           meta: `Regenrinnenreinigung · nach ${parseReminderMonths(property.data.gutterCleaningReminderMonths)} Monaten`,
@@ -387,7 +541,12 @@ export default function AdminDashboardOverview() {
         if (!heatingReminderDate) return;
         reminderItems.push({
           dateValue: heatingReminderDate,
-          href: `/admin/immobilie/${property.id}`,
+          href: buildMaintenanceComposeHref({
+            instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Heizungswartung (${cleanText(heating.type) || 'Heizung'}) am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
+            propertyId: property.id,
+            serviceField: 'heatingServiceId',
+            subject: `Termin Heizungswartung ${propertyLabel}`,
+          }),
           id: `property-heating-${property.id}-${cleanText(heating.id) || cleanText(heating.type) || heatingIndex}`,
           label: propertyLabel,
           meta: `Heizungswartung · ${cleanText(heating.type) || 'Heizung'} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
@@ -414,7 +573,13 @@ export default function AdminDashboardOverview() {
           if (!heatingReminderDate) return;
           reminderItems.push({
             dateValue: heatingReminderDate,
-            href: unitId ? `/admin/einheit/${property.id}/${unitId}` : `/admin/immobilie/${property.id}`,
+            href: buildMaintenanceComposeHref({
+              instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Heizungswartung (${cleanText(heating.type) || 'Heizung'}) am Objekt ${propertyLabel}${unitLabel ? `, Einheit ${unitLabel}` : ''} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
+              propertyId: property.id,
+              serviceField: 'heatingServiceId',
+              subject: `Termin Heizungswartung ${propertyLabel}${unitLabel ? ` · ${unitLabel}` : ''}`,
+              unitId,
+            }),
             id: `unit-heating-${property.id}-${unitId || 'property'}-${cleanText(heating.id) || cleanText(heating.type) || heatingIndex}`,
             label: propertyLabel,
             meta: `Heizungswartung ${unitLabel ? `· ${unitLabel}` : ''} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
@@ -442,18 +607,6 @@ export default function AdminDashboardOverview() {
     [reminders, today]
   );
 
-  const themeReminders = useMemo(
-    () => reminders.filter((entry) => entry.type === 'theme'),
-    [reminders]
-  );
-
-  const dueSoonThemeReminders = useMemo(
-    () => dueSoonReminders.filter((entry) => entry.type === 'theme'),
-    [dueSoonReminders]
-  );
-
-  const visibleThemeReminders = dueSoonThemeReminders.length > 0 ? dueSoonThemeReminders : themeReminders;
-
   const vacancyCount = useMemo(
     () =>
       properties.reduce((total, property) => {
@@ -472,52 +625,28 @@ export default function AdminDashboardOverview() {
   );
 
   const latestOpenThemes = useMemo(() => openThemes.slice(0, 6), [openThemes]);
-  const latestNewThemes = useMemo(() => newThemes.slice(0, 6), [newThemes]);
-  const topReminders = useMemo(() => dueSoonReminders.slice(0, 6), [dueSoonReminders]);
-
-  const stats: StatCard[] = [
-    {
-      accentClassName: 'bg-amber-700/90',
-      href: '/admin/nachrichten',
-      label: 'Offene Themen',
-      sublabel: 'Alle laufenden Vorgänge auf einen Blick',
-      value: openThemes.length,
-    },
-    {
-      accentClassName: 'bg-sky-600/90',
-      href: '/admin/nachrichten',
-      label: 'Neue Themen',
-      sublabel: 'Portal und E-Mail, die noch bearbeitet werden müssen',
-      value: newThemes.length,
-    },
-    {
-      accentClassName: 'bg-rose-600/90',
-      href: '/admin/nachrichten',
-      label: 'Zu prüfen',
-      sublabel: 'Nachrichten ohne saubere Zuordnung oder mit Klärungsbedarf',
-      value: needsReviewMessages.length,
-    },
-    {
-      accentClassName: 'bg-emerald-600/90',
-      href: '/admin/mieter',
-      label: 'Nächste Erinnerungen',
-      sublabel: 'Fällige Wiedervorlagen in den nächsten 14 Tagen',
-      value: dueSoonReminders.length,
-    },
-  ];
-
-  const propertyLoad = [
-    { href: '/admin/firma', label: 'Firmen', value: companies.length },
-    { href: '/admin/immobilie', label: 'Immobilien', value: properties.length },
-    { href: '/admin/mieter', label: 'Mieter', value: tenants.length },
-    { href: '/admin/personen', label: 'Kontakte', value: people.length },
-    { href: '/admin/immobilie', label: 'Leerstand', value: vacancyCount },
-    { href: '/admin/nachrichten', label: 'In Bearbeitung', value: themesInProgress.length },
-  ];
+  const topReminders = useMemo(() => dueSoonReminders.slice(0, 8), [dueSoonReminders]);
 
   const activeRentTenants = useMemo(
     () => tenants.filter((tenant) => cleanText(tenant.data.status) === 'active'),
     [tenants]
+  );
+
+  const currentColdRentTotal = useMemo(
+    () => activeRentTenants.reduce((total, tenant) => total + parseMoney(tenant.data.coldRent), 0),
+    [activeRentTenants]
+  );
+
+  const rentIncreaseReminders = useMemo(
+    () =>
+      reminders.filter(
+        (entry) =>
+          entry.type === 'tenant' &&
+          (entry.meta.toLowerCase().includes('mieterhöhung') ||
+            entry.meta.toLowerCase().includes('staffelmiete') ||
+            entry.meta.toLowerCase().includes('mietprüfung'))
+      ),
+    [reminders]
   );
 
   const filteredTenantsForChart = useMemo(() => {
@@ -572,6 +701,18 @@ export default function AdminDashboardOverview() {
             date: referenceDate,
           });
         }
+
+        const rentIncreaseRows = Array.isArray(tenant.data.rentIncreaseRows)
+          ? tenant.data.rentIncreaseRows
+          : [];
+        rentIncreaseRows
+          .filter((entry) => entry && typeof entry === 'object')
+          .forEach((entry) => {
+            const date = cleanText((entry as DocumentData).fromDate);
+            const coldRent = parseMoney((entry as DocumentData).coldRent);
+            if (!date || coldRent <= 0) return;
+            points.push({ coldRent, date });
+          });
 
         return points.sort((left, right) => left.date.localeCompare(right.date));
       })
@@ -632,469 +773,255 @@ export default function AdminDashboardOverview() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {loadError ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {loadError}
         </div>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {stats.map((card) => (
-          <PriorityStat key={card.label} {...card} />
-        ))}
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.95fr)]">
-        <div className="space-y-5">
-          <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Heute zuerst</p>
-                <h3 className="mt-2 font-serif text-3xl text-slate-950">Operative Prioritäten</h3>
-              </div>
-              <Link
-                className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
-                href="/admin/nachrichten"
-              >
-                Zur Inbox
-              </Link>
-            </div>
-
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
-              <div className="rounded-[24px] bg-[linear-gradient(180deg,#f7efe3_0%,#f3eadf_100%)] p-4">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-800/80">Dringend</p>
-                <p className="mt-3 text-3xl font-semibold text-slate-950">
-                  {needsReviewMessages.length}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">offene Themen mit Klaerungsbedarf oder hoher Dringlichkeit</p>
-              </div>
-              <div className="rounded-[24px] bg-[linear-gradient(180deg,#eef6fb_0%,#e8f2f9_100%)] p-4">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700/80">Neue Eingänge</p>
-                <p className="mt-3 text-3xl font-semibold text-slate-950">{newThemes.length}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Nachrichten warten auf Einordnung oder Antwort</p>
-              </div>
-              <div className="rounded-[24px] bg-[linear-gradient(180deg,#eef8f0_0%,#e8f3ea_100%)] p-4">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700/80">Wiedervorlage</p>
-                <p className="mt-3 text-3xl font-semibold text-slate-950">{dueSoonReminders.length}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Erinnerungen in den nächsten 14 Tagen</p>
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-[24px] border border-stone-200 bg-stone-50/70 p-4">
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">Empfehlung</p>
-              <p className="mt-3 text-sm leading-7 text-slate-700">
-                Starte mit <span className="font-medium">{needsReviewMessages.length} zu prüfenden Nachrichten</span>,
-                dann die <span className="font-medium">{themesInProgress.length} Themen in Bearbeitung</span>,
-                danach die nächste Wiedervorlage.
-              </p>
-            </div>
+      <section className="border-y border-stone-200 bg-white/72 px-6 py-6 shadow-[0_24px_70px_-56px_rgba(15,23,42,0.38)]">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.26em] text-amber-700/80">
+              Dashboard
+            </p>
+            <h2 className="mt-3 font-serif text-4xl leading-tight text-slate-950">
+              Heute relevant
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+              Weniger Anzeigen, mehr Orientierung: offene Vorgänge, fällige Termine,
+              Bestand und Miete auf einen Blick.
+            </p>
           </div>
 
-          <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Offene Themen</p>
-                <h3 className="mt-2 font-serif text-3xl text-slate-950">Was jetzt läuft</h3>
-              </div>
-              <Link
-                className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
-                href="/admin/nachrichten"
-              >
-                Alle Themen
+          <div className="grid gap-px overflow-hidden border-y border-stone-200 bg-stone-200 sm:grid-cols-4 xl:min-w-[680px]">
+            {[
+              { href: '/admin/nachrichten', label: 'Offen', value: openThemes.length },
+              { href: '/admin/nachrichten', label: 'Neu', value: newThemes.length },
+              { href: '/admin/mieter', label: 'Fristen', value: dueSoonReminders.length },
+              { href: '/admin/mieter', label: 'Mieterhöhung', value: rentIncreaseReminders.length },
+            ].map((item) => (
+              <Link className="bg-white px-5 py-4 transition hover:bg-stone-50" href={item.href} key={item.label}>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+                  {item.label}
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-slate-950">{item.value}</p>
               </Link>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {latestOpenThemes.length === 0 ? (
-                <EmptyList text="Keine offenen Themen vorhanden." />
-              ) : (
-                latestOpenThemes.map((theme) => (
-                  <Link
-                    className="grid gap-3 rounded-[22px] border border-stone-200 bg-stone-50/60 px-4 py-4 transition hover:border-stone-300 hover:bg-white md:grid-cols-[minmax(0,170px)_minmax(0,1fr)_140px]"
-                    href={buildDashboardMessageHref(theme.latestInbound ?? theme.latestEntry)}
-                    key={theme.id}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-950">
-                        {cleanText(theme.subject) || theme.id}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {formatDateTime(theme.latestActivityAt)}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-slate-900">
-                        {cleanText(theme.latestInbound?.data.fromName) ||
-                          cleanText(theme.latestEntry.data.fromName) ||
-      buildTenantLabel(tenants.find((tenant) => tenant.id === theme.tenantId)) ||
-                          'Ohne Zuordnung'}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {cleanText(theme.latestInbound?.data.fromEmail) ||
-                          cleanText(theme.latestEntry.data.channel) ||
-                          'Portal oder E-Mail'}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-start md:justify-end">
-                      <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                        {getStatusLabel(cleanText(theme.status))}
-                      </span>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
+            ))}
           </div>
         </div>
+      </section>
 
-        <div className="space-y-5">
-          <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700/80">Neue Nachrichten</p>
-                <h3 className="mt-2 font-serif text-3xl text-slate-950">Inbox kompakt</h3>
-              </div>
-              <Link
-                className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
-                href="/admin/nachrichten"
-              >
-                Nachrichten
-              </Link>
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.85fr)]">
+        <div className="border-y border-stone-200 bg-white/78 p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
+                Vorgänge
+              </p>
+              <h3 className="mt-2 font-serif text-3xl text-slate-950">Was Aufmerksamkeit braucht</h3>
             </div>
+            <Link
+              className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
+              href="/admin/nachrichten"
+            >
+              Nachrichten
+            </Link>
+          </div>
 
-            <div className="mt-5 space-y-3">
-              {latestNewThemes.length === 0 ? (
-                <EmptyList text="Keine neuen Themen vorhanden." />
-              ) : (
-                latestNewThemes.map((theme) => (
-                  <Link
-                    className="block rounded-[22px] border border-stone-200 bg-stone-50/60 px-4 py-4 transition hover:border-stone-300 hover:bg-white"
-                    href={buildDashboardMessageHref(theme.latestInbound ?? theme.latestEntry)}
-                    key={theme.id}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-950">
-                          {cleanText(theme.subject) || cleanText(theme.latestInbound?.data.fromName) || 'Ohne Betreff'}
-                        </p>
-                        <p className="mt-1 truncate text-xs text-slate-500">
-                          {cleanText(theme.latestInbound?.data.fromEmail) || cleanText(theme.latestEntry.data.channel) || 'Unbekannter Eingang'}
-                        </p>
-                      </div>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                          cleanText(theme.status) === 'needs_review'
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-sky-100 text-sky-700'
-                        }`}
-                      >
-                        {getStatusLabel(cleanText(theme.status))}
-                      </span>
-                    </div>
-                    <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
-                      {cleanText(theme.latestEntry.data.bodyText) || cleanText(theme.latestEntry.data.previewText) || 'Keine Vorschau vorhanden.'}
+          <div className="mt-5 divide-y divide-stone-200 border-y border-stone-200">
+            {latestOpenThemes.length === 0 ? (
+              <div className="py-5">
+                <EmptyList text="Keine offenen Themen vorhanden." />
+              </div>
+            ) : (
+              latestOpenThemes.map((theme) => (
+                <Link
+                  className="grid gap-3 px-1 py-4 transition hover:bg-stone-50/80 md:grid-cols-[minmax(0,1fr)_190px_130px]"
+                  href={buildDashboardMessageHref(theme.latestInbound ?? theme.latestEntry)}
+                  key={`${theme.tenantId || 'unknown'}-${theme.id}-${theme.latestEntry.id}`}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-950">
+                      {cleanText(theme.subject) || theme.id}
                     </p>
-                    <p className="mt-3 text-xs text-slate-500">
+                    <p className="mt-1 line-clamp-1 text-xs text-slate-500">
+                      {cleanText(theme.latestEntry.data.bodyText) ||
+                        cleanText(theme.latestEntry.data.previewText) ||
+                        'Keine Vorschau vorhanden.'}
+                    </p>
+                  </div>
+                  <div className="min-w-0 text-sm text-slate-700">
+                    <p className="truncate">
+                      {cleanText(theme.latestInbound?.data.fromName) ||
+                        cleanText(theme.latestEntry.data.fromName) ||
+                        buildTenantLabel(tenants.find((tenant) => tenant.id === theme.tenantId)) ||
+                        'Ohne Zuordnung'}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-slate-500">
                       {formatDateTime(theme.latestActivityAt)}
                     </p>
-                  </Link>
-                ))
-              )}
-            </div>
+                  </div>
+                  <div className="flex items-start justify-start md:justify-end">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        cleanText(theme.status) === 'needs_review'
+                          ? 'bg-rose-50 text-rose-700'
+                          : cleanText(theme.status) === 'in_progress'
+                            ? 'bg-sky-50 text-sky-700'
+                            : 'bg-stone-100 text-slate-600'
+                      }`}
+                    >
+                      {getStatusLabel(cleanText(theme.status))}
+                    </span>
+                  </div>
+                </Link>
+              ))
+            )}
           </div>
+        </div>
 
-          <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700/80">Nächste Erinnerungen</p>
-                <h3 className="mt-2 font-serif text-3xl text-slate-950">Was bald fällig wird</h3>
-              </div>
-            </div>
+        <div className="border-y border-stone-200 bg-white/78 p-6">
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-emerald-700/80">
+            Termine
+          </p>
+          <h3 className="mt-2 font-serif text-3xl text-slate-950">Nächste Fristen</h3>
 
-            <div className="mt-5 space-y-3">
-              {topReminders.length === 0 ? (
+          <div className="mt-5 divide-y divide-stone-200 border-y border-stone-200">
+            {topReminders.length === 0 ? (
+              <div className="py-5">
                 <EmptyList text="Aktuell keine Wiedervorlagen in den nächsten 14 Tagen." />
-              ) : (
-                topReminders.map((entry) => (
-                  <Link
-                    className="flex items-center justify-between gap-4 rounded-[22px] border border-stone-200 bg-stone-50/60 px-4 py-4 transition hover:border-stone-300 hover:bg-white"
-                    href={entry.href}
-                    key={entry.id}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-950">{entry.label}</p>
-                      <p className="mt-1 truncate text-xs text-slate-500">{entry.meta}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-slate-950">{formatDateOnly(entry.dateValue)}</p>
-                      <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                        {entry.type === 'message' ? 'Nachricht' : 'Mieter'}
-                      </p>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
+              </div>
+            ) : (
+              topReminders.map((entry) => (
+                <Link
+                  className="flex items-start justify-between gap-4 px-1 py-4 transition hover:bg-stone-50/80"
+                  href={entry.href}
+                  key={`${entry.id}-${entry.href}-${entry.dateValue}`}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-950">{entry.label}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{entry.meta}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                    {formatDateOnly(entry.dateValue)}
+                  </span>
+                </Link>
+              ))
+            )}
           </div>
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
-        <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Bestand kompakt</p>
-          <h3 className="mt-2 font-serif text-3xl text-slate-950">Struktur und Auslastung</h3>
+      <section className="grid gap-6 xl:grid-cols-[minmax(360px,0.75fr)_minmax(0,1.25fr)]">
+        <div className="border-y border-stone-200 bg-white/78 p-6">
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
+            Bestand
+          </p>
+          <h3 className="mt-2 font-serif text-3xl text-slate-950">Kompakt</h3>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            {propertyLoad.map((item) => (
-              <Link
-                className="rounded-[22px] border border-stone-200 bg-stone-50/60 px-4 py-4 transition hover:border-stone-300 hover:bg-white"
-                href={item.href}
-                key={item.label}
-              >
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">{item.label}</p>
-                <p className="mt-3 text-3xl font-semibold text-slate-950">{item.value}</p>
+          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden border-y border-stone-200 bg-stone-200">
+            {[
+              { href: '/admin/firma', label: 'Firmen', value: companies.length },
+              { href: '/admin/immobilie', label: 'Immobilien', value: properties.length },
+              { href: '/admin/mieter', label: 'Aktive Mieter', value: activeRentTenants.length },
+              { href: '/admin/immobilie', label: 'Leerstand', value: vacancyCount },
+            ].map((item) => (
+              <Link className="bg-white px-4 py-4 transition hover:bg-stone-50" href={item.href} key={item.label}>
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+                  {item.label}
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-slate-950">{item.value}</p>
               </Link>
             ))}
           </div>
 
-          <div className="mt-5 rounded-[24px] border border-stone-200 bg-stone-50/70 p-4">
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">Sinnvoll ergänzt</p>
-            <p className="mt-3 text-sm leading-7 text-slate-700">
-              Für dieses Dashboard sind neben Themen, Nachrichten und Erinnerungen besonders nützlich:
-              Leerstand, zu prüfende Nachrichten, Themen in Bearbeitung und die nächste Mietvertrags- oder
-              Mieterhöhungsprüfung. Das sind die Punkte, die im Verwaltungsalltag schnell untergehen.
+          <div className="mt-5 border-t border-stone-200 pt-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+              Aktuelle Kaltmiete
+            </p>
+            <p className="mt-2 text-3xl font-semibold text-slate-950">
+              {formatMoney(currentColdRentTotal)}
             </p>
           </div>
         </div>
 
-        <div className="space-y-5">
-          <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Kaltmiete im Bestand</p>
-                <h3 className="mt-2 font-serif text-3xl text-slate-950">Objekte im Verlauf</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Gesamte Kaltmiete der gewaehlten Auswahl. Du kannst nach allen, Objekten, Firmen oder einzelnen Mietern filtern.
-                </p>
-              </div>
-              <div className="space-y-3">
-                <label className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
-                  <span>Filter</span>
-                  <select
-                    className="bg-transparent text-xs text-slate-900 outline-none"
-                    onChange={(event) => setRentFilterScope(event.target.value as RentFilterScope)}
-                    value={rentFilterScope}
-                  >
-                    <option value="all">Alle</option>
-                    <option value="properties">Objekte</option>
-                    <option value="companies">Firmen</option>
-                    <option value="tenants">Mieter</option>
-                  </select>
-                </label>
-
-                {rentFilterScope === 'properties' ? (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                        selectedPropertyIds.length === 0
-                          ? 'border-amber-700 bg-amber-700 text-white'
-                          : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                      }`}
-                      onClick={resetActiveFilterSelection}
-                      type="button"
-                    >
-                      Alle
-                    </button>
-                    {properties.map((property) => {
-                      const active = selectedPropertyIds.includes(property.id);
-                      return (
-                        <button
-                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                            active
-                              ? 'border-amber-700 bg-amber-700 text-white'
-                              : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                          }`}
-                          key={property.id}
-                          onClick={() => togglePropertySelection(property.id)}
-                          type="button"
-                        >
-                          {cleanText(property.data.name) || property.id}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-
-                {rentFilterScope === 'companies' ? (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                        selectedCompanyIds.length === 0
-                          ? 'border-amber-700 bg-amber-700 text-white'
-                          : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                      }`}
-                      onClick={resetActiveFilterSelection}
-                      type="button"
-                    >
-                      Alle
-                    </button>
-                    {companies.map((company) => {
-                      const active = selectedCompanyIds.includes(company.id);
-                      return (
-                        <button
-                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                            active
-                              ? 'border-amber-700 bg-amber-700 text-white'
-                              : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                          }`}
-                          key={company.id}
-                          onClick={() => toggleCompanySelection(company.id)}
-                          type="button"
-                        >
-                          {cleanText(company.data.name) || company.id}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-
-                {rentFilterScope === 'tenants' ? (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                        selectedTenantIds.length === 0
-                          ? 'border-amber-700 bg-amber-700 text-white'
-                          : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                      }`}
-                      onClick={resetActiveFilterSelection}
-                      type="button"
-                    >
-                      Alle
-                    </button>
-                    {activeRentTenants.map((tenant) => {
-                      const active = selectedTenantIds.includes(tenant.id);
-                      return (
-                        <button
-                          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                            active
-                              ? 'border-amber-700 bg-amber-700 text-white'
-                              : 'border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-                          }`}
-                          key={tenant.id}
-                          onClick={() => toggleTenantSelection(tenant.id)}
-                          type="button"
-                        >
-                          {buildTenantLabel(tenant)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div className="mt-5">
-              <RentHistoryChart
-                defaultMode="cold"
-                emptyText="Fuer die gewaehlten Objekte liegen noch keine Mietdaten vor."
-                framed={false}
-                points={dashboardRentPoints}
-                showCosts={false}
-                subtitle="Summierte Kaltmiete aller ausgewaehlten Objekte auf Basis der hinterlegten Mietdaten."
-                title="Bestandsentwicklung"
-              />
-            </div>
-          </div>
-
-        <div className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-          <div className="flex items-center justify-between gap-4">
+        <div className="border-y border-stone-200 bg-white/78 p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Schnellzugriff</p>
-              <h3 className="mt-2 font-serif text-3xl text-slate-950">Heute wahrscheinlich wichtig</h3>
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
+                Kaltmiete
+              </p>
+              <h3 className="mt-2 font-serif text-3xl text-slate-950">Verlauf und Erhöhungen</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Die Kurve enthält gespeicherte Mietstände und geplante Staffeln, sofern sie beim
+                Mieter hinterlegt sind.
+              </p>
             </div>
+            <label className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+              <span>Filter</span>
+              <select
+                className="bg-transparent text-xs text-slate-900 outline-none"
+                onChange={(event) => setRentFilterScope(event.target.value as RentFilterScope)}
+                value={rentFilterScope}
+              >
+                <option value="all">Alle</option>
+                <option value="properties">Objekte</option>
+                <option value="companies">Firmen</option>
+                <option value="tenants">Mieter</option>
+              </select>
+            </label>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <Link
-              className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,#f7efe3_0%,#f2e7d9_100%)] p-5 transition hover:-translate-y-0.5 hover:border-stone-300"
-              href="/admin/nachrichten"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-800/80">Inbox zuerst</p>
-              <p className="mt-3 text-2xl text-slate-950">Neue Eingänge prüfen</p>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                {newThemes.length} neue Nachrichten, davon {needsReviewMessages.length} mit Klärungsbedarf.
-              </p>
-            </Link>
+          <div className="mt-4 space-y-3">
+            {rentFilterScope === 'properties' ? (
+              <DashboardFilterButtons
+                items={properties.map((property) => ({
+                  id: property.id,
+                  label: cleanText(property.data.name) || property.id,
+                }))}
+                onReset={resetActiveFilterSelection}
+                onToggle={togglePropertySelection}
+                selectedIds={selectedPropertyIds}
+              />
+            ) : null}
 
-            <Link
-              className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,#eef6fb_0%,#e7f1f8_100%)] p-5 transition hover:-translate-y-0.5 hover:border-stone-300"
-              href="/admin/nachrichten"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700/80">Vorgänge steuern</p>
-              <p className="mt-3 text-2xl text-slate-950">Offene Themen priorisieren</p>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                {openThemes.length} offene Themen, davon {themesInProgress.length} bereits in Bearbeitung.
-              </p>
-            </Link>
+            {rentFilterScope === 'companies' ? (
+              <DashboardFilterButtons
+                items={companies.map((company) => ({
+                  id: company.id,
+                  label: cleanText(company.data.name) || company.id,
+                }))}
+                onReset={resetActiveFilterSelection}
+                onToggle={toggleCompanySelection}
+                selectedIds={selectedCompanyIds}
+              />
+            ) : null}
 
-            <Link
-              className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,#eef8f0_0%,#e7f3e8_100%)] p-5 transition hover:-translate-y-0.5 hover:border-stone-300"
-              href="/admin/mieter"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700/80">Fristen im Blick</p>
-              <p className="mt-3 text-2xl text-slate-950">Mieter und Wiedervorlagen</p>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                {reminders.length} hinterlegte Erinnerungen aus Themen, Nachrichten und Mietverlaeufen.
-              </p>
-            </Link>
-
-            <Link
-              className="rounded-[24px] border border-stone-200 bg-[linear-gradient(180deg,#f6f0f5_0%,#efe6ee_100%)] p-5 transition hover:-translate-y-0.5 hover:border-stone-300"
-              href="/admin/immobilie"
-            >
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-fuchsia-700/80">Bestand pflegen</p>
-              <p className="mt-3 text-2xl text-slate-950">Leerstand und Zuordnung</p>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
-                {vacancyCount} Einheiten ohne aktiven Mieter. Gut geeignet für schnelle Bestandsprüfung.
-              </p>
-            </Link>
-          </div>
+            {rentFilterScope === 'tenants' ? (
+              <DashboardFilterButtons
+                items={activeRentTenants.map((tenant) => ({
+                  id: tenant.id,
+                  label: buildTenantLabel(tenant),
+                }))}
+                onReset={resetActiveFilterSelection}
+                onToggle={toggleTenantSelection}
+                selectedIds={selectedTenantIds}
+              />
+            ) : null}
           </div>
 
-          <div className="mt-6 rounded-[24px] border border-stone-200 bg-stone-50 p-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Wiedervorlage</p>
-                <h4 className="mt-2 text-xl text-slate-950">Themen mit Termin</h4>
-              </div>
-              <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
-                {themeReminders.length}
-              </span>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {themeReminders.length === 0 ? (
-                <EmptyList text="Aktuell sind keine Themen mit Wiedervorlage hinterlegt." />
-              ) : (
-                visibleThemeReminders.slice(0, 5).map((entry) => (
-                  <Link
-                    className="block rounded-[18px] border border-stone-200 bg-white px-4 py-3 transition hover:border-stone-300"
-                    href={entry.href}
-                    key={entry.id}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-950">{entry.label}</p>
-                        <p className="mt-1 truncate text-xs text-slate-500">{entry.meta}</p>
-                      </div>
-                      <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
-                        {formatDateOnly(entry.dateValue)}
-                      </span>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
+          <div className="mt-5">
+            <RentHistoryChart
+              defaultMode="cold"
+              emptyText="Für die gewählte Auswahl liegen noch keine Mietdaten vor."
+              framed={false}
+              points={dashboardRentPoints}
+              showCosts={false}
+              subtitle=""
+              title=""
+            />
           </div>
         </div>
       </section>

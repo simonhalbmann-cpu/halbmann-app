@@ -141,6 +141,24 @@ function buildDraftSignatureRecord(value: unknown): SignatureRecord {
   return createSignatureRecord(raw);
 }
 
+function readDraftAttachments(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const raw = entry as Record<string, unknown>;
+      const url = cleanText(raw.url);
+      const name = cleanText(raw.name) || 'anhang';
+      if (!url) return null;
+      return {
+        contentType: cleanText(raw.contentType) || 'application/octet-stream',
+        filename: name,
+        path: url,
+      };
+    })
+    .filter((entry): entry is { contentType: string; filename: string; path: string } => Boolean(entry));
+}
+
 async function resolveInlineLogoForEmail(logoUrl: string) {
   const cleaned = cleanText(logoUrl);
   if (!cleaned || cleaned.startsWith('data:') || cleaned.startsWith('cid:')) {
@@ -274,8 +292,9 @@ export async function POST(request: Request) {
     ]
       .filter(Boolean)
       .join('');
+    const draftAttachments = readDraftAttachments(draft.attachments);
     const sendInfo = await sendPortalEmail({
-      attachments: inlineLogo ? [inlineLogo.attachment] : undefined,
+      attachments: [...(inlineLogo ? [inlineLogo.attachment] : []), ...draftAttachments],
       html: wrapEmailHtmlDocument(finalHtmlBody) || undefined,
       subject,
       text: plainTextBody,

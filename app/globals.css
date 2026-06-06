@@ -120,3 +120,113 @@ a {
   visibility: hidden;
   pointer-events: none;
 }
+
+.admin-shell {
+  --admin-gold: #c8a66a;
+  --admin-ink: #101820;
+  --admin-panel: #f6f7f5;
+  --admin-muted-panel: #edf1f1;
+}
+
+.admin-shell > div {
+  background:
+    linear-gradient(90deg, rgba(16, 24, 32, 0.98) 0 320px, rgba(238, 242, 242, 0.96) 320px 100%),
+    linear-gradient(180deg, #111820 0%, #f6f7f5 100%);
+}
+
+.admin-shell > div > aside {
+  color: #d8dee5;
+}
+
+.admin-shell > div > aside p,
+.admin-shell > div > aside span,
+.admin-shell > div > aside button,
+.admin-shell > div > aside a {
+  color: inherit;
+}
+
+.admin-shell > div > aside input {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #f8fafc !important;
+}
+
+.admin-shell > div > aside input::placeholder {
+  color: rgba(216, 222, 229, 0.58) !important;
+}
+
+.admin-shell > div > aside [class*='bg-white'],
+.admin-shell > div > aside [class*='bg-stone-50'] {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: #e5e7eb !important;
+  box-shadow: none !important;
+}
+
+.admin-shell > div > aside [class*='text-slate-950'],
+.admin-shell > div > aside [class*='text-slate-900'],
+.admin-shell > div > aside [class*='text-slate-700'],
+.admin-shell > div > aside [class*='text-slate-600'],
+.admin-shell > div > aside [class*='text-slate-500'],
+.admin-shell > div > aside [class*='text-stone-500'] {
+  color: #d8dee5 !important;
+}
+
+.admin-shell > div > aside [class*='text-amber'],
+.admin-shell > div > aside [class*='bg-amber'] {
+  color: var(--admin-gold) !important;
+}
+
+.admin-shell > div > aside [class*='border-stone'] {
+  border-color: rgba(255, 255, 255, 0.13) !important;
+}
+
+.admin-shell main,
+.admin-shell header {
+  background-color: transparent;
+}
+
+.admin-shell header {
+  border-color: rgba(16, 24, 32, 0.08) !important;
+  background: rgba(246, 247, 245, 0.74) !important;
+}
+
+.admin-shell [class*='255,250,240'],
+.admin-shell [class*='247,241,231'],
+.admin-shell [class*='244,236,224'],
+.admin-shell [class*='f6f1ea'],
+.admin-shell [class*='f3ede4'] {
+  background: linear-gradient(180deg, rgba(249, 250, 251, 0.96) 0%, rgba(237, 241, 241, 0.94) 100%) !important;
+}
+
+.admin-shell section[class*='bg-white'],
+.admin-shell article[class*='bg-white'],
+.admin-shell div[class*='bg-white'] {
+  border-color: rgba(16, 24, 32, 0.1);
+}
+
+.admin-shell [class*='text-amber-700'] {
+  color: #b89150 !important;
+}
+
+.admin-shell button[class*='6e5a46'],
+.admin-shell a[class*='6e5a46'] {
+  background: linear-gradient(180deg, #3d4650 0%, #202833 100%) !important;
+  color: #f8fafc !important;
+}
+
+.admin-shell input,
+.admin-shell select,
+.admin-shell textarea {
+  background-color: #ffffff !important;
+}
+
+.admin-shell textarea,
+.admin-shell input[type='text'],
+.admin-shell input[type='email'],
+.admin-shell input[type='password'],
+.admin-shell input[type='search'],
+.admin-shell input[type='date'],
+.admin-shell input[type='number'] {
+  color: #0f172a !important;
+}
