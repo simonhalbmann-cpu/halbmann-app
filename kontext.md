@@ -1872,3 +1872,30 @@ pm run build (gruen).
 - Bei Next.js-Aenderungen weiterhin zuerst die lokale Doku unter node_modules/next/dist/docs/ lesen.
 - Wenn ein rotes Next-Overlay nach einem Fix unveraendert bleibt, erst Dev-Server neu starten und im Browser hart neu laden: Strg + F5.
 - Nach jeder groesseren Aenderung npm.cmd run build ausfuehren.
+## 06.06.2026 - Aktueller Stand nach Dashboard-, Design- und Briefkontext-Fixes
+
+### Build / Git
+- npm.cmd run build wurde nach den letzten Aenderungen erfolgreich ausgefuehrt.
+- Vor dem Commit waren geaendert: components/admin/AdminDashboardOverview.tsx, components/admin/MessagesWorkspace.tsx und diese kontext.md.
+- .env.local bleibt lokal und wird nicht committed.
+
+### Dashboard
+- Dashboard wurde nach dem Prinzip weniger ist mehr ueberarbeitet.
+- Die Dashboard-Kacheln sind jetzt undurchsichtig und wie die restliche Oberflaeche abgerundet.
+- Kleine Statistik-/Rasterelemente wurden ebenfalls optisch an die restliche Verwaltungsoberflaeche angepasst.
+
+### Nachrichten / Dienstleister / Briefe
+- Wartungs-Erinnerungen aus dem Dashboard koennen direkt in den Nachrichtenbereich fuehren.
+- Bei Wartungen wird der zugeordnete Dienstleister vorausgewaehlt und die KI kann sofort einen passenden Entwurf erzeugen.
+- Beim Briefversand an Dienstleister bleibt der Objektkontext erhalten.
+- Die Briefvorlage wird bei objektbezogenen Dienstleister-Briefen zuerst aus der Firma der Immobilie gezogen, nicht aus der Dienstleisterfirma.
+- Dadurch funktioniert z. B. Dachwartung Brandenburger Strasse mit der Briefvorlage der zugehoerigen Objektfirma.
+- Falls bei der Objektfirma keine Briefvorlage gespeichert ist, faellt das System weiter auf die einfache .doc-Variante zurueck; mit Vorlage wird .docx erzeugt.
+- Signatur, E-Mail-Draft, Briefverlauf und Wiedervorlage nutzen denselben Objekt-/Firmenkontext.
+- Briefe an Dienstleister speichern nun auch die Dienstleister-Kontakt-ID im Verlauf.
+- Wenn ein Dienstleister als Firma ohne einzelne Kontaktperson hinterlegt ist, wird fuer Briefe dessen Firmenadresse genutzt.
+
+### Behobene Fehlmeldung
+- In der allgemeinen Nachrichtenansicht wurde teilweise faelschlich die Mieter-Detailansicht geladen, wenn ein Thema keine echte Mieterzuordnung hatte.
+- Dadurch erschien nach Dienstleister-Briefen die Meldung Der Mieter wurde nicht gefunden.
+- Das wurde korrigiert: Die Mieteransicht wird nur noch geladen, wenn der referenzierte Mieter wirklich existiert.

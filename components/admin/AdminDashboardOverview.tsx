@@ -780,7 +780,7 @@ export default function AdminDashboardOverview() {
         </div>
       ) : null}
 
-      <section className="border-y border-stone-200 bg-white/72 px-6 py-6 shadow-[0_24px_70px_-56px_rgba(15,23,42,0.38)]">
+      <section className="rounded-[28px] border border-stone-200 bg-white px-6 py-6 shadow-[0_24px_70px_-56px_rgba(15,23,42,0.38)]">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.26em] text-amber-700/80">
@@ -795,7 +795,7 @@ export default function AdminDashboardOverview() {
             </p>
           </div>
 
-          <div className="grid gap-px overflow-hidden border-y border-stone-200 bg-stone-200 sm:grid-cols-4 xl:min-w-[680px]">
+          <div className="grid gap-px overflow-hidden rounded-[22px] border border-stone-200 bg-stone-200 sm:grid-cols-4 xl:min-w-[680px]">
             {[
               { href: '/admin/nachrichten', label: 'Offen', value: openThemes.length },
               { href: '/admin/nachrichten', label: 'Neu', value: newThemes.length },
@@ -814,7 +814,7 @@ export default function AdminDashboardOverview() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.85fr)]">
-        <div className="border-y border-stone-200 bg-white/78 p-6">
+        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
@@ -882,7 +882,7 @@ export default function AdminDashboardOverview() {
           </div>
         </div>
 
-        <div className="border-y border-stone-200 bg-white/78 p-6">
+        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
           <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-emerald-700/80">
             Termine
           </p>
@@ -915,13 +915,13 @@ export default function AdminDashboardOverview() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(360px,0.75fr)_minmax(0,1.25fr)]">
-        <div className="border-y border-stone-200 bg-white/78 p-6">
+        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
           <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
             Bestand
           </p>
           <h3 className="mt-2 font-serif text-3xl text-slate-950">Kompakt</h3>
 
-          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden border-y border-stone-200 bg-stone-200">
+          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-[22px] border border-stone-200 bg-stone-200">
             {[
               { href: '/admin/firma', label: 'Firmen', value: companies.length },
               { href: '/admin/immobilie', label: 'Immobilien', value: properties.length },
@@ -947,7 +947,7 @@ export default function AdminDashboardOverview() {
           </div>
         </div>
 
-        <div className="border-y border-stone-200 bg-white/78 p-6">
+        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">

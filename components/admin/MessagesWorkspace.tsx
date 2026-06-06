@@ -258,6 +258,10 @@ function buildRecipientSignature(
   return createSignatureRecord((company?.data as Record<string, unknown>) ?? null);
 }
 
+function getPropertyOwnerCompanyId(record?: WorkflowRecord | null) {
+  return cleanText(record?.data.ownerId) || cleanText(record?.data.companyId);
+}
+
 function buildAddressLine(parts: Array<unknown>) {
   return parts.map((entry) => cleanText(entry)).filter(Boolean).join(' ');
 }
@@ -1053,11 +1057,17 @@ export default function MessagesWorkspace() {
     const contactRecord = recipient.contactId
       ? people.find((entry) => entry.id === recipient.contactId) ?? null
       : null;
+    const recipientCompanyRecord =
+      composeScope === 'service_contacts'
+        ? companies.find((entry) => entry.id === cleanText(recipient.companyId)) ?? null
+        : null;
     const propertyRecord = properties.find((entry) => entry.id === cleanText(propertyId)) ?? null;
     const subjectLine2 = buildLetterSubjectLine2(propertyRecord, cleanText(tenantRecord?.data.unitLabel));
+    const propertyOwnerCompanyId = getPropertyOwnerCompanyId(propertyRecord);
     const templateCompany =
-      companies.find((entry) => entry.id === cleanText(recipient.companyId)) ??
+      companies.find((entry) => entry.id === propertyOwnerCompanyId) ??
       companies.find((entry) => entry.id === cleanText(composeCompanyId)) ??
+      companies.find((entry) => entry.id === cleanText(recipient.companyId)) ??
       null;
     const letterRecipient =
       recipient.recipientType === 'contact'
@@ -1074,6 +1084,16 @@ export default function MessagesWorkspace() {
                 .filter(Boolean)
                 .join(' ') || cleanText(contactRecord?.data.name),
           }
+        : recipient.recipientType === 'email' && recipientCompanyRecord
+          ? {
+              address: buildAddressBlock([
+                buildAddressLine([recipientCompanyRecord.data.street, recipientCompanyRecord.data.houseNumber]),
+                buildAddressLine([recipientCompanyRecord.data.postalCode, recipientCompanyRecord.data.city]),
+              ]),
+              company: cleanText(recipientCompanyRecord.data.name),
+              salutation: '',
+              name: cleanText(recipientCompanyRecord.data.contactPerson),
+            }
         : {
             address:
               selectedComposeLetterRecipient.address ||
@@ -1114,6 +1134,7 @@ export default function MessagesWorkspace() {
       bodyText: portalBody,
       category: '',
       channel: 'letter',
+      contactId: recipient.contactId || '',
       createdAt: serverTimestamp(),
       deliveryMode: deliveryMode || 'letter',
       draftKind: 'letter',
@@ -1123,7 +1144,7 @@ export default function MessagesWorkspace() {
       priority: 'normal',
       propertyId: cleanText(propertyId),
       receivedAt: serverTimestamp(),
-      recipientId: recipient.tenantId || null,
+      recipientId: recipient.tenantId || recipient.contactId || null,
       recipientType: recipient.recipientType,
       status: 'sent',
       subject,
@@ -1359,24 +1380,36 @@ export default function MessagesWorkspace() {
           ? await uploadOutgoingMessageAttachments(composeAttachments, `compose-${Date.now()}`)
           : [];
       for (const recipient of composeRecipients) {
-        const recipientSignature = applyAdminSenderToSignature(
-          buildRecipientSignature(companies, recipient.companyId, composeCompanyId),
-          resolveAdminSenderContact(profile, user)
-        );
         const tenantRecord = recipient.tenantId
           ? tenants.find((entry) => entry.id === recipient.tenantId) ?? null
           : null;
+        const messagePropertyId = cleanText(tenantRecord?.data.propertyId) || cleanText(composePropertyId);
+        const messageUnitId = cleanText(tenantRecord?.data.unitId);
+        const messageProperty =
+          properties.find((entry) => entry.id === messagePropertyId) ??
+          selectedProperty ??
+          null;
+        const messageCompanyId =
+          getPropertyOwnerCompanyId(messageProperty) ||
+          cleanText(tenantRecord?.data.companyId) ||
+          cleanText(composeCompanyId) ||
+          cleanText(recipient.companyId);
+        const recipientSignature = applyAdminSenderToSignature(
+          buildRecipientSignature(companies, messageCompanyId, composeCompanyId),
+          resolveAdminSenderContact(profile, user)
+        );
         const subject = cleanText(composeSubject) || 'Nachricht von Halbmann Holding';
 
         if (composeDeliveryMode === 'email' || composeDeliveryMode === 'both') {
           const draftRef = await addDoc(collection(db, 'messageDrafts'), {
             attachments: uploadedAttachments,
             body: bodyWithoutManualSignature,
+            companyId: messageCompanyId,
             deliveryMode: composeDeliveryMode,
             createdAt: serverTimestamp(),
             kind: 'broadcast',
             messageId: null,
-            propertyId: cleanText(tenantRecord?.data.propertyId),
+            propertyId: messagePropertyId,
             signature: recipientSignature,
             portalBodyText: bodyWithoutManualSignature,
             recipientEmail: recipient.email,
@@ -1385,7 +1418,7 @@ export default function MessagesWorkspace() {
             status: 'draft',
             subject,
             ticketId: null,
-            unitId: cleanText(tenantRecord?.data.unitId),
+            unitId: messageUnitId,
             updatedAt: serverTimestamp(),
           });
 
@@ -1402,22 +1435,22 @@ export default function MessagesWorkspace() {
 
         if (composeDeliveryMode === 'both') {
           await createLetterHistoryMessage({
-            propertyId: cleanText(tenantRecord?.data.propertyId),
+            propertyId: messagePropertyId,
             recipient,
             signature: recipientSignature,
             subject,
-            unitId: cleanText(tenantRecord?.data.unitId),
+            unitId: messageUnitId,
             deliveryMode: composeDeliveryMode,
           });
         }
 
         if (composeDeliveryMode === 'letter') {
           await createLetterHistoryMessage({
-            propertyId: cleanText(tenantRecord?.data.propertyId),
+            propertyId: messagePropertyId,
             recipient,
             signature: recipientSignature,
             subject,
-            unitId: cleanText(tenantRecord?.data.unitId),
+            unitId: messageUnitId,
             deliveryMode: composeDeliveryMode,
           });
         }
@@ -1426,12 +1459,12 @@ export default function MessagesWorkspace() {
             createdAt: serverTimestamp(),
             dueDate: composeFollowUpDate,
             message: 'Rückmeldung auf gesendete Nachricht prüfen',
-            propertyId: cleanText(tenantRecord?.data.propertyId),
+            propertyId: messagePropertyId,
             status: 'open',
             targetId: recipient.tenantId || recipient.contactId || '',
             targetType: recipient.tenantId ? 'tenant' : recipient.contactId ? 'contact' : 'email',
             ticketId: '',
-            unitId: cleanText(tenantRecord?.data.unitId),
+            unitId: messageUnitId,
           });
         }
       }
@@ -1470,9 +1503,9 @@ export default function MessagesWorkspace() {
 
     try {
       const selectedCompany =
-        companies.find((company) => company.id === composeCompanyId) ??
-        companies.find((company) => company.id === cleanText(selectedProperty?.data.ownerId)) ??
+        companies.find((company) => company.id === getPropertyOwnerCompanyId(selectedProperty)) ??
         companies.find((company) => company.id === cleanText(selectedTenant?.data.companyId)) ??
+        companies.find((company) => company.id === composeCompanyId) ??
         null;
 
       const response = await authorizedFetch('/api/ai/message-draft', {
@@ -1723,11 +1756,16 @@ export default function MessagesWorkspace() {
         </section>
       ) : null;
 
+    const selectedGlobalTenant =
+      selectedGlobalTenantId
+        ? tenants.find((tenant) => tenant.id === selectedGlobalTenantId) ?? null
+        : null;
+
     return (
       <div>
         {unknownSenderPanel ? (
           unknownSenderPanel
-        ) : selectedGlobalTheme && selectedGlobalTenantId ? (
+        ) : selectedGlobalTheme && selectedGlobalTenant ? (
           <TenantDetailView
             activeThemeListMode={currentTab === 'archive' ? 'archive' : 'open'}
             detailLayout="messages"
@@ -1740,11 +1778,8 @@ export default function MessagesWorkspace() {
             showEditButton={false}
             showInvitationButton={false}
             showOverviewButton={false}
-            sectionTitle={buildTenantLabel(
-              tenants.find((tenant) => tenant.id === selectedGlobalTenantId) ??
-                ({ data: selectedGlobalTheme.latestInbound?.data ?? {}, id: selectedGlobalTenantId } as WorkflowRecord)
-            )}
-            tenantId={selectedGlobalTenantId}
+            sectionTitle={buildTenantLabel(selectedGlobalTenant)}
+            tenantId={selectedGlobalTenant.id}
           />
         ) : (
           <section className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
