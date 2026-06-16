@@ -53,6 +53,12 @@ type HeatingEntry = {
   type: string;
 };
 
+type KeyEntry = {
+  count: string;
+  id: string;
+  label: string;
+};
+
 type UnitForm = {
   areaSqm: string;
   basementPosition: string;
@@ -61,6 +67,7 @@ type UnitForm = {
   heatingDraftType: string;
   heatingEntries: HeatingEntry[];
   id: string;
+  keys: KeyEntry[];
   meterDraftType: string;
   meters: MeterEntry[];
   notes: string;
@@ -287,6 +294,7 @@ const createUnit = (): UnitForm => ({
   heatingDraftType: '',
   heatingEntries: [],
   id: crypto.randomUUID(),
+  keys: [],
   meterDraftType: '',
   meters: [],
   mailboxPosition: '',
@@ -333,6 +341,15 @@ const mapHeatingEntry = (entry: unknown): HeatingEntry | null => {
   };
 };
 
+const mapKeyEntry = (entry: unknown): KeyEntry | null => {
+  if (!entry || typeof entry !== 'object') return null;
+  return {
+    count: String((entry as DocumentData).count ?? ''),
+    id: String((entry as DocumentData).id ?? crypto.randomUUID()),
+    label: String((entry as DocumentData).label ?? ''),
+  };
+};
+
 const mapUnit = (unit: unknown): UnitForm | null => {
   if (!unit || typeof unit !== 'object') return null;
   return {
@@ -347,6 +364,11 @@ const mapUnit = (unit: unknown): UnitForm | null => {
           .filter((entry): entry is HeatingEntry => Boolean(entry))
       : [],
     id: String((unit as DocumentData).id ?? crypto.randomUUID()),
+    keys: Array.isArray((unit as DocumentData).keys)
+      ? ((unit as DocumentData).keys as unknown[])
+          .map(mapKeyEntry)
+          .filter((entry): entry is KeyEntry => Boolean(entry))
+      : [],
     meterDraftType: '',
     meters: Array.isArray((unit as DocumentData).meters)
       ? ((unit as DocumentData).meters as unknown[])
@@ -1064,6 +1086,41 @@ export default function PropertyAdminManager({
     );
   }
 
+  function addUnitKey(unitId: string) {
+    setUnits((current) =>
+      current.map((unit) =>
+        unit.id === unitId
+          ? { ...unit, keys: [...unit.keys, { count: '', id: crypto.randomUUID(), label: '' }] }
+          : unit
+      )
+    );
+  }
+
+  function updateUnitKey(unitId: string, keyId: string, field: keyof KeyEntry, value: string) {
+    setUnits((current) =>
+      current.map((unit) =>
+        unit.id === unitId
+          ? {
+              ...unit,
+              keys: unit.keys.map((entry) =>
+                entry.id === keyId ? { ...entry, [field]: field === 'count' ? cleanSpaces(value) : value } : entry
+              ),
+            }
+          : unit
+      )
+    );
+  }
+
+  function removeUnitKey(unitId: string, keyId: string) {
+    setUnits((current) =>
+      current.map((unit) =>
+        unit.id === unitId
+          ? { ...unit, keys: unit.keys.filter((entry) => entry.id !== keyId) }
+          : unit
+      )
+    );
+  }
+
   function resetForm() {
     setForm(defaultFormState());
     setUnits([]);
@@ -1613,6 +1670,32 @@ export default function PropertyAdminManager({
                         </div>
                       ))}
                     </div>
+                  </div>
+                  <div className="mt-4 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">Schlüssel</p>
+                        <p className="mt-1 text-xs text-slate-500">Bezeichnung und Standardanzahl für das Übergabeprotokoll.</p>
+                      </div>
+                      <button className="rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={() => addUnitKey(unit.id)} type="button">
+                        + Schlüssel
+                      </button>
+                    </div>
+                    {unit.keys.length > 0 ? (
+                      <div className="mt-4 grid gap-3">
+                        {unit.keys.map((entry) => (
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px_auto]" key={entry.id}>
+                            <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateUnitKey(unit.id, entry.id, 'label', event.target.value)} placeholder="Schlüsselbezeichnung" value={entry.label} />
+                            <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" inputMode="numeric" onChange={(event) => updateUnitKey(unit.id, entry.id, 'count', event.target.value)} placeholder="Anzahl" value={entry.count} />
+                            <button className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-100" onClick={() => removeUnitKey(unit.id, entry.id)} type="button">
+                              Entfernen
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-slate-600">Noch keine Schlüssel hinterlegt.</p>
+                    )}
                   </div>
                   {form.hasCentralHeating === 'no' ? (
                     <div className="mt-4 rounded-[22px] border border-stone-200 bg-stone-50 p-4">

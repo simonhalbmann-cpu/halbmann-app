@@ -16,6 +16,7 @@ export default function DocumentUploadControl({
   onUpload,
 }: DocumentUploadControlProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -40,14 +41,24 @@ export default function DocumentUploadControl({
 
   return (
     <div className="grid gap-2 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
-      <button
-        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-        disabled={disabled || isUploading}
-        onClick={() => inputRef.current?.click()}
-        type="button"
-      >
-        Auswaehlen
-      </button>
+      <div className="grid gap-2 sm:grid-cols-2 md:block">
+        <button
+          className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={disabled || isUploading}
+          onClick={() => inputRef.current?.click()}
+          type="button"
+        >
+          Auswaehlen
+        </button>
+        <button
+          className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 md:hidden"
+          disabled={disabled || isUploading}
+          onClick={() => cameraInputRef.current?.click()}
+          type="button"
+        >
+          Foto aufnehmen
+        </button>
+      </div>
       <input
         accept={accept}
         className="hidden"
@@ -55,6 +66,15 @@ export default function DocumentUploadControl({
         multiple={multiple}
         onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
         ref={inputRef}
+        type="file"
+      />
+      <input
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        disabled={disabled || isUploading}
+        onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
+        ref={cameraInputRef}
         type="file"
       />
       <div className="min-w-0 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-2 text-sm text-slate-700">

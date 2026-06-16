@@ -143,9 +143,8 @@ function getHeaderContent(pathname: string, fallbackTitle: string) {
     },
     {
       path: '/admin',
-      title: 'Überblick für Kommunikation, Themen und Bestand',
-      description:
-        'Das Dashboard bündelt Kommunikation, offene Vorgänge, Bestand und die nächsten operativen Schritte in einer kompakten Übersicht.',
+      title: 'Überblick',
+      description: '',
     },
     {
       path: '/admin/einstellungen',
@@ -277,6 +276,7 @@ export default function ProtectedAreaLayout({
   const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
   const [mailSyncNote, setMailSyncNote] = useState('');
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [mobileInventoryOpen, setMobileInventoryOpen] = useState(false);
   const [portalSidebarName, setPortalSidebarName] = useState('');
   const settingsMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleNavSections = useMemo(
@@ -971,6 +971,211 @@ export default function ProtectedAreaLayout({
     );
   }
 
+  function renderMobileAdminNavigation() {
+    if (requiredRole !== 'admin') return null;
+
+    return (
+      <div className="lg:hidden border-b border-white/10 bg-[linear-gradient(180deg,#111820_0%,#17222d_100%)] px-4 pb-4 pt-3 text-stone-100">
+        <div className="flex items-center justify-between gap-3">
+          <Link className="min-w-0" href="/admin">
+            <Image
+              alt="Halbmann Holding"
+              className="h-12 w-auto object-contain opacity-90"
+              height={120}
+              src="/halbmann-logo-white.png"
+              width={340}
+            />
+          </Link>
+          <button
+            className="rounded-full border border-white/15 px-3 py-1.5 text-xs font-medium text-stone-100"
+            onClick={handleLogout}
+            type="button"
+          >
+            Abmelden
+          </button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Link
+            className={`rounded-full border px-4 py-2 text-center text-sm font-medium ${
+              isCurrentPath(pathname, '/admin')
+                ? 'border-amber-300/40 bg-white text-slate-950'
+                : 'border-white/15 bg-white/8 text-stone-100'
+            }`}
+            href="/admin"
+          >
+            Dashboard
+          </Link>
+          <Link
+            className={`rounded-full border px-4 py-2 text-center text-sm font-medium ${
+              isCurrentPath(pathname, '/admin/nachrichten')
+                ? 'border-amber-300/40 bg-white text-slate-950'
+                : 'border-white/15 bg-white/8 text-stone-100'
+            }`}
+            href="/admin/nachrichten"
+          >
+            Nachrichten
+          </Link>
+        </div>
+
+        {canViewInventoryTree ? (
+          <div className="mt-3 rounded-[22px] border border-white/10 bg-white/[0.04] p-3">
+            <button
+              className="flex w-full items-center justify-between text-left text-[11px] font-medium uppercase tracking-[0.18em] text-amber-200/90"
+              onClick={() => setMobileInventoryOpen((current) => !current)}
+              type="button"
+            >
+              <span>Bestand</span>
+              <span>{mobileInventoryOpen ? '-' : '+'}</span>
+            </button>
+
+            {mobileInventoryOpen ? (
+              <div className="mt-3 space-y-2">
+                <input
+                  className="w-full rounded-2xl border border-white/15 bg-white/8 px-4 py-2.5 text-sm text-stone-100 outline-none placeholder:text-stone-400"
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Bestand suchen"
+                  type="search"
+                  value={search}
+                />
+
+                {searchResults.length > 0 ? (
+                  <div className="space-y-1">
+                    {searchResults.map((result) => (
+                      <button
+                        className="block w-full rounded-[16px] border border-white/10 bg-white/8 px-3 py-2 text-left text-sm text-stone-100"
+                        key={`mobile-${result.type}-${result.label}-${result.propertyId ?? ''}-${result.unitId ?? ''}-${result.tenantId ?? ''}`}
+                        onClick={() => revealSearchResult(result)}
+                        type="button"
+                      >
+                        <span className="block text-[10px] uppercase tracking-[0.18em] text-stone-400">
+                          {result.type === 'company'
+                            ? 'Firma'
+                            : result.type === 'property'
+                              ? 'Immobilie'
+                              : result.type === 'unit'
+                                ? 'Einheit'
+                                : 'Mieter'}
+                        </span>
+                        {result.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                {companyTree.map((company) => (
+                  <div className="space-y-1" key={`mobile-company-${company.id}`}>
+                    <button
+                      className="w-full rounded-[16px] bg-white/8 px-3 py-2 text-left text-sm font-medium text-stone-100"
+                      onClick={() => openCompany(company.id)}
+                      type="button"
+                    >
+                      {company.label}
+                    </button>
+                    <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
+                      {company.properties.map((property) => (
+                        <div className="space-y-1" key={`mobile-property-${property.id}`}>
+                          <button
+                            className="w-full rounded-[14px] px-3 py-2 text-left text-sm text-stone-200"
+                            onClick={() => openProperty(company.id, property.id)}
+                            type="button"
+                          >
+                            {property.label}
+                          </button>
+                          {canReadContacts ? (
+                            <button
+                              className="w-full rounded-[14px] px-3 py-2 text-left text-xs text-stone-300"
+                              onClick={() => openPropertyServices(company.id, property.id)}
+                              type="button"
+                            >
+                              Dienstleister
+                            </button>
+                          ) : null}
+                          <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
+                            {property.units.map((unit) => (
+                              <div className="space-y-1" key={`mobile-unit-${property.id}-${unit.id}`}>
+                                <button
+                                  className="w-full rounded-[14px] px-3 py-2 text-left text-xs text-stone-300"
+                                  onClick={() => openUnit(company.id, property.id, unit.id)}
+                                  type="button"
+                                >
+                                  {unit.menuLabel}
+                                </button>
+                                {unit.currentTenant ? (
+                                  <button
+                                    className="ml-3 flex items-center gap-2 rounded-[14px] px-3 py-2 text-left text-xs text-stone-200"
+                                    onClick={() => openTenant(company.id, property.id, unit.id, unit.currentTenant!.id)}
+                                    type="button"
+                                  >
+                                    <span className="h-2 w-2 rounded-full bg-amber-300" />
+                                    {[cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
+                                      .filter(Boolean)
+                                      .join(', ')}
+                                  </button>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderMobilePortalNavigation() {
+    if (requiredRole !== 'portal') return null;
+
+    return (
+      <div className="border-b border-stone-200 bg-white px-4 pb-3 pt-4 shadow-sm lg:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <Link className="min-w-0" href="/mieterportal">
+            <Image
+              alt="Halbmann Holding"
+              className="h-10 w-auto object-contain"
+              height={120}
+              src="/halbmann-logo.png"
+              width={340}
+            />
+          </Link>
+          <button
+            className="shrink-0 rounded-full border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-medium text-slate-700"
+            onClick={handleLogout}
+            type="button"
+          >
+            Abmelden
+          </button>
+        </div>
+
+        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {visibleNavSections.flatMap((section) => section.links).map((link) => {
+            const isActive = activeNavHref === link.href;
+
+            return (
+              <Link
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium ${
+                  isActive
+                    ? 'border-slate-900 bg-slate-950 text-white'
+                    : 'border-stone-300 bg-white text-slate-700'
+                }`}
+                href={link.href}
+                key={link.href}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.18),_transparent_30%),linear-gradient(180deg,_#f6f1ea_0%,_#f3ede4_100%)] px-6">
@@ -989,9 +1194,11 @@ export default function ProtectedAreaLayout({
   }
 
   return (
-    <div className="admin-shell min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.10),_transparent_30%),linear-gradient(180deg,_#111820_0%,_#16212b_42%,_#eef2f2_42%,_#f6f7f5_100%)] text-slate-900">
-      <div className="grid min-h-screen lg:grid-cols-[calc(320px-2cm)_minmax(0,1fr)]">
-        <aside className="border-r border-white/10 bg-[linear-gradient(180deg,rgba(17,24,32,0.98)_0%,rgba(26,34,43,0.96)_54%,rgba(31,24,20,0.96)_100%)] px-6 py-8">
+    <div className="admin-shell min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.10),_transparent_30%),linear-gradient(180deg,_#111820_0%,_#16212b_42%,_#eef2f2_42%,_#f6f7f5_100%)] text-slate-900">
+      {renderMobileAdminNavigation()}
+      {renderMobilePortalNavigation()}
+      <div className="grid min-h-screen min-w-0 lg:grid-cols-[calc(320px-2cm)_minmax(0,1fr)]">
+        <aside className="hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(17,24,32,0.98)_0%,rgba(26,34,43,0.96)_54%,rgba(31,24,20,0.96)_100%)] px-6 py-8 lg:block">
           <div className="flex h-full flex-col justify-between">
             <div>
               <div className="-mt-5 rounded-[26px] border border-stone-200/80 bg-white/72 px-4 py-3 shadow-[0_20px_40px_-34px_rgba(148,119,77,0.4)]">
@@ -1291,7 +1498,7 @@ export default function ProtectedAreaLayout({
           </div>
         </aside>
 
-        <div className="flex min-h-screen flex-col">
+        <div className="flex min-h-screen min-w-0 flex-col">
           {!isCompactHeaderRoute && requiredRole === 'admin' ? (
           <header
             className={`relative z-30 border-b border-stone-200/80 bg-white/45 backdrop-blur xl:px-10 ${
@@ -1315,7 +1522,7 @@ export default function ProtectedAreaLayout({
               </div>
               {requiredRole === 'admin' && visibleSettingsLinks.length > 0 ? (
                 <div
-                  className="relative z-40"
+                  className="relative z-40 hidden lg:block"
                   onMouseEnter={openSettingsMenu}
                   onMouseLeave={closeSettingsMenuWithDelay}
                 >
@@ -1333,7 +1540,7 @@ export default function ProtectedAreaLayout({
             >
               {requiredRole === 'admin' && visibleSettingsLinks.length > 0 ? (
                 <div
-                  className="pointer-events-auto relative z-40"
+                  className="pointer-events-auto relative z-40 hidden lg:block"
                   onMouseEnter={openSettingsMenu}
                   onMouseLeave={closeSettingsMenuWithDelay}
                 >
@@ -1344,7 +1551,7 @@ export default function ProtectedAreaLayout({
             </div>
           ) : null}
           <main
-            className={`flex-1 px-6 ${
+            className={`min-w-0 flex-1 px-4 sm:px-6 ${
               isTenantDetailRoute ? 'pt-0 pb-2' : isCompactHeaderRoute ? 'py-2' : 'py-8'
             } xl:px-10`}
           >

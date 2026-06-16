@@ -1899,3 +1899,79 @@ pm run build (gruen).
 - In der allgemeinen Nachrichtenansicht wurde teilweise faelschlich die Mieter-Detailansicht geladen, wenn ein Thema keine echte Mieterzuordnung hatte.
 - Dadurch erschien nach Dienstleister-Briefen die Meldung Der Mieter wurde nicht gefunden.
 - Das wurde korrigiert: Die Mieteransicht wird nur noch geladen, wenn der referenzierte Mieter wirklich existiert.
+
+## 16.06.2026 - Mobile Admin-/Portal-Reparaturen, Nachrichten und Uebergabe
+
+### Dev / Zugriff
+- Next.js laeuft lokal mit `npm run dev -- --hostname 0.0.0.0`.
+- Desktop-Link: `http://localhost:3000`.
+- Handy im selben WLAN: `http://192.168.178.141:3000`.
+- `next.config.ts` enthaelt `allowedDevOrigins: ['192.168.178.141']`, damit der Dev-Server auf dem Handy sauber erreichbar ist.
+- Fuer Next.js-Aenderungen wurde gemaess AGENTS.md die lokale Next-Doku in `node_modules/next/dist/docs/` gelesen.
+
+### Lokaler Portal-Login / Mobile Portal
+- Lokaler Portal-Login wurde wiederhergestellt und gegen lokale Portal-Daten verdrahtet.
+- Betroffene API-Routen: `app/api/portal-local/login`, `session`, `logout`, `app/api/portal-auth/resolve`, `app/api/portal/context`, `messages`, `attachments`.
+- `app/mieterportal/layout.tsx` prueft lokale Portal-Sessions und verwendet lokale Kontextdaten.
+- `app/layout.tsx` exportiert jetzt einen mobilen Viewport (`width: device-width`, `initialScale: 1`).
+
+### Mobile Admin-Oberflaeche
+- `ProtectedAreaLayout` wurde mobil stabilisiert: Sidebar verschwindet unter `lg`, mobile Navigation ist vorhanden, Hauptbereiche nutzen `min-w-0` und verhindern horizontales Scrollen.
+- `app/globals.css` verhindert in der mobilen Admin-Shell horizontales Scrollen robuster (`overflow-x: clip`, max-width-Regeln, Medien/Formulare max. 100%).
+- Dashboard und Nachrichtenbereich wurden auf mobile Breiten angepasst.
+- Dashboard-Titel im Adminbereich wurde auf `Ueberblick` reduziert; die Postfach-Synchronisationsnotiz bleibt darunter.
+
+### Dashboard
+- `AdminDashboardOverview` zeigt im Dashboard bei den relevanten Kacheln zuerst nur drei Eintraege.
+- Buttons in den Kacheln oeffnen die jeweilige gefilterte Liste; `Alle` zeigt die vollstaendige Liste.
+- `Bestand` steht unter `Heute relevant`.
+- `Fristen` und `Mieterhoehungen` wurden getrennt: Fristen enthalten keine Mieterhoehungen; Mieterhoehungen zeigt nur aktive/zeitnahe Erinnerungen.
+- Dashboard-Kategorien umfassen u. a. Offen, Neu, Fristen, Mieterhoehung, Firmen, Immobilien, aktive Mieter und Leerstand.
+
+### Nachrichtenuebersicht / bekannte und unbekannte Absender
+- `MessagesWorkspace` wurde mobil gegen abgeschnittene Inhalte und horizontales Scrollen repariert.
+- Klick auf unbekannte Absender oeffnet eine eigene Seite `/admin/nachrichten/[messageId]`.
+- Auf dieser Einzel-Nachrichtenseite steht der Verlauf oben, darunter der Antwortbereich, dann Absender-Einordnung.
+- Unbekannte Absender koennen direkt beantwortet werden, ohne vorher als Mieter/Dienstleister angelegt zu sein.
+- Unbekannte Absender koennen auf der Einzel-Nachrichtenseite einem Mieter zugeordnet werden.
+- Unbekannte Absender koennen von dort aus als Dienstleister/Kontakt neu angelegt werden.
+- Antworten an unbekannte Absender werden als E-Mail-Empfaenger behandelt, solange noch kein Mieter zugeordnet ist.
+- Klick auf bekannte Mieter-Nachrichten in der allgemeinen Nachrichtenuebersicht fuehrt direkt zu `/admin/mieter/[id]?messageId=[themeId]`.
+- Die allgemeine Nachrichtenuebersicht bettet keine globale Alle-Absender-Liste mehr unter der Mieteransicht ein.
+- `/admin/nachrichten` ohne `themeId` zeigt nur die Nachrichtenliste und laedt nicht automatisch den ersten Mieter-Vorgang.
+
+### Einzel-Nachrichtenseite
+- `MessageDetailWorkspace` wurde fuer mobile Nutzung korrigiert.
+- Verlauf steht ueber `Direkt antworten`.
+- Lange Betreff-/Absender-/Nachrichtentexte brechen um.
+- Mobile Chatkarten haben keine seitlichen Einrueckungen mehr.
+- Antwort-, Zuordnungs- und Notizkacheln nutzen `min-w-0` und `overflow-x-hidden`.
+
+### Uebergabeprotokoll
+- In der Mieter-Nachrichtenansicht gibt es oben `Uebergabe` mit Auswahl `Einzug`/`Auszug` und einem Haken.
+- Der Haken startet keinen Download mehr, sondern oeffnet die neue Seite `/admin/mieter/[id]/uebergabe?art=moveIn|moveOut`.
+- Das alte Inline-Formular unter dem Uebergabe-Button ist ausgeblendet.
+- Neue Komponente: `components/admin/TenantHandoverWorkspace.tsx`.
+- Neue Route: `app/admin/mieter/[id]/uebergabe/page.tsx`.
+- Ort/Treffpunkt wird aus Objektadresse plus Einheit vorbelegt.
+- Mietername und Vermieter werden aus den vorhandenen Daten vorbelegt.
+- `Zustand der Einheit` wurde entfernt.
+- `Maengel / offene Punkte` bleibt als Freitext.
+- Zaehlerstaende entstehen aus den an der Einheit hinterlegten Zaehlern: Bezeichnung, Zaehlernummer und Eingabefeld fuer den Stand.
+- Zaehler koennen im Protokoll manuell ergaenzt werden.
+- Schluessel entstehen aus neuen Schluessel-Stammdaten an der Einheit: Bezeichnung, Soll-Anzahl und aenderbare Uebergabe-Anzahl.
+- Schluessel koennen im Protokoll manuell ergaenzt werden.
+- Foto- und Videoaufnahmen koennen zum Protokoll hochgeladen werden.
+- Beim Speichern landet ein Protokolldokument plus Foto-/Videoanlagen in den Mieterdokumenten.
+- Wenn fuer die Firma eine Uebergabeprotokoll-Vorlage fuer Einzug/Auszug hinterlegt ist, wird bevorzugt ein `.docx` daraus erzeugt; sonst wird ein HTML-Protokoll als Fallback gespeichert.
+- Samsung Browser Fix: `TenantHandoverWorkspace` nutzt nicht mehr direkt `crypto.randomUUID()`, sondern `createClientId()` mit Fallback fuer Browser ohne `randomUUID`.
+
+### Immobilien / Einheiten
+- `PropertyAdminManager` speichert nun pro Einheit eine `keys`-Liste.
+- In der Desktop-Immobilien-/Einheitenbearbeitung gibt es pro Einheit einen Bereich `Schluessel`.
+- Per `+ Schluessel` erscheinen zwei Felder: Schluesselbezeichnung und Anzahl.
+- Diese Stammdaten werden vom Uebergabeprotokoll als Vorbelegung verwendet.
+
+### Verifikation
+- Nach den Aenderungen wurde mehrfach `npx tsc --noEmit` erfolgreich ausgefuehrt.
+- `/admin/nachrichten` antwortete lokal mit HTTP 200.

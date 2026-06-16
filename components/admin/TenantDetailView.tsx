@@ -364,6 +364,15 @@ export default function TenantDetailView({
   const [deletingTenantDocumentPath, setDeletingTenantDocumentPath] = useState('');
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
   const [handoverProtocolKind, setHandoverProtocolKind] = useState<'moveIn' | 'moveOut'>('moveIn');
+  const [handoverForm, setHandoverForm] = useState({
+    condition: '',
+    defects: '',
+    handedOverKeys: '',
+    meterReadings: '',
+    notes: '',
+    place: '',
+    tenantSignatureName: '',
+  });
   const [isEndingTenancy, setIsEndingTenancy] = useState(false);
   const [isPending, startTransition] = useTransition();
   const resolvedThemeListMode = activeThemeListMode ?? themeListMode;
@@ -1375,6 +1384,53 @@ export default function TenantDetailView({
     } catch (caughtError) {
       console.error('Fehler beim Erstellen des Uebergabeprotokolls:', caughtError);
       setError('Das Uebergabeprotokoll konnte nicht erstellt werden.');
+    }
+  }
+
+  async function saveMobileHandoverProtocol() {
+    if (!tenant) return;
+    const hasContent = Object.values(handoverForm).some((value) => cleanText(value));
+    if (!hasContent) {
+      setError('Bitte mindestens eine Angabe für das Übergabeprotokoll eintragen.');
+      return;
+    }
+
+    try {
+      setError('');
+      const currentProtocols = Array.isArray(tenant.handoverProtocols)
+        ? tenant.handoverProtocols
+        : [];
+      await updateDoc(doc(db, 'tenants', tenantId), {
+        handoverProtocols: [
+          ...currentProtocols,
+          {
+            ...handoverForm,
+            createdAt: new Date().toISOString(),
+            createdByEmail: user?.email ?? null,
+            kind: handoverProtocolKind,
+            propertyId: cleanText(tenant.propertyId),
+            propertyName: cleanText(selectedProperty?.data.name),
+            unitId: cleanText(tenant.unitId),
+            unitLabel: unitInfoLabel || cleanText(tenant.unitLabel),
+          },
+        ],
+        updatedAt: serverTimestamp(),
+        updatedByEmail: user?.email ?? null,
+        updatedByUid: user?.uid ?? null,
+      });
+      setHandoverForm({
+        condition: '',
+        defects: '',
+        handedOverKeys: '',
+        meterReadings: '',
+        notes: '',
+        place: '',
+        tenantSignatureName: '',
+      });
+      setMessage('Übergabeprotokoll wurde gespeichert.');
+    } catch (caughtError) {
+      console.error('Fehler beim Speichern des Übergabeprotokolls:', caughtError);
+      setError('Das Übergabeprotokoll konnte nicht gespeichert werden.');
     }
   }
 
@@ -2476,9 +2532,9 @@ export default function TenantDetailView({
               </select>
             </label>
             <button
-              aria-label="Uebergabeprotokoll herunterladen"
+              aria-label="Uebergabeformular oeffnen"
               className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-              onClick={() => void downloadHandoverProtocol(handoverProtocolKind)}
+              onClick={() => router.push(`/admin/mieter/${tenantId}/uebergabe?art=${handoverProtocolKind}`)}
               type="button"
             >
               ✓
@@ -2608,6 +2664,80 @@ export default function TenantDetailView({
           )}
         </section>
       ) : null}
+
+      <section className="hidden">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
+              Übergabe vor Ort
+            </p>
+            <h3 className="mt-1 text-xl text-slate-950">Protokoll als Formular</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Für schnelle Erfassung mit dem Handy. Fotos können unten bei den Dokumenten direkt per Kamera ergänzt werden.
+            </p>
+          </div>
+          <select
+            className="rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverProtocolKind(event.target.value === 'moveOut' ? 'moveOut' : 'moveIn')}
+            value={handoverProtocolKind}
+          >
+            <option value="moveIn">Einzug</option>
+            <option value="moveOut">Auszug</option>
+          </select>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          <input
+            className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverForm((current) => ({ ...current, place: event.target.value }))}
+            placeholder="Ort / Treffpunkt"
+            value={handoverForm.place}
+          />
+          <textarea
+            className="min-h-24 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverForm((current) => ({ ...current, condition: event.target.value }))}
+            placeholder="Zustand der Einheit"
+            value={handoverForm.condition}
+          />
+          <textarea
+            className="min-h-24 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverForm((current) => ({ ...current, defects: event.target.value }))}
+            placeholder="Mängel / offene Punkte"
+            value={handoverForm.defects}
+          />
+          <textarea
+            className="min-h-20 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverForm((current) => ({ ...current, meterReadings: event.target.value }))}
+            placeholder="Zählerstände"
+            value={handoverForm.meterReadings}
+          />
+          <input
+            className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverForm((current) => ({ ...current, handedOverKeys: event.target.value }))}
+            placeholder="Übergebene Schlüssel"
+            value={handoverForm.handedOverKeys}
+          />
+          <textarea
+            className="min-h-20 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverForm((current) => ({ ...current, notes: event.target.value }))}
+            placeholder="Notizen"
+            value={handoverForm.notes}
+          />
+          <input
+            className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+            onChange={(event) => setHandoverForm((current) => ({ ...current, tenantSignatureName: event.target.value }))}
+            placeholder="Name Mieter / Übergabepartner"
+            value={handoverForm.tenantSignatureName}
+          />
+          <button
+            className="rounded-full bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] px-4 py-3 text-sm font-medium text-stone-100"
+            onClick={() => void saveMobileHandoverProtocol()}
+            type="button"
+          >
+            Protokoll speichern
+          </button>
+        </div>
+      </section>
 
       <section className="rounded-[24px] border border-stone-200 bg-white px-5 pb-5 pt-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
         <div className="flex flex-wrap items-start justify-between gap-3">

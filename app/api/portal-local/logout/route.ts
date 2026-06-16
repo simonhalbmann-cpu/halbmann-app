@@ -1,7 +1,9 @@
-import { portalDisabledResponse } from '../../../../lib/portalDisabled';
+import { NextResponse } from 'next/server';
+import { clearLocalPortalSessionCookie } from '../../../../lib/localPortalSession';
 
 export const runtime = 'nodejs';
 
 export async function POST() {
-  return portalDisabledResponse();
+  await clearLocalPortalSessionCookie();
+  return NextResponse.json({ ok: true });
 }

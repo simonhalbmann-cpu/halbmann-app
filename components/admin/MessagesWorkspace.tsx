@@ -333,6 +333,7 @@ export default function MessagesWorkspace() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [pendingDeleteThemeId, setPendingDeleteThemeId] = useState('');
+  const [unknownAssignTenantId, setUnknownAssignTenantId] = useState('');
   const [isGeneratingComposeAiDraft, setIsGeneratingComposeAiDraft] = useState(false);
   const [isPending, startTransition] = useTransition();
   const appliedComposePresetRef = useRef('');
@@ -489,12 +490,20 @@ export default function MessagesWorkspace() {
   const activeThemeList = currentTab === 'archive' ? filteredArchivedThemes : filteredInbox;
   const selectedGlobalThemeId = cleanText(searchParams.get('themeId'));
   const selectedGlobalTheme =
-    activeThemeList.find((theme) => theme.id === selectedGlobalThemeId) ?? activeThemeList[0] ?? null;
+    selectedGlobalThemeId
+      ? activeThemeList.find((theme) => theme.id === selectedGlobalThemeId) ?? null
+      : null;
   const selectedGlobalTenantId = cleanText(selectedGlobalTheme?.tenantId);
   const pendingDeleteTheme =
     themes.find((theme) => theme.id === pendingDeleteThemeId) ??
     activeThemeList.find((theme) => theme.id === pendingDeleteThemeId) ??
     null;
+
+  useEffect(() => {
+    if (!selectedGlobalThemeId || !selectedGlobalTheme || !selectedGlobalTenantId) return;
+    if (selectedGlobalTenantId.startsWith('unknown:')) return;
+    router.replace(`/admin/mieter/${selectedGlobalTenantId}?messageId=${selectedGlobalTheme.id}`);
+  }, [router, selectedGlobalTenantId, selectedGlobalTheme, selectedGlobalThemeId]);
 
   const availableTenantsForProperty = useMemo(
     () => tenants.filter((tenant) => cleanText(tenant.data.propertyId) === composePropertyId),
@@ -510,6 +519,36 @@ export default function MessagesWorkspace() {
     () => people.find((person) => person.id === composeContactId) ?? null,
     [composeContactId, people]
   );
+  const unknownAssignTenant = useMemo(
+    () => tenants.find((tenant) => tenant.id === unknownAssignTenantId) ?? null,
+    [tenants, unknownAssignTenantId]
+  );
+  const unknownAssignTenantOptions = useMemo(
+    () =>
+      [...tenants]
+        .sort((left, right) => buildTenantLabel(left).localeCompare(buildTenantLabel(right), 'de'))
+        .map((tenant) => {
+          const property = properties.find(
+            (entry) => entry.id === cleanText(tenant.data.propertyId)
+          );
+          const detail = [
+            cleanText(property?.data.name),
+            cleanText(tenant.data.unitLabel),
+            cleanText(tenant.data.email),
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          return {
+            label: detail ? `${buildTenantLabel(tenant)} · ${detail}` : buildTenantLabel(tenant),
+            value: tenant.id,
+          };
+        }),
+    [properties, tenants]
+  );
+
+  useEffect(() => {
+    setUnknownAssignTenantId('');
+  }, [selectedGlobalTheme?.id]);
   const manualRecipientRows = useMemo<ManualRecipientRow[]>(
     () => [
       { email: composeRecipientEmail, propertyId: composePropertyId, tenantId: composeTenantId },
@@ -1000,6 +1039,72 @@ export default function MessagesWorkspace() {
     setComposePropertyId('');
     setComposeCompanyId('');
     setComposeAttachments([]);
+  }
+
+  function startUnknownSenderReply(theme: MessageTheme) {
+    const recipientEmail =
+      cleanText(theme.latestInbound?.data.fromEmail) || cleanText(theme.latestEntry.data.fromEmail);
+    if (!recipientEmail) {
+      setError('Für diesen Absender ist keine E-Mail-Adresse vorhanden.');
+      return;
+    }
+
+    const subject = cleanText(theme.subject) || cleanText(theme.latestEntry.data.subject) || 'Nachricht';
+    resetCompose();
+    setComposeScope('manual');
+    setComposeDeliveryMode('email');
+    setComposeRecipientEmail(recipientEmail);
+    setComposeSubject(subject.toLocaleLowerCase('de-DE').startsWith('re:') ? subject : `Re: ${subject}`);
+    setMessage('Antwort ist vorbereitet.');
+    setError('');
+    router.push(`${pathname}?tab=compose`);
+  }
+
+  function assignUnknownThemeToTenant(theme: MessageTheme, tenantId: string) {
+    runAction(async () => {
+      const tenant = tenants.find((entry) => entry.id === tenantId) ?? null;
+      if (!tenant) {
+        throw new Error('Bitte wähle zuerst einen Mieter aus.');
+      }
+
+      const firestoreMessageIds = theme.records
+        .filter((record) => firestoreMessages.some((entry) => entry.id === record.id))
+        .map((record) => record.id);
+
+      if (firestoreMessageIds.length === 0) {
+        throw new Error('Diese lokale Nachricht kann noch nicht automatisch zugeordnet werden.');
+      }
+
+      const propertyId = cleanText(tenant.data.propertyId);
+      const unitId = cleanText(tenant.data.unitId);
+      await Promise.all(
+        firestoreMessageIds.map((messageId) =>
+          updateDoc(doc(db, 'messages', messageId), {
+            propertyId,
+            recipientId: tenant.id,
+            recipientType: 'tenant',
+            tenantId: tenant.id,
+            unitId,
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email ?? null,
+            updatedByUid: user?.uid ?? null,
+          })
+        )
+      );
+
+      await updateThemeState(
+        theme.id,
+        tenant.id,
+        cleanText(theme.subject) || cleanText(theme.latestEntry.data.subject) || 'Nachricht',
+        theme.records.map((record) => record.id),
+        'in_progress',
+        false
+      );
+
+      setUnknownAssignTenantId('');
+      setMessage('Nachricht wurde dem Mieter zugeordnet.');
+      router.push(`${pathname}?themeId=${theme.id}`);
+    });
   }
 
   function addManualRecipientRow() {
@@ -1665,7 +1770,14 @@ export default function MessagesWorkspace() {
                   >
                     x
                   </button>
-                  <Link className="block pr-8" href={buildInboxThemeHref(theme.id)}>
+                  <Link
+                    className="block pr-8"
+                    href={
+                      cleanText(theme.tenantId).startsWith('unknown:')
+                        ? `/admin/nachrichten/${theme.latestInbound?.id || theme.latestEntry.id}`
+                        : `/admin/mieter/${cleanText(theme.tenantId)}?messageId=${theme.id}`
+                    }
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className={`truncate text-sm font-medium ${isSelected ? '!text-amber-950' : '!text-slate-950'}`}>
@@ -1703,30 +1815,82 @@ export default function MessagesWorkspace() {
 
     const unknownSenderPanel =
       selectedGlobalTheme && selectedGlobalTenantId.startsWith('unknown:') ? (
-        <section className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
-          <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-            <aside>{globalThemesPanel}</aside>
-            <div className="min-w-0 border-l border-stone-200 pl-5">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stone-200 pb-3">
-                <div>
+        <section className="min-w-0 rounded-[24px] border border-stone-200 bg-white p-4 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)] sm:p-6">
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <aside className="min-w-0">{globalThemesPanel}</aside>
+            <div className="min-w-0 xl:border-l xl:border-stone-200 xl:pl-5">
+              <div className="border-b border-stone-200 pb-5">
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
                   <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Unbekannter Absender</p>
-                  <h2 className="mt-1 text-xl text-slate-950">
+                    <h2 className="mt-1 break-words text-xl text-slate-950">
                     {cleanText(selectedGlobalTheme.latestInbound?.data.fromName) ||
                       cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail) ||
                       'Neue E-Mail'}
                   </h2>
-                  <p className="mt-1 text-sm text-slate-600">{cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail)}</p>
+                    <p className="mt-1 break-all text-sm text-slate-600">{cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail)}</p>
+                  </div>
+                  <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-medium text-slate-600">
+                    {selectedGlobalTheme.records.length} Nachrichten
+                  </span>
                 </div>
-                <button
-                  className="rounded-full bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] px-4 py-2 text-sm font-medium text-stone-100 transition hover:brightness-105"
-                  onClick={() => {
-                    const email = cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail);
-                    router.push(`/admin/personen?email=${encodeURIComponent(email)}&fromMessageId=${encodeURIComponent(selectedGlobalTheme.latestEntry.id)}`);
-                  }}
-                  type="button"
-                >
-                  Dienstleister neu anlegen
-                </button>
+                <div className="mt-5 grid min-w-0 gap-3 lg:grid-cols-3">
+                  <div className="min-w-0 rounded-[18px] border border-stone-200 bg-stone-50 p-4">
+                    <p className="text-sm font-semibold text-slate-950">Antworten</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Schreibt direkt an die Absenderadresse, ohne sie vorher anzulegen.
+                    </p>
+                    <button
+                      className="mt-4 w-full rounded-full bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] px-4 py-2 text-sm font-medium text-stone-100 transition hover:brightness-105"
+                      onClick={() => startUnknownSenderReply(selectedGlobalTheme)}
+                      type="button"
+                    >
+                      Antworten
+                    </button>
+                  </div>
+                  <div className="min-w-0 rounded-[18px] border border-stone-200 bg-stone-50 p-4">
+                    <p className="text-sm font-semibold text-slate-950">Mieter zuordnen</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Danach erscheint der Verlauf auf der normalen Mieterseite.
+                    </p>
+                    <select
+                      className="mt-3 w-full min-w-0 rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                      onChange={(event) => setUnknownAssignTenantId(event.target.value)}
+                      value={unknownAssignTenantId}
+                    >
+                      <option value="">Mieter auswählen</option>
+                      {unknownAssignTenantOptions.map((tenant) => (
+                        <option key={`unknown-tenant-${tenant.value}`} value={tenant.value}>
+                          {tenant.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="mt-3 w-full rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!unknownAssignTenant || isPending}
+                      onClick={() => assignUnknownThemeToTenant(selectedGlobalTheme, unknownAssignTenantId)}
+                      type="button"
+                    >
+                      Zuordnen
+                    </button>
+                  </div>
+                  <div className="min-w-0 rounded-[18px] border border-stone-200 bg-stone-50 p-4">
+                    <p className="text-sm font-semibold text-slate-950">Dienstleister anlegen</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Öffnet den Kontaktbereich mit dieser E-Mail als Vorlage.
+                    </p>
+                    <button
+                      className="mt-4 w-full rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
+                      onClick={() => {
+                        const email = cleanText(selectedGlobalTheme.latestInbound?.data.fromEmail);
+                        router.push(`/admin/personen?email=${encodeURIComponent(email)}&fromMessageId=${encodeURIComponent(selectedGlobalTheme.latestEntry.id)}`);
+                      }}
+                      type="button"
+                    >
+                      Neu anlegen
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="divide-y divide-stone-200 border-b border-stone-200">
                 {selectedGlobalTheme.records
@@ -1762,7 +1926,7 @@ export default function MessagesWorkspace() {
         : null;
 
     return (
-      <div>
+      <div className="min-w-0">
         {unknownSenderPanel ? (
           unknownSenderPanel
         ) : selectedGlobalTheme && selectedGlobalTenant ? (
@@ -1782,7 +1946,7 @@ export default function MessagesWorkspace() {
             tenantId={selectedGlobalTenant.id}
           />
         ) : (
-          <section className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
+          <section className="min-w-0 rounded-[24px] border border-stone-200 bg-white p-4 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)] sm:p-6">
             {globalThemesPanel}
           </section>
         )}
@@ -1800,15 +1964,15 @@ export default function MessagesWorkspace() {
     ];
 
     return (
-      <div>
-        <section className="rounded-[28px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
+      <div className="min-w-0">
+        <section className="min-w-0 rounded-[24px] border border-stone-200 bg-white p-4 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <SectionLabel>Mail senden</SectionLabel>
               <h2 className="mt-2 text-xl text-slate-950">Neue Nachricht</h2>
             </div>
-            <div className="flex min-w-[520px] flex-wrap items-end justify-end gap-3">
-              <label className="block min-w-[180px]">
+            <div className="flex min-w-0 flex-wrap items-end justify-start gap-3 sm:justify-end lg:min-w-[520px]">
+              <label className="block min-w-0 flex-1 sm:min-w-[180px]">
                 <p className="text-right text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">
                   Versand
                 </p>
@@ -1822,7 +1986,7 @@ export default function MessagesWorkspace() {
                   <option value="both">Beides</option>
                 </select>
               </label>
-              <label className="block min-w-[260px]">
+              <label className="block min-w-0 flex-1 sm:min-w-[260px]">
                 <p className="text-right text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">
                   Empfänger
                 </p>
@@ -1841,7 +2005,7 @@ export default function MessagesWorkspace() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-6 grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {composeScope === 'manual' ? (
               <>
                 <label className="block">
@@ -2157,7 +2321,7 @@ export default function MessagesWorkspace() {
   }
 
   return (
-    <div className="space-y-3 pt-1">
+    <div className="min-w-0 space-y-3 pt-1">
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
           <span>Ansicht</span>

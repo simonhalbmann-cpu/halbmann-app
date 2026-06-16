@@ -25,6 +25,16 @@ type ReminderItem = {
 };
 
 type RentFilterScope = 'all' | 'companies' | 'properties' | 'tenants';
+type DashboardReminderFilter = 'dueSoon' | 'rentIncrease';
+type DashboardThemeFilter = 'new' | 'open';
+type DashboardInventoryFilter = 'activeTenants' | 'companies' | 'properties' | 'vacancy';
+
+type InventoryItem = {
+  href: string;
+  id: string;
+  label: string;
+  meta: string;
+};
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -186,6 +196,20 @@ function getRentIncreaseTypeLabel(value: unknown) {
   }
 }
 
+function isRentIncreaseReminder(entry: ReminderItem) {
+  const meta = entry.meta.toLowerCase();
+  return (
+    entry.type === 'tenant' &&
+    (meta.includes('mieterhöhung') ||
+      meta.includes('mieterhÃ¶hung') ||
+      meta.includes('mieterhoehung') ||
+      meta.includes('staffelmiete') ||
+      meta.includes('mietprüfung') ||
+      meta.includes('mietprÃ¼fung') ||
+      meta.includes('mietpruefung'))
+  );
+}
+
 function EmptyList({ text }: { text: string }) {
   return (
     <div className="rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-5 text-sm text-slate-500">
@@ -239,6 +263,17 @@ function DashboardFilterButtons({
   );
 }
 
+function buildUnitLabel(unit: DocumentData) {
+  return (
+    cleanText(unit.unitLabel) ||
+    [cleanText(unit.floor), cleanText(unit.unitPosition), cleanText(unit.section)]
+      .filter(Boolean)
+      .join(' · ') ||
+    cleanText(unit.id) ||
+    'Einheit'
+  );
+}
+
 export default function AdminDashboardOverview() {
   const { user } = useAuth();
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
@@ -250,6 +285,14 @@ export default function AdminDashboardOverview() {
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
   const [loadError, setLoadError] = useState('');
   const [rentFilterScope, setRentFilterScope] = useState<RentFilterScope>('all');
+  const [dashboardReminderFilter, setDashboardReminderFilter] =
+    useState<DashboardReminderFilter>('dueSoon');
+  const [dashboardThemeFilter, setDashboardThemeFilter] = useState<DashboardThemeFilter>('open');
+  const [dashboardInventoryFilter, setDashboardInventoryFilter] =
+    useState<DashboardInventoryFilter>('companies');
+  const [showAllInventory, setShowAllInventory] = useState(false);
+  const [showAllReminders, setShowAllReminders] = useState(false);
+  const [showAllThemes, setShowAllThemes] = useState(false);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
@@ -607,6 +650,11 @@ export default function AdminDashboardOverview() {
     [reminders, today]
   );
 
+  const dueSoonGeneralReminders = useMemo(
+    () => dueSoonReminders.filter((entry) => !isRentIncreaseReminder(entry)),
+    [dueSoonReminders]
+  );
+
   const vacancyCount = useMemo(
     () =>
       properties.reduce((total, property) => {
@@ -624,13 +672,87 @@ export default function AdminDashboardOverview() {
     [activeTenantsByUnit, properties]
   );
 
-  const latestOpenThemes = useMemo(() => openThemes.slice(0, 6), [openThemes]);
-  const topReminders = useMemo(() => dueSoonReminders.slice(0, 8), [dueSoonReminders]);
+  const visibleDashboardThemes = useMemo(
+    () => (dashboardThemeFilter === 'new' ? newThemes : openThemes),
+    [dashboardThemeFilter, newThemes, openThemes]
+  );
+
+  const displayedDashboardThemes = useMemo(
+    () => (showAllThemes ? visibleDashboardThemes : visibleDashboardThemes.slice(0, 3)),
+    [showAllThemes, visibleDashboardThemes]
+  );
 
   const activeRentTenants = useMemo(
     () => tenants.filter((tenant) => cleanText(tenant.data.status) === 'active'),
     [tenants]
   );
+
+  const inventoryLists = useMemo(() => {
+    const propertyById = new Map(properties.map((property) => [property.id, property]));
+    const companyItems = companies
+      .map((company) => ({
+        href: `/admin/firma/${company.id}`,
+        id: company.id,
+        label: cleanText(company.data.name) || company.id,
+        meta: cleanText(company.data.email) || 'Firma',
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label, 'de'));
+    const propertyItems = properties
+      .map((property) => {
+        const units = Array.isArray(property.data.units) ? property.data.units.length : 0;
+        return {
+          href: `/admin/immobilie/${property.id}`,
+          id: property.id,
+          label: buildPropertyLabel(property),
+          meta: units === 1 ? '1 Einheit' : `${units} Einheiten`,
+        };
+      })
+      .sort((left, right) => left.label.localeCompare(right.label, 'de'));
+    const activeTenantItems = activeRentTenants
+      .map((tenant) => {
+        const property = propertyById.get(cleanText(tenant.data.propertyId));
+        return {
+          href: `/admin/mieter/${tenant.id}`,
+          id: tenant.id,
+          label: buildTenantLabel(tenant),
+          meta: [
+            property ? buildPropertyLabel(property) : '',
+            cleanText(tenant.data.unitLabel),
+          ]
+            .filter(Boolean)
+            .join(' · ') || 'Aktiver Mieter',
+        };
+      })
+      .sort((left, right) => left.label.localeCompare(right.label, 'de'));
+    const vacancyItems = properties.flatMap((property) => {
+      const units = Array.isArray(property.data.units) ? property.data.units : [];
+      return units.reduce<InventoryItem[]>((result, entry) => {
+        if (!entry || typeof entry !== 'object') return result;
+        const unit = entry as DocumentData;
+        const unitId = cleanText(unit.id);
+        if (!unitId || activeTenantsByUnit.has(`${property.id}::${unitId}`)) return result;
+        result.push({
+          href: `/admin/einheit/${property.id}/${unitId}`,
+          id: `${property.id}-${unitId}`,
+          label: buildUnitLabel(unit),
+          meta: buildPropertyLabel(property),
+        });
+        return result;
+      }, []);
+    });
+
+    return {
+      activeTenants: activeTenantItems,
+      companies: companyItems,
+      properties: propertyItems,
+      vacancy: vacancyItems,
+    } satisfies Record<DashboardInventoryFilter, InventoryItem[]>;
+  }, [activeRentTenants, activeTenantsByUnit, companies, properties]);
+
+  const visibleInventoryItems = inventoryLists[dashboardInventoryFilter];
+  const displayedInventoryItems = showAllInventory
+    ? visibleInventoryItems
+    : visibleInventoryItems.slice(0, 3);
 
   const currentColdRentTotal = useMemo(
     () => activeRentTenants.reduce((total, tenant) => total + parseMoney(tenant.data.coldRent), 0),
@@ -638,15 +760,37 @@ export default function AdminDashboardOverview() {
   );
 
   const rentIncreaseReminders = useMemo(
-    () =>
-      reminders.filter(
-        (entry) =>
-          entry.type === 'tenant' &&
-          (entry.meta.toLowerCase().includes('mieterhöhung') ||
-            entry.meta.toLowerCase().includes('staffelmiete') ||
-            entry.meta.toLowerCase().includes('mietprüfung'))
-      ),
+    () => reminders.filter(isRentIncreaseReminder),
     [reminders]
+  );
+
+  const activeRentIncreaseReminders = useMemo(
+    () => dueSoonReminders.filter(isRentIncreaseReminder),
+    [dueSoonReminders]
+  );
+
+  const visibleDashboardReminders = useMemo(
+    () =>
+      dashboardReminderFilter === 'rentIncrease'
+        ? showAllReminders
+          ? rentIncreaseReminders
+          : activeRentIncreaseReminders
+        : dueSoonGeneralReminders,
+    [
+      activeRentIncreaseReminders,
+      dashboardReminderFilter,
+      dueSoonGeneralReminders,
+      rentIncreaseReminders,
+      showAllReminders,
+    ]
+  );
+
+  const displayedDashboardReminders = useMemo(
+    () =>
+      dashboardReminderFilter === 'rentIncrease' || showAllReminders
+        ? visibleDashboardReminders
+        : visibleDashboardReminders.slice(0, 3),
+    [dashboardReminderFilter, showAllReminders, visibleDashboardReminders]
   );
 
   const filteredTenantsForChart = useMemo(() => {
@@ -772,73 +916,226 @@ export default function AdminDashboardOverview() {
     }
   }
 
+  function focusDashboardSection(
+    sectionId: 'dashboard-inventory' | 'dashboard-reminders' | 'dashboard-themes',
+    options: {
+      inventoryFilter?: DashboardInventoryFilter;
+      reminderFilter?: DashboardReminderFilter;
+      themeFilter?: DashboardThemeFilter;
+    }
+  ) {
+    if (options.themeFilter) {
+      setDashboardThemeFilter(options.themeFilter);
+      setShowAllThemes(true);
+    }
+    if (options.reminderFilter) {
+      setDashboardReminderFilter(options.reminderFilter);
+      setShowAllReminders(false);
+    }
+    if (options.inventoryFilter) {
+      setDashboardInventoryFilter(options.inventoryFilter);
+      setShowAllInventory(true);
+    }
+
+    window.requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {loadError ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {loadError}
         </div>
       ) : null}
 
-      <section className="rounded-[28px] border border-stone-200 bg-white px-6 py-6 shadow-[0_24px_70px_-56px_rgba(15,23,42,0.38)]">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.26em] text-amber-700/80">
-              Dashboard
-            </p>
-            <h2 className="mt-3 font-serif text-4xl leading-tight text-slate-950">
-              Heute relevant
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-              Weniger Anzeigen, mehr Orientierung: offene Vorgänge, fällige Termine,
-              Bestand und Miete auf einen Blick.
-            </p>
-          </div>
+      <section className="min-w-0 rounded-[24px] border border-stone-200 bg-white p-4 shadow-[0_24px_70px_-56px_rgba(15,23,42,0.38)] sm:p-6">
+        <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
+          Heute relevant
+        </p>
 
-          <div className="grid gap-px overflow-hidden rounded-[22px] border border-stone-200 bg-stone-200 sm:grid-cols-4 xl:min-w-[680px]">
-            {[
-              { href: '/admin/nachrichten', label: 'Offen', value: openThemes.length },
-              { href: '/admin/nachrichten', label: 'Neu', value: newThemes.length },
-              { href: '/admin/mieter', label: 'Fristen', value: dueSoonReminders.length },
-              { href: '/admin/mieter', label: 'Mieterhöhung', value: rentIncreaseReminders.length },
-            ].map((item) => (
-              <Link className="bg-white px-5 py-4 transition hover:bg-stone-50" href={item.href} key={item.label}>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-                  {item.label}
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-slate-950">{item.value}</p>
-              </Link>
-            ))}
-          </div>
+        <div className="mt-4 grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-[20px] border border-stone-200 bg-stone-200 lg:grid-cols-4">
+          {[
+            {
+              active: dashboardThemeFilter === 'open',
+              label: 'Offen',
+              onClick: () => focusDashboardSection('dashboard-themes', { themeFilter: 'open' }),
+              value: openThemes.length,
+            },
+            {
+              active: dashboardThemeFilter === 'new',
+              label: 'Neu',
+              onClick: () => focusDashboardSection('dashboard-themes', { themeFilter: 'new' }),
+              value: newThemes.length,
+            },
+            {
+              active: dashboardReminderFilter === 'dueSoon',
+              label: 'Fristen',
+              onClick: () =>
+                focusDashboardSection('dashboard-reminders', { reminderFilter: 'dueSoon' }),
+              value: dueSoonGeneralReminders.length,
+            },
+            {
+              active: dashboardReminderFilter === 'rentIncrease',
+              label: 'Mieterhoehung',
+              onClick: () =>
+                focusDashboardSection('dashboard-reminders', { reminderFilter: 'rentIncrease' }),
+              value: activeRentIncreaseReminders.length,
+            },
+          ].map((item) => (
+            <button
+              className={`min-w-0 bg-white px-3 py-4 text-left transition hover:bg-stone-50 sm:px-5 ${
+                item.active ? 'shadow-[inset_0_0_0_2px_rgba(15,23,42,0.18)]' : ''
+              }`}
+              key={item.label}
+              onClick={item.onClick}
+              type="button"
+            >
+              <p className="break-words text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500 sm:text-[11px] sm:tracking-[0.18em]">
+                {item.label}
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950 sm:text-3xl">{item.value}</p>
+            </button>
+          ))}
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.85fr)]">
-        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+      <section
+        className="min-w-0 scroll-mt-24 rounded-[24px] border border-stone-200 bg-white p-4 sm:p-6"
+        id="dashboard-inventory"
+      >
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
+            Bestand
+          </p>
+          {visibleInventoryItems.length > 3 ? (
+            <button
+              className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
+              onClick={() => setShowAllInventory((current) => !current)}
+              type="button"
+            >
+              {showAllInventory ? 'Weniger ^' : 'Alle >'}
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-[20px] border border-stone-200 bg-stone-200 lg:grid-cols-4">
+          {[
+            {
+              active: dashboardInventoryFilter === 'companies',
+              filter: 'companies' as const,
+              label: 'Firmen',
+              value: companies.length,
+            },
+            {
+              active: dashboardInventoryFilter === 'properties',
+              filter: 'properties' as const,
+              label: 'Immobilien',
+              value: properties.length,
+            },
+            {
+              active: dashboardInventoryFilter === 'activeTenants',
+              filter: 'activeTenants' as const,
+              label: 'Aktive Mieter',
+              value: activeRentTenants.length,
+            },
+            {
+              active: dashboardInventoryFilter === 'vacancy',
+              filter: 'vacancy' as const,
+              label: 'Leerstand',
+              value: vacancyCount,
+            },
+          ].map((item) => (
+            <button
+              className={`min-w-0 bg-white px-3 py-4 text-left transition hover:bg-stone-50 sm:px-5 ${
+                item.active ? 'shadow-[inset_0_0_0_2px_rgba(15,23,42,0.18)]' : ''
+              }`}
+              key={item.label}
+              onClick={() =>
+                focusDashboardSection('dashboard-inventory', { inventoryFilter: item.filter })
+              }
+              type="button"
+            >
+              <p className="break-words text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500 sm:text-[11px] sm:tracking-[0.18em]">
+                {item.label}
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950 sm:text-3xl">{item.value}</p>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-5 divide-y divide-stone-200 border-y border-stone-200">
+          {displayedInventoryItems.length === 0 ? (
+            <div className="py-5">
+              <EmptyList text="Keine Einträge vorhanden." />
+            </div>
+          ) : (
+            displayedInventoryItems.map((item) => (
+              <Link
+                className="grid min-w-0 gap-1 px-1 py-4 transition hover:bg-stone-50/80 sm:grid-cols-[minmax(0,1fr)_minmax(120px,0.45fr)]"
+                href={item.href}
+                key={item.id}
+              >
+                <p className="truncate text-sm font-semibold text-slate-950">{item.label}</p>
+                <p className="truncate text-xs text-slate-500 sm:text-right">{item.meta}</p>
+              </Link>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.85fr)]">
+        <div
+          className="min-w-0 scroll-mt-24 rounded-[24px] border border-stone-200 bg-white p-4 sm:p-6"
+          id="dashboard-themes"
+        >
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
                 Vorgänge
               </p>
-              <h3 className="mt-2 font-serif text-3xl text-slate-950">Was Aufmerksamkeit braucht</h3>
+              <h3 className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">
+                {dashboardThemeFilter === 'new' ? 'Neue Vorgänge' : 'Offene Vorgänge'}
+              </h3>
             </div>
-            <Link
-              className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
-              href="/admin/nachrichten"
-            >
-              Nachrichten
-            </Link>
+            <div className="flex items-center gap-2">
+              {visibleDashboardThemes.length > 3 ? (
+                <button
+                  className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
+                  onClick={() => setShowAllThemes((current) => !current)}
+                  type="button"
+                >
+                  {showAllThemes ? 'Weniger ^' : 'Alle >'}
+                </button>
+              ) : null}
+              <Link
+                className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
+                href="/admin/nachrichten"
+              >
+                Nachrichten
+              </Link>
+            </div>
           </div>
 
           <div className="mt-5 divide-y divide-stone-200 border-y border-stone-200">
-            {latestOpenThemes.length === 0 ? (
+            {visibleDashboardThemes.length === 0 ? (
               <div className="py-5">
-                <EmptyList text="Keine offenen Themen vorhanden." />
+                <EmptyList
+                  text={
+                    dashboardThemeFilter === 'new'
+                      ? 'Keine neuen Vorgänge vorhanden.'
+                      : 'Keine offenen Vorgänge vorhanden.'
+                  }
+                />
               </div>
             ) : (
-              latestOpenThemes.map((theme) => (
+              displayedDashboardThemes.map((theme) => (
                 <Link
-                  className="grid gap-3 px-1 py-4 transition hover:bg-stone-50/80 md:grid-cols-[minmax(0,1fr)_190px_130px]"
+                  className="grid min-w-0 gap-3 px-1 py-4 transition hover:bg-stone-50/80 md:grid-cols-[minmax(0,1fr)_190px_130px]"
                   href={buildDashboardMessageHref(theme.latestInbound ?? theme.latestEntry)}
                   key={`${theme.tenantId || 'unknown'}-${theme.id}-${theme.latestEntry.id}`}
                 >
@@ -882,21 +1179,47 @@ export default function AdminDashboardOverview() {
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
-          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-emerald-700/80">
-            Termine
-          </p>
-          <h3 className="mt-2 font-serif text-3xl text-slate-950">Nächste Fristen</h3>
+        <div
+          className="min-w-0 scroll-mt-24 rounded-[24px] border border-stone-200 bg-white p-4 sm:p-6"
+          id="dashboard-reminders"
+        >
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-emerald-700/80">
+                Termine
+              </p>
+              <h3 className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">
+                {dashboardReminderFilter === 'rentIncrease' ? 'Mieterhoehungen' : 'Naechste Fristen'}
+              </h3>
+            </div>
+            {(dashboardReminderFilter === 'rentIncrease'
+              ? rentIncreaseReminders.length > activeRentIncreaseReminders.length
+              : visibleDashboardReminders.length > 3) ? (
+              <button
+                className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
+                onClick={() => setShowAllReminders((current) => !current)}
+                type="button"
+              >
+                {showAllReminders ? 'Weniger ^' : 'Alle >'}
+              </button>
+            ) : null}
+          </div>
 
           <div className="mt-5 divide-y divide-stone-200 border-y border-stone-200">
-            {topReminders.length === 0 ? (
+            {visibleDashboardReminders.length === 0 ? (
               <div className="py-5">
-                <EmptyList text="Aktuell keine Wiedervorlagen in den nächsten 14 Tagen." />
+                <EmptyList
+                  text={
+                    dashboardReminderFilter === 'rentIncrease'
+                      ? 'Aktuell keine Mieterhöhungen vorgemerkt.'
+                      : 'Aktuell keine Wiedervorlagen in den nächsten 14 Tagen.'
+                  }
+                />
               </div>
             ) : (
-              topReminders.map((entry) => (
+              displayedDashboardReminders.map((entry) => (
                 <Link
-                  className="flex items-start justify-between gap-4 px-1 py-4 transition hover:bg-stone-50/80"
+                  className="grid min-w-0 gap-2 px-1 py-4 transition hover:bg-stone-50/80 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
                   href={entry.href}
                   key={`${entry.id}-${entry.href}-${entry.dateValue}`}
                 >
@@ -904,7 +1227,7 @@ export default function AdminDashboardOverview() {
                     <p className="truncate text-sm font-semibold text-slate-950">{entry.label}</p>
                     <p className="mt-1 truncate text-xs text-slate-500">{entry.meta}</p>
                   </div>
-                  <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                  <span className="w-fit rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 sm:justify-self-end">
                     {formatDateOnly(entry.dateValue)}
                   </span>
                 </Link>
@@ -914,52 +1237,20 @@ export default function AdminDashboardOverview() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(360px,0.75fr)_minmax(0,1.25fr)]">
-        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
-          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
-            Bestand
-          </p>
-          <h3 className="mt-2 font-serif text-3xl text-slate-950">Kompakt</h3>
-
-          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-[22px] border border-stone-200 bg-stone-200">
-            {[
-              { href: '/admin/firma', label: 'Firmen', value: companies.length },
-              { href: '/admin/immobilie', label: 'Immobilien', value: properties.length },
-              { href: '/admin/mieter', label: 'Aktive Mieter', value: activeRentTenants.length },
-              { href: '/admin/immobilie', label: 'Leerstand', value: vacancyCount },
-            ].map((item) => (
-              <Link className="bg-white px-4 py-4 transition hover:bg-stone-50" href={item.href} key={item.label}>
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
-                  {item.label}
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-slate-950">{item.value}</p>
-              </Link>
-            ))}
-          </div>
-
-          <div className="mt-5 border-t border-stone-200 pt-5">
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-              Aktuelle Kaltmiete
-            </p>
-            <p className="mt-2 text-3xl font-semibold text-slate-950">
-              {formatMoney(currentColdRentTotal)}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-[28px] border border-stone-200 bg-white p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
+      <section className="min-w-0">
+        <div className="min-w-0 rounded-[24px] border border-stone-200 bg-white p-4 sm:p-6">
+          <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
                 Kaltmiete
               </p>
-              <h3 className="mt-2 font-serif text-3xl text-slate-950">Verlauf und Erhöhungen</h3>
+              <h3 className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">Verlauf und Erhöhungen</h3>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
                 Die Kurve enthält gespeicherte Mietstände und geplante Staffeln, sofern sie beim
                 Mieter hinterlegt sind.
               </p>
             </div>
-            <label className="inline-flex max-w-[220px] items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+            <label className="inline-flex w-fit max-w-full items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700 lg:max-w-[220px]">
               <span>Filter</span>
               <select
                 className="bg-transparent text-xs text-slate-900 outline-none"
@@ -1012,7 +1303,7 @@ export default function AdminDashboardOverview() {
             ) : null}
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 min-w-0">
             <RentHistoryChart
               defaultMode="cold"
               emptyText="Für die gewählte Auswahl liegen noch keine Mietdaten vor."

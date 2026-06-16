@@ -143,6 +143,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const [noteText, setNoteText] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [unknownAssignTenantId, setUnknownAssignTenantId] = useState('');
   const [isGeneratingAiReply, setIsGeneratingAiReply] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -206,6 +207,33 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const selectedTenant = tenants.find((record) => record.id === cleanText(analysis?.tenantId)) ?? null;
   const selectedProperty =
     properties.find((record) => record.id === cleanText(analysis?.propertyId)) ?? null;
+  const unknownAssignTenant = tenants.find((tenant) => tenant.id === unknownAssignTenantId) ?? null;
+  const unknownAssignTenantOptions = useMemo(
+    () =>
+      [...tenants]
+        .sort((left, right) =>
+          (cleanText(left.data.lastName) || cleanText(left.data.companyName) || left.id).localeCompare(
+            cleanText(right.data.lastName) || cleanText(right.data.companyName) || right.id,
+            'de'
+          )
+        )
+        .map((tenant) => {
+          const property = properties.find((entry) => entry.id === cleanText(tenant.data.propertyId));
+          const tenantLabel =
+            [cleanText(tenant.data.lastName), cleanText(tenant.data.firstName)].filter(Boolean).join(', ') ||
+            cleanText(tenant.data.companyName) ||
+            cleanText(tenant.data.email) ||
+            tenant.id;
+          const detail = [cleanText(property?.data.name), cleanText(tenant.data.unitLabel), cleanText(tenant.data.email)]
+            .filter(Boolean)
+            .join(' · ');
+          return {
+            label: detail ? `${tenantLabel} · ${detail}` : tenantLabel,
+            value: tenant.id,
+          };
+        }),
+    [properties, tenants]
+  );
   const selectedCompany =
     companies.find((record) => record.id === cleanText(selectedProperty?.data.ownerId)) ??
     companies.find((record) => record.id === cleanText(selectedTenant?.data.companyId)) ??
@@ -296,6 +324,11 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       letterRecipientOptions.some((option) => option.key === current) ? current : defaultKey
     );
   }, [messageId, letterRecipientOptions]);
+
+  useEffect(() => {
+    setUnknownAssignTenantId('');
+  }, [messageId]);
+
   const thread = useMemo(
     () =>
       messages
@@ -496,7 +529,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           propertyId: cleanText(selectedProperty?.id),
           recipientEmail,
           recipientId: cleanText(selectedTenant?.id) || null,
-          recipientType: 'tenant',
+          recipientType: selectedTenant ? 'tenant' : 'email',
           signature,
           status: 'draft',
           subject,
@@ -637,6 +670,36 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     });
   }
 
+  function assignUnknownSenderToTenant() {
+    if (!selectedMessage || !unknownAssignTenant) return;
+
+    runAction(async () => {
+      const relatedMessageIds = thread
+        .filter((entry) => firestoreMessages.some((record) => record.id === entry.id))
+        .map((entry) => entry.id);
+      const targetMessageIds = relatedMessageIds.length ? relatedMessageIds : [selectedMessage.id];
+
+      await Promise.all(
+        targetMessageIds.map((targetMessageId) =>
+          updateDoc(doc(db, 'messages', targetMessageId), {
+            propertyId: cleanText(unknownAssignTenant.data.propertyId),
+            recipientId: unknownAssignTenant.id,
+            recipientType: 'tenant',
+            tenantId: unknownAssignTenant.id,
+            unitId: cleanText(unknownAssignTenant.data.unitId),
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email ?? null,
+            updatedByUid: user?.uid ?? null,
+          })
+        )
+      );
+
+      await addMessageEvent('assigned_tenant', 'Unbekannter Absender wurde einem Mieter zugeordnet.');
+      setMessage('Nachricht wurde dem Mieter zugeordnet.');
+      router.push(`/admin/mieter/${unknownAssignTenant.id}?messageId=${selectedMessage.id}`);
+    });
+  }
+
   async function deleteMessageAttachment(messageId: string, attachments: unknown, targetAttachment: MessageAttachmentEntry) {
     const confirmed = window.confirm(`Anhang "${targetAttachment.name}" wirklich löschen?`);
     if (!confirmed) return;
@@ -684,7 +747,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
 
   if (!selectedMessage || !analysis) {
     return (
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-6 overflow-x-hidden">
         <Link
           className="inline-flex rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
           href="/admin/nachrichten"
@@ -702,23 +765,27 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   }
 
   const currentStatus = cleanText(selectedMessage.data.status);
+  const isUnknownSender =
+    !cleanText(selectedMessage.data.tenantId) &&
+    !cleanText(selectedMessage.data.contactId) &&
+    Boolean(cleanText(selectedMessage.data.fromEmail));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-3">
+    <div className="min-w-0 space-y-6 overflow-x-hidden">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 space-y-3">
           <Link
             className="inline-flex rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
             href="/admin/nachrichten"
           >
             Zurück zum Posteingang
           </Link>
-          <div>
+          <div className="min-w-0">
             <SectionLabel>Nachricht</SectionLabel>
-            <h1 className="mt-2 text-3xl text-slate-950">
+            <h1 className="mt-2 break-words text-2xl text-slate-950 sm:text-3xl">
               {cleanText(selectedMessage.data.subject) || 'Ohne Betreff'}
             </h1>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 break-words text-sm text-slate-600">
               {cleanText(selectedMessage.data.fromName || selectedMessage.data.fromEmail) || 'Unbekannter Absender'} ·{' '}
               {formatDateTime(selectedMessage.data.receivedAt ?? selectedMessage.data.createdAt)}
             </p>
@@ -759,17 +826,72 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       </div>
 
 
-      <section className="space-y-5 rounded-[32px] border border-stone-200 bg-white p-6 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)]">
-        <div className="rounded-[26px] border border-stone-200 bg-stone-50 px-5 py-5">
+      <section className="min-w-0 space-y-5 overflow-x-hidden rounded-[24px] border border-stone-200 bg-white p-4 shadow-[0_28px_70px_-42px_rgba(148,119,77,0.28)] sm:rounded-[32px] sm:p-6">
+        <SectionLabel>Chatverlauf</SectionLabel>
+        <div className="max-h-[76vh] min-w-0 space-y-4 overflow-y-auto overflow-x-hidden pr-1">
+          {thread.map((entry) => {
+            const isOutbound = cleanText(entry.data.direction) === 'outbound';
+            const isLetter = cleanText(entry.data.channel) === 'letter';
+            const isPortalChat = cleanText(entry.data.channel) === 'portal';
+            const letterHtml = cleanText(entry.data.bodyHtml);
+            return (
+              <article
+                className={`min-w-0 rounded-[22px] border px-4 py-4 sm:rounded-[26px] sm:px-5 sm:py-5 ${
+                  isOutbound
+                    ? 'border-amber-200 bg-amber-50/80 sm:ml-10'
+                    : 'border-stone-200 bg-stone-50/90 sm:mr-10'
+                }`}
+                key={entry.id}
+              >
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-slate-950">
+                      {appendDeliveryLabel(isOutbound
+                        ? isLetter
+                          ? 'Ausgehender Brief'
+                          : isPortalChat
+                            ? 'Ausgehende Chatnachricht'
+                          : 'Ausgehende Nachricht'
+                        : cleanText(entry.data.fromName || entry.data.fromEmail) || 'Eingang', entry.data as Record<string, unknown>)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatDateTime(entry.data.receivedAt ?? entry.data.createdAt)}
+                    </p>
+                  </div>
+                  {entry.id === selectedMessage.id ? (
+                    <span className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+                      Aktuelle Nachricht
+                    </span>
+                  ) : null}
+                </div>
+                {isLetter && letterHtml ? (
+                  <div className="mt-4 max-w-full overflow-hidden rounded-[20px] border border-stone-200 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.25)]">
+                    <div className="max-w-full overflow-x-auto" dangerouslySetInnerHTML={{ __html: letterHtml }} />
+                  </div>
+                ) : (
+                  <div className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
+                    {cleanText(entry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
+                  </div>
+                )}
+                <MessageAttachmentPreview
+                  attachments={entry.data.attachments}
+                  onDelete={(attachment) => deleteMessageAttachment(entry.id, entry.data.attachments, attachment)}
+                />
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="min-w-0 overflow-x-hidden rounded-[22px] border border-stone-200 bg-stone-50 px-4 py-5 sm:rounded-[26px] sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <SectionLabel>Direkt antworten</SectionLabel>
             <ActionButton disabled={isGeneratingAiReply || isPending} onClick={generateAiReply}>
               {isGeneratingAiReply ? 'KI schreibt?' : 'KI-Entwurf'}
             </ActionButton>
           </div>
-          <label className="mt-4 block max-w-[460px]">
+          <label className="mt-4 block min-w-0 max-w-[460px]">
             <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">KI-Hinweis</p>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex min-w-0 flex-wrap gap-2">
               <ActionButton active={replyContextMode === 'reply'} onClick={() => setReplyContextMode('reply')}>
                 Antwort auf Verlauf
               </ActionButton>
@@ -800,7 +922,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
             className="mt-4 min-h-[320px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
             lang="de"
             onChange={(event) => setReplyText(event.target.value)}
-            placeholder="Antwort an den Mieter"
+            placeholder={isUnknownSender ? 'Antwort an den Absender' : 'Antwort an den Mieter'}
             spellCheck={false}
             value={replyText}
           />
@@ -812,8 +934,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
               onChange={setReplyAttachments}
             />
           ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+          <div className="mt-4 flex min-w-0 flex-wrap gap-2">
+            <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
               <span>Wiedervorlage</span>
               <input
                 className="bg-transparent text-xs text-slate-900 outline-none"
@@ -828,62 +950,58 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           </div>
         </div>
 
-        <SectionLabel>Chatverlauf</SectionLabel>
-        <div className="max-h-[76vh] space-y-4 overflow-y-auto pr-1">
-          {thread.map((entry) => {
-            const isOutbound = cleanText(entry.data.direction) === 'outbound';
-            const isLetter = cleanText(entry.data.channel) === 'letter';
-            const isPortalChat = cleanText(entry.data.channel) === 'portal';
-            const letterHtml = cleanText(entry.data.bodyHtml);
-            return (
-              <article
-                className={`rounded-[26px] border px-5 py-5 ${
-                  isOutbound
-                    ? 'ml-10 border-amber-200 bg-amber-50/80'
-                    : 'mr-10 border-stone-200 bg-stone-50/90'
-                }`}
-                key={entry.id}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">
-                      {appendDeliveryLabel(isOutbound
-                        ? isLetter
-                          ? 'Ausgehender Brief'
-                          : isPortalChat
-                            ? 'Ausgehende Chatnachricht'
-                          : 'Ausgehende Nachricht'
-                        : cleanText(entry.data.fromName || entry.data.fromEmail) || 'Eingang', entry.data as Record<string, unknown>)}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {formatDateTime(entry.data.receivedAt ?? entry.data.createdAt)}
-                    </p>
-                  </div>
-                  {entry.id === selectedMessage.id ? (
-                    <span className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs font-medium text-slate-700">
-                      Aktuelle Nachricht
-                    </span>
-                  ) : null}
+        {isUnknownSender ? (
+          <div className="min-w-0 overflow-x-hidden rounded-[22px] border border-stone-200 bg-white px-4 py-5 sm:rounded-[26px] sm:px-5">
+            <SectionLabel>Absender einordnen</SectionLabel>
+            <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
+              <div className="min-w-0 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+                <p className="text-sm font-semibold text-slate-950">Mieter zuordnen</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  Danach öffnet sich die normale Mieterseite mit diesem Nachrichtenverlauf.
+                </p>
+                <select
+                  className="mt-3 w-full min-w-0 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                  onChange={(event) => setUnknownAssignTenantId(event.target.value)}
+                  value={unknownAssignTenantId}
+                >
+                  <option value="">Mieter auswählen</option>
+                  {unknownAssignTenantOptions.map((tenant) => (
+                    <option key={`message-detail-tenant-${tenant.value}`} value={tenant.value}>
+                      {tenant.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-3">
+                  <ActionButton disabled={!unknownAssignTenant || isPending} onClick={assignUnknownSenderToTenant} tone="solid">
+                    Mieter zuordnen
+                  </ActionButton>
                 </div>
-                {isLetter && letterHtml ? (
-                  <div className="mt-4 overflow-hidden rounded-[20px] border border-stone-200 bg-white shadow-[0_18px_40px_-32px_rgba(15,23,42,0.25)]">
-                    <div dangerouslySetInnerHTML={{ __html: letterHtml }} />
-                  </div>
-                ) : (
-                  <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-800">
-                    {cleanText(entry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
-                  </div>
-                )}
-                <MessageAttachmentPreview
-                  attachments={entry.data.attachments}
-                  onDelete={(attachment) => deleteMessageAttachment(entry.id, entry.data.attachments, attachment)}
-                />
-              </article>
-            );
-          })}
-        </div>
+              </div>
+              <div className="min-w-0 rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+                <p className="text-sm font-semibold text-slate-950">Dienstleister anlegen</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  Legt einen neuen Kontakt mit dieser E-Mail als Ausgangspunkt an.
+                </p>
+                <div className="mt-3 break-all rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-slate-700">
+                  {cleanText(selectedMessage.data.fromEmail)}
+                </div>
+                <div className="mt-3">
+                  <ActionButton
+                    onClick={() =>
+                      router.push(
+                        `/admin/personen?email=${encodeURIComponent(cleanText(selectedMessage.data.fromEmail))}&fromMessageId=${encodeURIComponent(selectedMessage.id)}`
+                      )
+                    }
+                  >
+                    Dienstleister neu anlegen
+                  </ActionButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
-        <div className="rounded-[26px] border border-stone-200 bg-white px-5 py-5">
+        <div className="min-w-0 overflow-x-hidden rounded-[22px] border border-stone-200 bg-white px-4 py-5 sm:rounded-[26px] sm:px-5">
           <SectionLabel>Verlauf manuell ergänzen</SectionLabel>
           <textarea
             className="mt-4 min-h-[220px] w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
