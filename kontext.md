@@ -5,18 +5,18 @@
 
 ---
 
-## ÃƒÅ“berblick
+## ÃƒÆ’Ã…â€œberblick
 
 Wir bauen eine zentrale Plattform mit drei Bereichen:
 
-1. **Ãƒâ€“ffentliche Website**
-   SeriÃƒÂ¶se Family-Office-Darstellung mit Fokus auf Bestand, Haltung und Service.
+1. **ÃƒÆ’Ã¢â‚¬â€œffentliche Website**
+   SeriÃƒÆ’Ã‚Â¶se Family-Office-Darstellung mit Fokus auf Bestand, Haltung und Service.
 
 2. **Mieterportal**
-   GeschÃƒÂ¼tzter Bereich fÃƒÂ¼r Mieter, spÃƒÂ¤ter auch als App-OberflÃƒÂ¤che fÃƒÂ¼r iPhone und Android.
+   GeschÃƒÆ’Ã‚Â¼tzter Bereich fÃƒÆ’Ã‚Â¼r Mieter, spÃƒÆ’Ã‚Â¤ter auch als App-OberflÃƒÆ’Ã‚Â¤che fÃƒÆ’Ã‚Â¼r iPhone und Android.
 
 3. **Verwalterbereich**
-   Interner Bereich fÃƒÂ¼r Stammdaten, Zuordnungen und spÃƒÂ¤tere Verwaltungsprozesse.
+   Interner Bereich fÃƒÆ’Ã‚Â¼r Stammdaten, Zuordnungen und spÃƒÆ’Ã‚Â¤tere Verwaltungsprozesse.
 
 ---
 
@@ -30,16 +30,16 @@ Wir bauen eine zentrale Plattform mit drei Bereichen:
   - Firestore
   - Storage vorbereitet
 - **Lokale Entwicklung:** `npm run dev`
-- **QualitÃƒÂ¤tssicherung:** `npm run lint`
+- **QualitÃƒÆ’Ã‚Â¤tssicherung:** `npm run lint`
 
 Wichtige Vorgabe:
-- Vor Ãƒâ€žnderungen an Next.js-Code immer die passende Doku in `node_modules/next/dist/docs/` prÃƒÂ¼fen, weil diese Next.js-Version von ÃƒÂ¼blichen Annahmen abweichen kann.
+- Vor ÃƒÆ’Ã¢â‚¬Å¾nderungen an Next.js-Code immer die passende Doku in `node_modules/next/dist/docs/` prÃƒÆ’Ã‚Â¼fen, weil diese Next.js-Version von ÃƒÆ’Ã‚Â¼blichen Annahmen abweichen kann.
 
 ---
 
 ## Aktueller Produktstand
 
-### Ãƒâ€“ffentliche Website
+### ÃƒÆ’Ã¢â‚¬â€œffentliche Website
 
 - Startseite ist gestalterisch auf Halbmann Holding ausgerichtet
 - echtes Logo aus `public/halbmann-logo.png` eingebunden
@@ -51,8 +51,8 @@ Wichtige Vorgabe:
 
 ### Auth & Rollen
 
-- Login lÃƒÂ¤uft ÃƒÂ¼ber Firebase Auth
-- Rollen werden ÃƒÂ¼ber Firestore in `userProfiles/{uid}` gepflegt
+- Login lÃƒÆ’Ã‚Â¤uft ÃƒÆ’Ã‚Â¼ber Firebase Auth
+- Rollen werden ÃƒÆ’Ã‚Â¼ber Firestore in `userProfiles/{uid}` gepflegt
 - aktuell relevante Rollen:
   - `admin`
   - `tenant`
@@ -63,51 +63,51 @@ Wichtige Vorgabe:
 
 - Admin-Dashboard vorhanden
 - Navigation im Verwalterbereich vorhanden
-- `HinzufÃƒÂ¼gen` im linken MenÃƒÂ¼ ist jetzt als aufklappbares Dropdown aufgebaut
-- ÃƒÅ“ber `HinzufÃƒÂ¼gen` gibt es links jetzt zusÃƒÂ¤tzlich einen Bestands-Reiter mit Hierarchie:
+- `HinzufÃƒÆ’Ã‚Â¼gen` im linken MenÃƒÆ’Ã‚Â¼ ist jetzt als aufklappbares Dropdown aufgebaut
+- ÃƒÆ’Ã…â€œber `HinzufÃƒÆ’Ã‚Â¼gen` gibt es links jetzt zusÃƒÆ’Ã‚Â¤tzlich einen Bestands-Reiter mit Hierarchie:
   - Firma
-  - zugehÃƒÂ¶rige Objekte
-  - zugehÃƒÂ¶rige Einheiten
+  - zugehÃƒÆ’Ã‚Â¶rige Objekte
+  - zugehÃƒÆ’Ã‚Â¶rige Einheiten
   - aktueller Mieter plus letzte Mieter chronologisch darunter
-- ÃƒÅ“ber dem Dashboard gibt es links jetzt ein globales Suchfeld fÃƒÂ¼r Firma, Objekt, Einheit und Mieter
-- Ein Klick im Bestandsbaum ÃƒÂ¶ffnet jetzt zusÃƒÂ¤tzlich direkt die passende Ansicht:
-  - Firma ÃƒÂ¶ffnet Firmenansicht
-  - Objekt ÃƒÂ¶ffnet Immobilienansicht
-  - Einheit ÃƒÂ¶ffnet die Immobilie mit Fokus auf die gewÃƒÂ¤hlte Einheit
-  - aktueller oder frÃƒÂ¼herer Mieter ÃƒÂ¶ffnet die Mieteransicht
+- ÃƒÆ’Ã…â€œber dem Dashboard gibt es links jetzt ein globales Suchfeld fÃƒÆ’Ã‚Â¼r Firma, Objekt, Einheit und Mieter
+- Ein Klick im Bestandsbaum ÃƒÆ’Ã‚Â¶ffnet jetzt zusÃƒÆ’Ã‚Â¤tzlich direkt die passende Ansicht:
+  - Firma ÃƒÆ’Ã‚Â¶ffnet Firmenansicht
+  - Objekt ÃƒÆ’Ã‚Â¶ffnet Immobilienansicht
+  - Einheit ÃƒÆ’Ã‚Â¶ffnet die Immobilie mit Fokus auf die gewÃƒÆ’Ã‚Â¤hlte Einheit
+  - aktueller oder frÃƒÆ’Ã‚Â¼herer Mieter ÃƒÆ’Ã‚Â¶ffnet die Mieteransicht
 - Bereiche zum Anlegen von:
   - Mieter
   - Dritte & Dienstleister
   - Immobilien
   - Firmen
 - Formulare arbeiten bereits mit Beziehungen per Dropdown statt Freitext
-- Formulare fÃƒÂ¼r Firmen, Personen und Immobilien wurden deutlich erweitert
-- Uploadbereiche sind strukturell vorbereitet, speichern aktuell aber zunÃƒÂ¤chst Dateinamen statt echter Storage-Dateien
-- Firmenformular enthÃƒÂ¤lt jetzt auch eine Steuerberater-Zuordnung per Dropdown
-- Firmenbereich hat jetzt eine echte ÃƒÅ“bersicht ÃƒÂ¼ber allen Firmen oberhalb des Anlegeformulars
-- In der FirmenÃƒÂ¼bersicht gibt es pro Firma die Aktionen:
+- Formulare fÃƒÆ’Ã‚Â¼r Firmen, Personen und Immobilien wurden deutlich erweitert
+- Uploadbereiche sind strukturell vorbereitet, speichern aktuell aber zunÃƒÆ’Ã‚Â¤chst Dateinamen statt echter Storage-Dateien
+- Firmenformular enthÃƒÆ’Ã‚Â¤lt jetzt auch eine Steuerberater-Zuordnung per Dropdown
+- Firmenbereich hat jetzt eine echte ÃƒÆ’Ã…â€œbersicht ÃƒÆ’Ã‚Â¼ber allen Firmen oberhalb des Anlegeformulars
+- In der FirmenÃƒÆ’Ã‚Â¼bersicht gibt es pro Firma die Aktionen:
   - `Ansehen`
   - `Bearbeiten`
-  - `LÃƒÂ¶schen`
-- Detailseite fÃƒÂ¼r Firmen unter `/admin/firma/[id]` vorhanden
-- Bearbeitungsseite fÃƒÂ¼r Firmen unter `/admin/firma/[id]/bearbeiten` vorhanden
-- Detailseite fÃƒÂ¼r Immobilien unter `/admin/immobilie/[id]` vorhanden
-- Detailseite fÃƒÂ¼r Mieter unter `/admin/mieter/[id]` vorhanden
-- FirmenÃƒÂ¼bersicht zeigt jetzt nur noch den Firmennamen mit den drei Aktionen
-- Admin-Formulare fÃƒÂ¼r Firmen, Personen und Immobilien arbeiten jetzt mit gemeinsamer Adresshilfe:
-  - StraÃƒÅ¸e wird separat von Hausnummer gefÃƒÂ¼hrt
+  - `LÃƒÆ’Ã‚Â¶schen`
+- Detailseite fÃƒÆ’Ã‚Â¼r Firmen unter `/admin/firma/[id]` vorhanden
+- Bearbeitungsseite fÃƒÆ’Ã‚Â¼r Firmen unter `/admin/firma/[id]/bearbeiten` vorhanden
+- Detailseite fÃƒÆ’Ã‚Â¼r Immobilien unter `/admin/immobilie/[id]` vorhanden
+- Detailseite fÃƒÆ’Ã‚Â¼r Mieter unter `/admin/mieter/[id]` vorhanden
+- FirmenÃƒÆ’Ã‚Â¼bersicht zeigt jetzt nur noch den Firmennamen mit den drei Aktionen
+- Admin-Formulare fÃƒÆ’Ã‚Â¼r Firmen, Personen und Immobilien arbeiten jetzt mit gemeinsamer Adresshilfe:
+  - StraÃƒÆ’Ã…Â¸e wird separat von Hausnummer gefÃƒÆ’Ã‚Â¼hrt
   - PLZ wird formatiert
-  - Ort und Land werden soweit mÃƒÂ¶glich aus vorhandenen Adressen ergÃƒÂ¤nzt
-- Admin-Felder formatieren Eingaben jetzt beim AusfÃƒÂ¼llen und beim Speichern stÃƒÂ¤rker automatisch
-- Admin-Formulare bremsen Browser-Credential-Autofill jetzt stÃƒÂ¤rker aus, damit Kontakt- oder Postfachfelder nicht als Login gespeichert werden
-- Personenbereich ist jetzt fachlich stÃƒÂ¤rker aufgeteilt in:
+  - Ort und Land werden soweit mÃƒÆ’Ã‚Â¶glich aus vorhandenen Adressen ergÃƒÆ’Ã‚Â¤nzt
+- Admin-Felder formatieren Eingaben jetzt beim AusfÃƒÆ’Ã‚Â¼llen und beim Speichern stÃƒÆ’Ã‚Â¤rker automatisch
+- Admin-Formulare bremsen Browser-Credential-Autofill jetzt stÃƒÆ’Ã‚Â¤rker aus, damit Kontakt- oder Postfachfelder nicht als Login gespeichert werden
+- Personenbereich ist jetzt fachlich stÃƒÆ’Ã‚Â¤rker aufgeteilt in:
   - Mieter separat
   - externe Partner / Handwerker / Dienstleister
-- Im Bereich `Dritte & Dienstleister` sind die auswÃƒÂ¤hlbaren Rollen jetzt deutlich konkreter:
+- Im Bereich `Dritte & Dienstleister` sind die auswÃƒÆ’Ã‚Â¤hlbaren Rollen jetzt deutlich konkreter:
   - Elektriker
-  - SanitÃƒÂ¤r / Rohrreinigung
+  - SanitÃƒÆ’Ã‚Â¤r / Rohrreinigung
   - Heizungsdienst
-  - MÃƒÂ¼llabfuhrunternehmen
+  - MÃƒÆ’Ã‚Â¼llabfuhrunternehmen
   - Abrechnungsunternehmen
   - Winterdienst
   - Reinigungsdienst
@@ -115,57 +115,57 @@ Wichtige Vorgabe:
   - Regenrinnenreinigung
   - sowie allgemeine externe Kontakte
 - Bei `Dritte & Dienstleister` wurde der Dokumentbereich auf einen einzigen Upload `Dokumente` reduziert
-- Das zusÃƒÂ¤tzliche Feld `Adresse intelligent ÃƒÂ¼bernehmen` wurde wieder entfernt
-- ÃƒÅ“bersichten in Mieter, Dritte & Dienstleister, Immobilien und Firmen sind jetzt kompakter und einheitlicher aufgebaut
-- Verwalterbereich gestalterisch an Startseite angenÃƒÂ¤hert
+- Das zusÃƒÆ’Ã‚Â¤tzliche Feld `Adresse intelligent ÃƒÆ’Ã‚Â¼bernehmen` wurde wieder entfernt
+- ÃƒÆ’Ã…â€œbersichten in Mieter, Dritte & Dienstleister, Immobilien und Firmen sind jetzt kompakter und einheitlicher aufgebaut
+- Verwalterbereich gestalterisch an Startseite angenÃƒÆ’Ã‚Â¤hert
 - Dashboard grob neu ausgerichtet auf:
   - neueste Mieterkommunikation
   - Tickets
   - Leerstand an Einheiten
-  - Online-Status und spÃƒÂ¤tere Historie von Mietern
+  - Online-Status und spÃƒÆ’Ã‚Â¤tere Historie von Mietern
 - Immobilienverwaltung hat jetzt eine eigene, intelligentere Admin-Komponente statt der generischen Formularschablone
 - Interne Objektnummern werden dort automatisch fortlaufend vergeben
-- EigentÃƒÂ¼mer werden ÃƒÂ¼ber ein einziges Feld aus `companies` gewÃƒÂ¤hlt
+- EigentÃƒÆ’Ã‚Â¼mer werden ÃƒÆ’Ã‚Â¼ber ein einziges Feld aus `companies` gewÃƒÆ’Ã‚Â¤hlt
 - `Verwalter` erscheint nur bei `Teileigentum`
 - Einheiten werden direkt im Objekt gepflegt:
-  - Lage / GebÃƒÂ¤udeteil
+  - Lage / GebÃƒÆ’Ã‚Â¤udeteil
   - Geschoss
-  - Maisonette als zusÃƒÂ¤tzliche Geschoss-/Lageoption
+  - Maisonette als zusÃƒÆ’Ã‚Â¤tzliche Geschoss-/Lageoption
   - Positionsangaben `li`, `mi`, `re`
   - Mieterzuordnung
-  - wohnungsbezogene ZÃƒÂ¤hler als optionale, einzeln hinzufÃƒÂ¼gbare Bausteine
+  - wohnungsbezogene ZÃƒÆ’Ã‚Â¤hler als optionale, einzeln hinzufÃƒÆ’Ã‚Â¼gbare Bausteine
   - vorbereitete Dokument- und Bildfelder
 - Leerstand wird dort automatisch aus Einheiten ohne Mieterzuordnung abgeleitet
-- Objekt-ZÃƒÂ¤hler und Dienstleister-Zuordnungen sind jetzt als eigene Bereiche vorbereitet
-- Objekt-ZÃƒÂ¤hler werden jetzt ebenfalls nur bei Bedarf hinzugefÃƒÂ¼gt statt als starre Feldliste
-- TeilungserklÃƒÂ¤rung liegt jetzt auf Objektebene
-- ÃƒÅ“bergabeprotokolle sind aus der Einheit entfernt und fÃƒÂ¼r die spÃƒÂ¤tere Mieterlogik vorgesehen
-- Kaufdatum, Eigentum seit, Kaufpreis und Anfangsrendite sind im Immobilienformular ergÃƒÂ¤nzt
-- Mieter werden jetzt im Adminbereich nicht mehr per Freitext an Objekt / Einheit gehÃƒÂ¤ngt, sondern aus bestehenden Einheiten ausgewÃƒÂ¤hlt
-- Die Einheit ist damit die fachliche Basis fÃƒÂ¼r Mietzuordnung und Leerstandslogik
-- Beim Anlegen eines Mieters wird die gewÃƒÂ¤hlte Einheit jetzt direkt im Objekt als belegt zurÃƒÂ¼ckgeschrieben
-- Das Mieterformular enthÃƒÂ¤lt jetzt zusÃƒÂ¤tzlich:
+- Objekt-ZÃƒÆ’Ã‚Â¤hler und Dienstleister-Zuordnungen sind jetzt als eigene Bereiche vorbereitet
+- Objekt-ZÃƒÆ’Ã‚Â¤hler werden jetzt ebenfalls nur bei Bedarf hinzugefÃƒÆ’Ã‚Â¼gt statt als starre Feldliste
+- TeilungserklÃƒÆ’Ã‚Â¤rung liegt jetzt auf Objektebene
+- ÃƒÆ’Ã…â€œbergabeprotokolle sind aus der Einheit entfernt und fÃƒÆ’Ã‚Â¼r die spÃƒÆ’Ã‚Â¤tere Mieterlogik vorgesehen
+- Kaufdatum, Eigentum seit, Kaufpreis und Anfangsrendite sind im Immobilienformular ergÃƒÆ’Ã‚Â¤nzt
+- Mieter werden jetzt im Adminbereich nicht mehr per Freitext an Objekt / Einheit gehÃƒÆ’Ã‚Â¤ngt, sondern aus bestehenden Einheiten ausgewÃƒÆ’Ã‚Â¤hlt
+- Die Einheit ist damit die fachliche Basis fÃƒÆ’Ã‚Â¼r Mietzuordnung und Leerstandslogik
+- Beim Anlegen eines Mieters wird die gewÃƒÆ’Ã‚Â¤hlte Einheit jetzt direkt im Objekt als belegt zurÃƒÆ’Ã‚Â¼ckgeschrieben
+- Das Mieterformular enthÃƒÆ’Ã‚Â¤lt jetzt zusÃƒÆ’Ã‚Â¤tzlich:
   - Steuernummer
-  - BÃƒÂ¼rgschaft
+  - BÃƒÆ’Ã‚Â¼rgschaft
   - weitere Personen / Mitmieter inkl. Telefon und E-Mail
   - Kaltmiete, Betriebskosten, Umsatzsteuer-Regelung, automatisch berechnete Warmmiete (netto), Kaution
-  - MieterhÃƒÂ¶hungsart und nÃƒÂ¤chstes PrÃƒÂ¼fdatum
-  - vorbereitete Dokumentfelder fÃƒÂ¼r Mietvertrag, NachtrÃƒÂ¤ge, Ausweiskopien, SCHUFA, Gehaltsnachweise, Jahresabrechnungen u. a.
-- Bei Immobilien sind zusÃƒÂ¤tzlich Felder fÃƒÂ¼r:
+  - MieterhÃƒÆ’Ã‚Â¶hungsart und nÃƒÆ’Ã‚Â¤chstes PrÃƒÆ’Ã‚Â¼fdatum
+  - vorbereitete Dokumentfelder fÃƒÆ’Ã‚Â¼r Mietvertrag, NachtrÃƒÆ’Ã‚Â¤ge, Ausweiskopien, SCHUFA, Gehaltsnachweise, Jahresabrechnungen u. a.
+- Bei Immobilien sind zusÃƒÆ’Ã‚Â¤tzlich Felder fÃƒÆ’Ã‚Â¼r:
   - Baujahr Heizung
   - letzte Heizungswartung
   - letzte Dachwartung
   - letzte Regenrinnenreinigung
   vorbereitet
-- Bei Immobilien kÃƒÂ¶nnen jetzt mehrere Heizungsarten pro Objekt hinterlegt werden
+- Bei Immobilien kÃƒÆ’Ã‚Â¶nnen jetzt mehrere Heizungsarten pro Objekt hinterlegt werden
 - Kaufpreis wird im Immobilienformular jetzt als Geldbetrag formatiert
-- Neue Einheiten werden im Immobilienformular jetzt direkt oberhalb der bestehenden Einheiten eingefÃƒÂ¼gt
-- Objekt- und EinheitenzÃƒÂ¤hler werden jetzt nur bei Bedarf hinzugefÃƒÂ¼gt und enthalten jeweils:
-  - ZÃƒÂ¤hlernummer
-  - erster ZÃƒÂ¤hlerstand
+- Neue Einheiten werden im Immobilienformular jetzt direkt oberhalb der bestehenden Einheiten eingefÃƒÆ’Ã‚Â¼gt
+- Objekt- und EinheitenzÃƒÆ’Ã‚Â¤hler werden jetzt nur bei Bedarf hinzugefÃƒÆ’Ã‚Â¼gt und enthalten jeweils:
+  - ZÃƒÆ’Ã‚Â¤hlernummer
+  - erster ZÃƒÆ’Ã‚Â¤hlerstand
   - Ablesedatum
   - Eichdatum
-- Die groÃƒÅ¸e Einleitungsbox oberhalb des Immobilienformulars wurde entfernt
+- Die groÃƒÆ’Ã…Â¸e Einleitungsbox oberhalb des Immobilienformulars wurde entfernt
 - Nach dem Speichern von Immobilien und Mietern springt die Seite wieder nach oben
 
 ### Datenmodell / Collections
@@ -190,16 +190,16 @@ Aktuell werden diese Collections verwendet:
 Der aktuelle Sicherheitsansatz:
 
 - eigener Nutzer darf eigenes Profil lesen / anlegen / aktualisieren
-- Admin darf fremde Profile lesen / ÃƒÂ¤ndern / lÃƒÂ¶schen
-- `people`, `properties`, `companies`, `tenants` nur fÃƒÂ¼r Admin
-- sonst alles standardmÃƒÂ¤ÃƒÅ¸ig gesperrt
+- Admin darf fremde Profile lesen / ÃƒÆ’Ã‚Â¤ndern / lÃƒÆ’Ã‚Â¶schen
+- `people`, `properties`, `companies`, `tenants` nur fÃƒÆ’Ã‚Â¼r Admin
+- sonst alles standardmÃƒÆ’Ã‚Â¤ÃƒÆ’Ã…Â¸ig gesperrt
 
 Die Regeldefinition liegt in:
 - `firestore.rules`
 
 Wichtig:
 - Diese Regeln passen zum aktuellen Stand des Verwalterbereichs
-- FÃƒÂ¼r spÃƒÂ¤tere Mieterfunktionen im Portal oder in der App mÃƒÂ¼ssen die Regeln gezielt erweitert werden
+- FÃƒÆ’Ã‚Â¼r spÃƒÆ’Ã‚Â¤tere Mieterfunktionen im Portal oder in der App mÃƒÆ’Ã‚Â¼ssen die Regeln gezielt erweitert werden
 
 ---
 
@@ -209,8 +209,8 @@ Wichtig:
 
 - Logo und Claim fein ausgerichtet
 - Claim aktuell:
-  - `Family Office Ã¢â‚¬Â¢ VermÃƒÂ¶gensmanagement`
-- HauptÃƒÂ¼berschrift:
+  - `Family Office ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ VermÃƒÆ’Ã‚Â¶gensmanagement`
+- HauptÃƒÆ’Ã‚Â¼berschrift:
   - `Langfristige Werte. Klare Haltung. Immobilien mit Substanz.`
 - App-Karte auf der rechten Seite in warmen Erdtonen
 - Download-Buttons in blauer Edelstein-Optik
@@ -220,29 +220,29 @@ Wichtig:
 - Gestaltung an die Startseite angepasst
 - kein hartes Schwarz mehr
 - warmer, hochwertiger Stil
-- zusÃƒÂ¤tzlicher `Home`-Button zurÃƒÂ¼ck zur Startseite
+- zusÃƒÆ’Ã‚Â¤tzlicher `Home`-Button zurÃƒÆ’Ã‚Â¼ck zur Startseite
 - Formulartext oberhalb des Logins entfernt
-- Submit-Button heiÃƒÅ¸t nur noch `Anmelden`
+- Submit-Button heiÃƒÆ’Ã…Â¸t nur noch `Anmelden`
 
 ---
 
-## NÃƒÂ¤chster sinnvoller Fokus
+## NÃƒÆ’Ã‚Â¤chster sinnvoller Fokus
 
-Der aktuell beste nÃƒÂ¤chste Schritt ist:
+Der aktuell beste nÃƒÆ’Ã‚Â¤chste Schritt ist:
 
 ### Verwalterbereich funktional ausbauen
 
 Empfohlene Reihenfolge:
 
-1. DatensÃƒÂ¤tze nicht nur anlegen, sondern auch bearbeiten und lÃƒÂ¶schen
-2. Detailfelder fÃƒÂ¼r Personen, Firmen und Immobilien erweitern
+1. DatensÃƒÆ’Ã‚Â¤tze nicht nur anlegen, sondern auch bearbeiten und lÃƒÆ’Ã‚Â¶schen
+2. Detailfelder fÃƒÆ’Ã‚Â¼r Personen, Firmen und Immobilien erweitern
 3. Beziehungen und Zuordnungen sauber ausbauen
-4. ÃƒÅ“bersichten mit Suche / Filtern ergÃƒÂ¤nzen
-5. spÃƒÂ¤tere VorgÃƒÂ¤nge vorbereiten:
+4. ÃƒÆ’Ã…â€œbersichten mit Suche / Filtern ergÃƒÆ’Ã‚Â¤nzen
+5. spÃƒÆ’Ã‚Â¤tere VorgÃƒÆ’Ã‚Â¤nge vorbereiten:
    - Schadensmeldungen
-   - ZÃƒÂ¤hlerstÃƒÂ¤nde
+   - ZÃƒÆ’Ã‚Â¤hlerstÃƒÆ’Ã‚Â¤nde
    - Dokumente
-   - ZustÃƒÂ¤ndigkeiten
+   - ZustÃƒÆ’Ã‚Â¤ndigkeiten
 
 ---
 
@@ -252,19 +252,19 @@ Empfohlener Workflow:
 
 1. zuerst Webplattform sauber fertig bauen
 2. Verwalterbereich und Mieterportal fachlich stabil machen
-3. Datenmodell, Rechte und AblÃƒÂ¤ufe festziehen
+3. Datenmodell, Rechte und AblÃƒÆ’Ã‚Â¤ufe festziehen
 4. danach iPhone- und Android-App auf dieselbe Logik und Datenbasis setzen
 
-BegrÃƒÂ¼ndung:
+BegrÃƒÆ’Ã‚Â¼ndung:
 - Die App sollte auf denselben Rollen, Daten und Prozessen aufbauen
-- So vermeiden wir doppelte Entscheidungen und spÃƒÂ¤tere Umbauten
+- So vermeiden wir doppelte Entscheidungen und spÃƒÆ’Ã‚Â¤tere Umbauten
 
 ---
 
 ## Wichtige Dateien
 
 - `app/page.tsx`
-  Ãƒâ€“ffentliche Startseite
+  ÃƒÆ’Ã¢â‚¬â€œffentliche Startseite
 
 - `app/login/page.tsx`
   Verwalter-Login
@@ -276,7 +276,7 @@ BegrÃƒÂ¼ndung:
   zentrales Loginformular
 
 - `components/PublicShell.tsx`
-  HÃƒÂ¼lle der ÃƒÂ¶ffentlichen Seiten
+  HÃƒÆ’Ã‚Â¼lle der ÃƒÆ’Ã‚Â¶ffentlichen Seiten
 
 - `components/admin/AdminCollectionManager.tsx`
   Admin-Formulare und Listen
@@ -303,7 +303,7 @@ BegrÃƒÂ¼ndung:
   Darstellung einer einzelnen Firma
 
 - `components/admin/companyConfig.ts`
-  zentrale Felddefinitionen fÃƒÂ¼r Firmen
+  zentrale Felddefinitionen fÃƒÆ’Ã‚Â¼r Firmen
 
 - `lib/auth.ts`
   Rollenlogik und Zielbereiche
@@ -312,16 +312,16 @@ BegrÃƒÂ¼ndung:
   Client-seitiger Auth-/Rollenstatus
 
 - `firestore.rules`
-  Sicherheitsregeln fÃƒÂ¼r Firestore
+  Sicherheitsregeln fÃƒÆ’Ã‚Â¼r Firestore
 
 ---
 
 ## Kurzstatus
 
 **Website:** vorzeigbar in Arbeit
-**Auth:** funktionsfÃƒÂ¤hig
-**Rollentrennung:** funktionsfÃƒÂ¤hig
-**Verwalterbereich:** Grundstruktur vorhanden, Ausbau als nÃƒÂ¤chster Fokus
+**Auth:** funktionsfÃƒÆ’Ã‚Â¤hig
+**Rollentrennung:** funktionsfÃƒÆ’Ã‚Â¤hig
+**Verwalterbereich:** Grundstruktur vorhanden, Ausbau als nÃƒÆ’Ã‚Â¤chster Fokus
 **Mieter-App:** noch nicht begonnen, bewusst nachgelagert
 
 ---
@@ -330,41 +330,41 @@ BegrÃƒÂ¼ndung:
 
 ### Nachrichten, E-Mail und Tickets
 
-- Die bisherigen Platzhalterseiten `Nachrichten` und `Tickets` wurden als erste echte ArbeitsoberflÃƒÂ¤chen aufgebaut
+- Die bisherigen Platzhalterseiten `Nachrichten` und `Tickets` wurden als erste echte ArbeitsoberflÃƒÆ’Ã‚Â¤chen aufgebaut
 - Neue Admin-Seiten:
   - `/admin/nachrichten`
   - `/admin/tickets`
 - Die Mieterportal-Seite `/mieterportal/nachrichten` ist jetzt ebenfalls als echter Eingang an `messages` angebunden
-- Mieter kÃƒÂ¶nnen dort:
+- Mieter kÃƒÆ’Ã‚Â¶nnen dort:
   - frei schreiben
-  - optional eine grobe Kategorie auswÃƒÂ¤hlen
+  - optional eine grobe Kategorie auswÃƒÆ’Ã‚Â¤hlen
   - ihre bisherigen Nachrichten im Portalverlauf sehen
-- ZusÃƒÂ¤tzlich gibt es jetzt einen serverseitigen E-Mail-Eingang unter `/api/inbound-email`
-- Feste EmpfÃƒÂ¤ngeradresse dafÃƒÂ¼r:
+- ZusÃƒÆ’Ã‚Â¤tzlich gibt es jetzt einen serverseitigen E-Mail-Eingang unter `/api/inbound-email`
+- Feste EmpfÃƒÆ’Ã‚Â¤ngeradresse dafÃƒÆ’Ã‚Â¼r:
   - `portal@halbmann-holding.de`
-- Der Endpoint ist dafÃƒÂ¼r gedacht, spÃƒÂ¤ter von einem Mailanbieter / Inbound-Webhook bedient zu werden
-- ZusÃƒÂ¤tzlich gibt es jetzt einen serverseitigen IMAP-Sync unter `/api/inbound-email/sync`
-- Der IONOS-Posteingang ist lokal vorbereitet ÃƒÂ¼ber:
+- Der Endpoint ist dafÃƒÆ’Ã‚Â¼r gedacht, spÃƒÆ’Ã‚Â¤ter von einem Mailanbieter / Inbound-Webhook bedient zu werden
+- ZusÃƒÆ’Ã‚Â¤tzlich gibt es jetzt einen serverseitigen IMAP-Sync unter `/api/inbound-email/sync`
+- Der IONOS-Posteingang ist lokal vorbereitet ÃƒÆ’Ã‚Â¼ber:
   - `imap.ionos.de`
   - Port `993`
   - Benutzer `portal@halbmann-holding.de`
 - Der Sync holt ungelesene Mails aus dem Postfach, parsed sie serverseitig und schreibt sie in `messages`
 - Nach erfolgreichem Import werden die abgerufenen Mails im Postfach als gelesen markiert
-- Der IMAP-Sync lÃƒÂ¤uft jetzt automatisch an, sobald ein Admin den geschÃƒÂ¼tzten Bereich ÃƒÂ¶ffnet
-- Pro Admin-Session wird der automatische Sync nur einmal ausgelÃƒÂ¶st
-- Es gibt jetzt zusÃƒÂ¤tzlich einen serverseitigen SMTP-Versand fÃƒÂ¼r vorbereitete EntwÃƒÂ¼rfe
-- Neue Serverroute dafÃƒÂ¼r:
+- Der IMAP-Sync lÃƒÆ’Ã‚Â¤uft jetzt automatisch an, sobald ein Admin den geschÃƒÆ’Ã‚Â¼tzten Bereich ÃƒÆ’Ã‚Â¶ffnet
+- Pro Admin-Session wird der automatische Sync nur einmal ausgelÃƒÆ’Ã‚Â¶st
+- Es gibt jetzt zusÃƒÆ’Ã‚Â¤tzlich einen serverseitigen SMTP-Versand fÃƒÆ’Ã‚Â¼r vorbereitete EntwÃƒÆ’Ã‚Â¼rfe
+- Neue Serverroute dafÃƒÆ’Ã‚Â¼r:
   - `/api/message-drafts/send`
-- EntwÃƒÂ¼rfe kÃƒÂ¶nnen jetzt aus:
+- EntwÃƒÆ’Ã‚Â¼rfe kÃƒÆ’Ã‚Â¶nnen jetzt aus:
   - `Nachrichten`
   - `Tickets`
   direkt versendet werden
 - Beim Versand passiert jetzt serverseitig:
-  - SMTP-Versand ÃƒÂ¼ber den IONOS-Account
+  - SMTP-Versand ÃƒÆ’Ã‚Â¼ber den IONOS-Account
   - `messageDrafts.status = sent`
   - Versandzeit und SMTP-Message-ID werden gespeichert
   - ein ausgehender Nachrichten-Eintrag wird erzeugt
-  - am Ticket wird ein `ticketEvent` fÃƒÂ¼r den Versand angelegt
+  - am Ticket wird ein `ticketEvent` fÃƒÆ’Ã‚Â¼r den Versand angelegt
 - Eingehende E-Mails werden serverseitig in `messages` geschrieben und nach bekannter Absenderadresse direkt gegen `tenants` gematcht
 - Wenn eine E-Mail nicht eindeutig einem Mieter zugeordnet werden kann, landet sie mit Status `needs_review` in der Admin-Inbox
 - Neue Portal-Nachrichten werden direkt in `messages` gespeichert mit:
@@ -374,23 +374,23 @@ BegrÃƒÂ¼ndung:
   - `propertyId`
   - `unitId`
 - Firestore Rules erlauben Mietern jetzt:
-  - Lesen des eigenen `tenant`-Datensatzes ÃƒÂ¼ber die eigene E-Mail
+  - Lesen des eigenen `tenant`-Datensatzes ÃƒÆ’Ã‚Â¼ber die eigene E-Mail
   - Lesen der eigenen `messages`
   - Anlegen eigener Portal-Nachrichten
   - Lesen eigener `tickets`
-- `Nachrichten` enthÃƒÂ¤lt jetzt:
+- `Nachrichten` enthÃƒÆ’Ã‚Â¤lt jetzt:
   - Inbox mit Statusfiltern
   - Originalnachricht
   - automatische Analyse
-  - Zuordnungsvorschlag fÃƒÂ¼r Mieter, Objekt, Einheit und Gewerk
-  - vorbereitete EntwÃƒÂ¼rfe
-- `Tickets` enthÃƒÂ¤lt jetzt:
+  - Zuordnungsvorschlag fÃƒÆ’Ã‚Â¼r Mieter, Objekt, Einheit und Gewerk
+  - vorbereitete EntwÃƒÆ’Ã‚Â¼rfe
+- `Tickets` enthÃƒÆ’Ã‚Â¤lt jetzt:
   - Ticketliste
   - Statuswechsel
-  - verknÃƒÂ¼pfte Ursprungsnachricht
-  - verknÃƒÂ¼pfte EntwÃƒÂ¼rfe
-  - Timeline ÃƒÂ¼ber `ticketEvents`
-- Neue Collections dafÃƒÂ¼r:
+  - verknÃƒÆ’Ã‚Â¼pfte Ursprungsnachricht
+  - verknÃƒÆ’Ã‚Â¼pfte EntwÃƒÆ’Ã‚Â¼rfe
+  - Timeline ÃƒÆ’Ã‚Â¼ber `ticketEvents`
+- Neue Collections dafÃƒÆ’Ã‚Â¼r:
   - `messages`
   - `tickets`
   - `ticketEvents`
@@ -398,111 +398,111 @@ BegrÃƒÂ¼ndung:
   - `documentTemplates`
 - Neue Hilfslogik in `lib/adminWorkflow.ts`:
   - Kategorisierung aus Betreff und Nachrichtentext
-  - PrioritÃƒÂ¤tserkennung
-  - Zuordnung ÃƒÂ¼ber bekannte Mieter, Objekte und Einheiten
-  - Vorschlag passender Dienstleister ÃƒÂ¼ber Objekt-Zuordnungen
-  - Entwurf fÃƒÂ¼r Antwort an Mieter
-  - Entwurf fÃƒÂ¼r Nachricht an Handwerker / Dienstleister
+  - PrioritÃƒÆ’Ã‚Â¤tserkennung
+  - Zuordnung ÃƒÆ’Ã‚Â¼ber bekannte Mieter, Objekte und Einheiten
+  - Vorschlag passender Dienstleister ÃƒÆ’Ã‚Â¼ber Objekt-Zuordnungen
+  - Entwurf fÃƒÆ’Ã‚Â¼r Antwort an Mieter
+  - Entwurf fÃƒÆ’Ã‚Â¼r Nachricht an Handwerker / Dienstleister
 - Neue Server-Hilfsdateien:
   - `lib/mailbox.ts`
   - `lib/firebaseAdmin.ts`
   - `lib/inboundEmailIngest.ts`
   - `lib/imapSync.ts`
   - `lib/smtp.ts`
-- Firestore Rules wurden fÃƒÂ¼r diese neuen Collections erweitert
-- Der Gesamt-Build ist mit diesem Stand grÃƒÂ¼n
-- Die groÃƒÅ¸en EinleitungsblÃƒÂ¶cke auf:
+- Firestore Rules wurden fÃƒÆ’Ã‚Â¼r diese neuen Collections erweitert
+- Der Gesamt-Build ist mit diesem Stand grÃƒÆ’Ã‚Â¼n
+- Die groÃƒÆ’Ã…Â¸en EinleitungsblÃƒÆ’Ã‚Â¶cke auf:
   - `Dashboard`
   - `Nachrichten`
   - `Tickets`
   wurden entfernt
-- Titel und Beschreibung dieser Bereiche liegen jetzt im gemeinsamen Header des geschÃƒÂ¼tzten Layouts statt doppelt in den Seiten selbst
-- Im Admin-Header gibt es jetzt ein globales EinstellungsmenÃƒÂ¼ ÃƒÂ¼ber ein Zahnrad
+- Titel und Beschreibung dieser Bereiche liegen jetzt im gemeinsamen Header des geschÃƒÆ’Ã‚Â¼tzten Layouts statt doppelt in den Seiten selbst
+- Im Admin-Header gibt es jetzt ein globales EinstellungsmenÃƒÆ’Ã‚Â¼ ÃƒÆ’Ã‚Â¼ber ein Zahnrad
 - Erste Einstellungsseite:
   - `/admin/einstellungen`
-- Dort kann das globale Mail-Postfach jetzt gepflegt, deaktiviert oder komplett gelÃƒÂ¶scht werden:
+- Dort kann das globale Mail-Postfach jetzt gepflegt, deaktiviert oder komplett gelÃƒÆ’Ã‚Â¶scht werden:
   - E-Mail-Adresse
   - IMAP Host / Port / Benutzer / Passwort
   - SMTP Host / Port / Benutzer / Passwort
-- Die Serverlogik fÃƒÂ¼r IMAP-Sync und SMTP-Versand liest die Mailbox-Konfiguration jetzt zuerst aus `adminSettings/mailbox`
-- ENV-Werte bleiben als Fallback fÃƒÂ¼r die Entwicklung erhalten
+- Die Serverlogik fÃƒÆ’Ã‚Â¼r IMAP-Sync und SMTP-Versand liest die Mailbox-Konfiguration jetzt zuerst aus `adminSettings/mailbox`
+- ENV-Werte bleiben als Fallback fÃƒÆ’Ã‚Â¼r die Entwicklung erhalten
 - Neue Collection:
   - `adminSettings`
-- Firestore Rules wurden dafÃƒÂ¼r auf Adminzugriff erweitert
+- Firestore Rules wurden dafÃƒÆ’Ã‚Â¼r auf Adminzugriff erweitert
 
-NÃƒÂ¤chster sinnvoller Ausbau in diesem Bereich:
+NÃƒÆ’Ã‚Â¤chster sinnvoller Ausbau in diesem Bereich:
 
-1. Firebase-Admin-Zugang lokal / auf dem Server vollstÃƒÂ¤ndig hinterlegen, damit die Serverrouten produktiv schreiben kÃƒÂ¶nnen
+1. Firebase-Admin-Zugang lokal / auf dem Server vollstÃƒÆ’Ã‚Â¤ndig hinterlegen, damit die Serverrouten produktiv schreiben kÃƒÆ’Ã‚Â¶nnen
 2. IMAP-Sync einmal gegen das echte IONOS-Postfach testen
-3. Vorlagenbereich fÃƒÂ¼r Standardschreiben aufbauen
+3. Vorlagenbereich fÃƒÆ’Ã‚Â¼r Standardschreiben aufbauen
 4. manuelle Korrektur der KI-Zuordnung in `Nachrichten` erweitern
-5. AnhÃƒÂ¤nge und echte Antwortketten in Ein- und Ausgang ergÃƒÂ¤nzen
+5. AnhÃƒÆ’Ã‚Â¤nge und echte Antwortketten in Ein- und Ausgang ergÃƒÆ’Ã‚Â¤nzen
 
 ### Mieter
 
-- Mieter werden ÃƒÂ¼ber bestehende freie Einheiten angelegt
+- Mieter werden ÃƒÆ’Ã‚Â¼ber bestehende freie Einheiten angelegt
 - Die Warmmiete wird jetzt automatisch aus `Kaltmiete + Betriebskosten` gebildet
 - Kaution hat jetzt die Arten:
   - `Barkaution`
-  - `BankbÃƒÂ¼rgschaft`
-- BÃƒÂ¼rge wird nicht mehr frei eingetippt, sondern aus der Personenliste gewÃƒÂ¤hlt
-- DafÃƒÂ¼r gibt es bei `Dritte & Dienstleister` jetzt zusÃƒÂ¤tzlich die Kategorie `BÃƒÂ¼rge`
-- MieterhÃƒÂ¶hung ist fachlich vorbereitet:
+  - `BankbÃƒÆ’Ã‚Â¼rgschaft`
+- BÃƒÆ’Ã‚Â¼rge wird nicht mehr frei eingetippt, sondern aus der Personenliste gewÃƒÆ’Ã‚Â¤hlt
+- DafÃƒÆ’Ã‚Â¼r gibt es bei `Dritte & Dienstleister` jetzt zusÃƒÆ’Ã‚Â¤tzlich die Kategorie `BÃƒÆ’Ã‚Â¼rge`
+- MieterhÃƒÆ’Ã‚Â¶hung ist fachlich vorbereitet:
   - `Staffelmiete` mit wiederholbaren Zeilen
-  - je Zeile: `von`, `bis`, `Kaltmiete`, `ErhÃƒÂ¶hung %`, `ErhÃƒÂ¶hung EUR`
+  - je Zeile: `von`, `bis`, `Kaltmiete`, `ErhÃƒÆ’Ã‚Â¶hung %`, `ErhÃƒÆ’Ã‚Â¶hung EUR`
   - Prozent und Euro rechnen sich gegenseitig
   - Erinnerungslogik:
-    - Staffel: 1 Monat vor der nÃƒÂ¤chsten Staffel
-    - Index: jÃƒÂ¤hrlich mit 1 Monat Puffer
+    - Staffel: 1 Monat vor der nÃƒÆ’Ã‚Â¤chsten Staffel
+    - Index: jÃƒÆ’Ã‚Â¤hrlich mit 1 Monat Puffer
     - Gesetz: alle 3 Jahre mit 1 Monat Puffer
 
 ### Immobilien
 
-- Bei Immobilien gibt es jetzt einen eigenen Block `JÃƒÂ¤hrliche Wartungen`
+- Bei Immobilien gibt es jetzt einen eigenen Block `JÃƒÆ’Ã‚Â¤hrliche Wartungen`
 - Dort stehen untereinander:
   - `Heizung`
   - `Dach`
   - `Regenrinnenreinigung`
-- FÃƒÂ¼r alle Wartungen wird das letzte Wartungsdatum gepflegt
-- Fachliche Zielrichtung: spÃƒÂ¤tere Ticket-Erinnerung nach 11 Monaten
+- FÃƒÆ’Ã‚Â¼r alle Wartungen wird das letzte Wartungsdatum gepflegt
+- Fachliche Zielrichtung: spÃƒÆ’Ã‚Â¤tere Ticket-Erinnerung nach 11 Monaten
 
 ### Formulare
 
 - `Dritte & Dienstleister` haben jetzt ebenfalls Detail- und Bearbeitungsseiten
 - `Immobilien` haben jetzt eine Bearbeitungsseite unter `/admin/immobilie/[id]/bearbeiten`
 - `Mieter` haben jetzt eine Bearbeitungsseite unter `/admin/mieter/[id]/bearbeiten`
-- `Ansehen / Bearbeiten / LÃƒÂ¶schen` ist jetzt ÃƒÂ¼bergreifend fÃƒÂ¼r Firmen, Immobilien, Mieter und Dritte & Dienstleister ausgebaut
-- Beim LÃƒÂ¶schen eines Mieters wird die Zuordnung in der betroffenen Einheit wieder entfernt
+- `Ansehen / Bearbeiten / LÃƒÆ’Ã‚Â¶schen` ist jetzt ÃƒÆ’Ã‚Â¼bergreifend fÃƒÆ’Ã‚Â¼r Firmen, Immobilien, Mieter und Dritte & Dienstleister ausgebaut
+- Beim LÃƒÆ’Ã‚Â¶schen eines Mieters wird die Zuordnung in der betroffenen Einheit wieder entfernt
 
 - Das Immobilienformular startet jetzt ohne vorgelagerten Einleitungsblock direkt im Formular
-- Die Umsatzsteuer im Mieterformular ist neutral als Regelung fÃƒÂ¼r die Nettomiete modelliert und nicht mehr falsch an die Warmmiete gekoppelt
+- Die Umsatzsteuer im Mieterformular ist neutral als Regelung fÃƒÆ’Ã‚Â¼r die Nettomiete modelliert und nicht mehr falsch an die Warmmiete gekoppelt
 
-### ZÃƒÆ’Ã‚Â¤hler und Heizungen
+### ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hler und Heizungen
 
-- Immobilien zeigen jetzt eine kompakte ZÃƒÆ’Ã‚Â¤hler-Tabelle mit `ZÃƒÆ’Ã‚Â¤hler`, `ZÃƒÆ’Ã‚Â¤hlernummer`, `Eichdatum` und `Position`
-- Es gibt eine eigene ZÃƒÆ’Ã‚Â¤hler-Detailseite mit Historie, neuen ZÃƒÆ’Ã‚Â¤hlerstÃƒÆ’Ã‚Â¤nden und dokumentiertem ZÃƒÆ’Ã‚Â¤hlerwechsel
-- ZÃƒÆ’Ã‚Â¤hler haben im Formular jetzt zusÃƒÆ’Ã‚Â¤tzlich das Feld `Position`
+- Immobilien zeigen jetzt eine kompakte ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hler-Tabelle mit `ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hler`, `ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hlernummer`, `Eichdatum` und `Position`
+- Es gibt eine eigene ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hler-Detailseite mit Historie, neuen ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hlerstÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤nden und dokumentiertem ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hlerwechsel
+- ZÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤hler haben im Formular jetzt zusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤tzlich das Feld `Position`
 - Heizungen werden auf Objektebene jetzt pro Heizsystem mit eigener Wartung und eigenem Baujahr gepflegt
-- Falls keine Zentralheizung vorhanden ist, kÃƒÆ’Ã‚Â¶nnen Heizungen auch auf Einheitenebene gepflegt werden
+- Falls keine Zentralheizung vorhanden ist, kÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¶nnen Heizungen auch auf Einheitenebene gepflegt werden
 
-### MenÃƒÆ’Ã‚Â¼
+### MenÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¼
 
-- Im Admin-MenÃƒÆ’Ã‚Â¼ gibt es jetzt zusÃƒÆ’Ã‚Â¤tzlich die Bereiche `Nachrichten` und `Tickets` als vorbereitete Platzhalterseiten
+- Im Admin-MenÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¼ gibt es jetzt zusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¤tzlich die Bereiche `Nachrichten` und `Tickets` als vorbereitete Platzhalterseiten
 
 ### Admin-Einstellungen / Mailbox
 
-- Im Admin-Header gibt es jetzt ein globales Zahnrad-MenÃ¼
-- Darin gibt es eine Einstiegsseite fÃ¼r das globale E-Mail-Postfach unter `/admin/einstellungen`
-- Die Mailbox-Konfiguration wird nicht mehr direkt aus dem Browser nach Firestore geschrieben, sondern Ã¼ber die Serverroute `/api/admin/mailbox-settings`
-- Dadurch sind Speichern und LÃ¶schen stabiler und nicht mehr von clientseitigen Firestore-Regeln abhÃ¤ngig
-- Das LÃ¶schen setzt die Mailbox bewusst auf inaktiv und leer, damit nicht ungewollt eine alte Fallback-Konfiguration aktiv bleibt
-- In den Passwortfeldern fÃ¼r IMAP und SMTP gibt es jetzt `Anzeigen` / `Verbergen`
-- `npm run build` lÃ¤uft nach diesem Umbau grÃ¼n
-- FÃ¼r `/admin/einstellungen` gibt es jetzt zusÃ¤tzlich einen lokalen Dev-Fallback ohne Firebase-Admin-Credentials
+- Im Admin-Header gibt es jetzt ein globales Zahnrad-MenÃƒÂ¼
+- Darin gibt es eine Einstiegsseite fÃƒÂ¼r das globale E-Mail-Postfach unter `/admin/einstellungen`
+- Die Mailbox-Konfiguration wird nicht mehr direkt aus dem Browser nach Firestore geschrieben, sondern ÃƒÂ¼ber die Serverroute `/api/admin/mailbox-settings`
+- Dadurch sind Speichern und LÃƒÂ¶schen stabiler und nicht mehr von clientseitigen Firestore-Regeln abhÃƒÂ¤ngig
+- Das LÃƒÂ¶schen setzt die Mailbox bewusst auf inaktiv und leer, damit nicht ungewollt eine alte Fallback-Konfiguration aktiv bleibt
+- In den Passwortfeldern fÃƒÂ¼r IMAP und SMTP gibt es jetzt `Anzeigen` / `Verbergen`
+- `npm run build` lÃƒÂ¤uft nach diesem Umbau grÃƒÂ¼n
+- FÃƒÂ¼r `/admin/einstellungen` gibt es jetzt zusÃƒÂ¤tzlich einen lokalen Dev-Fallback ohne Firebase-Admin-Credentials
 - Wenn lokal keine Admin-Creds gesetzt sind, speichert die Mailbox-Seite in `.mailbox-settings.local.json`
-- Die Serverlogik fÃ¼r IMAP/SMTP liest diese lokale Mailbox-Datei vor dem ENV-Fallback
-- Passwortfelder fÃ¼r IMAP und SMTP haben jetzt `Anzeigen` / `Verbergen`
-- `npm run build` bleibt nach diesem Fallback grÃ¼n
+- Die Serverlogik fÃƒÂ¼r IMAP/SMTP liest diese lokale Mailbox-Datei vor dem ENV-Fallback
+- Passwortfelder fÃƒÂ¼r IMAP und SMTP haben jetzt `Anzeigen` / `Verbergen`
+- `npm run build` bleibt nach diesem Fallback grÃƒÂ¼n
 
 ### Nachrichten / Tickets Automatik
 
@@ -512,28 +512,28 @@ NÃƒÂ¤chster sinnvoller Ausbau in diesem Bereich:
   - Analyse / Zuordnung
   - Ticket
   - Antwortentwurf an den Absender
-  - Entwurf fÃ¼r das passende Gewerk / den Dienstleister
+  - Entwurf fÃƒÂ¼r das passende Gewerk / den Dienstleister
 - E-Mail-Import ruft den Auto-Workflow jetzt direkt nach dem Speichern der Nachricht auf
-- Das Mieterportal schreibt Nachrichten nicht mehr direkt in Firestore, sondern Ã¼ber `/api/portal/messages`
-- Auch Portal-Nachrichten bekommen dadurch sofort Ticket und EntwÃ¼rfe
+- Das Mieterportal schreibt Nachrichten nicht mehr direkt in Firestore, sondern ÃƒÂ¼ber `/api/portal/messages`
+- Auch Portal-Nachrichten bekommen dadurch sofort Ticket und EntwÃƒÂ¼rfe
 - Neue Route: `/api/portal/messages`
-- `npm run build` lÃ¤uft nach diesem Ausbau grÃ¼n
+- `npm run build` lÃƒÂ¤uft nach diesem Ausbau grÃƒÂ¼n
 - Firestore-Regeln wurden jetzt live nach `halbmann-app` deployt (`firebase deploy --only firestore:rules --project halbmann-app`)
 - Dadurch sollten die Permission-Denied-Fehler in `Nachrichten`, `Tickets`, `messageDrafts` und `ticketEvents` im Browser verschwinden
 - Der automatische IMAP-Sync im Admin-Layout sendet jetzt den eingeloggten Token mit
-- Wenn lokal kein Firebase-Admin vorhanden ist, liefert der IMAP-Sync die eingegangenen Mails an den Browser zurÃ¼ck und der Admin-Client schreibt sie selbst in Firestore
+- Wenn lokal kein Firebase-Admin vorhanden ist, liefert der IMAP-Sync die eingegangenen Mails an den Browser zurÃƒÂ¼ck und der Admin-Client schreibt sie selbst in Firestore
 - Dashboard, Nachrichten und Tickets fangen Firestore-Lesefehler jetzt sauber ab, statt die Dev-Overlay-Fehler hochzuschaukeln
-- `npm run build` lÃ¤uft nach diesem Umbau grÃ¼n
+- `npm run build` lÃƒÂ¤uft nach diesem Umbau grÃƒÂ¼n
 - Die Firestore-Regeln wurden live nach `halbmann-app` deployt, damit Admin-Listener auf `messages`, `tickets`, `messageDrafts` und `ticketEvents` nicht mehr mit `permission-denied` abbrechen
 - Der Adminbereich crasht bei Listener-Fehlern jetzt nicht mehr in die Dev-Overlay-Spirale
-- Der automatische Mail-Sync lÃ¤uft nicht mehr nur einmal pro Session, sondern beim Einstieg und danach alle 30 Sekunden erneut
-- Wenn kein Firebase-Admin konfiguriert ist, holt der Server die E-Mails per IMAP und der Admin-Client importiert sie anschlieÃŸend selbst in Firestore
-- Damit ist der lokale Entwicklungsmodus fÃ¼r echten E-Mail-Eingang ohne Service-Account vorbereitet
-- `npm run build` lÃ¤uft nach diesem Umbau grÃ¼n
+- Der automatische Mail-Sync lÃƒÂ¤uft nicht mehr nur einmal pro Session, sondern beim Einstieg und danach alle 30 Sekunden erneut
+- Wenn kein Firebase-Admin konfiguriert ist, holt der Server die E-Mails per IMAP und der Admin-Client importiert sie anschlieÃƒÅ¸end selbst in Firestore
+- Damit ist der lokale Entwicklungsmodus fÃƒÂ¼r echten E-Mail-Eingang ohne Service-Account vorbereitet
+- `npm run build` lÃƒÂ¤uft nach diesem Umbau grÃƒÂ¼n
 - Im lokalen Dev-Modus markiert der IMAP-Sync Mails nicht mehr vorschnell als `gesehen`
-- Stattdessen werden die letzten bis zu 20 Mails regelmÃ¤ÃŸig erneut geprÃ¼ft und Ã¼ber `messageId` dedupliziert importiert
-- So kÃ¶nnen zuvor verpasste oder bereits einmal gesehene Testmails im lokalen Workflow trotzdem noch in `messages` auftauchen
-- `npm run build` lÃ¤uft nach dieser Ã„nderung grÃ¼n
+- Stattdessen werden die letzten bis zu 20 Mails regelmÃƒÂ¤ÃƒÅ¸ig erneut geprÃƒÂ¼ft und ÃƒÂ¼ber `messageId` dedupliziert importiert
+- So kÃƒÂ¶nnen zuvor verpasste oder bereits einmal gesehene Testmails im lokalen Workflow trotzdem noch in `messages` auftauchen
+- `npm run build` lÃƒÂ¤uft nach dieser Ãƒâ€žnderung grÃƒÂ¼n
 
 ### Update 03.04.2026
 
@@ -599,182 +599,182 @@ NÃƒÂ¤chster sinnvoller Ausbau in diesem Bereich:
 [2026-04-03T11:36:16+02:00] Nachrichten und Bestand weiter verfeinert: Auf /admin/nachrichten bleibt der Posteingang als reine Listenansicht. In Mail senden gibt es fuer einzelne Empfaenger jetzt Immobilie -> Mieter plus manuelle E-Mail sowie Vorlagenwahl aus documentTemplates. Die Nachrichtendetailseite zeigt die Zuordnung kompakt oben, Chat zentral, direkte Antwort mit Vorlagenwahl darunter; das separate Entwurfsfeld wurde entfernt. Auf der Immobilien-Detailseite gibt es neben der Zaehleruebersicht jetzt einen direkten Dienstleisterblock mit speicherbaren Zuweisungen pro Gewerk.
 
 ## Update 2026-04-03
-- `Nachrichten` wurde weiter vereinfacht: sichtbare EntwÃ¼rfe sind aus dem UI entfernt, `Posteingang` zeigt nur offene eingehende Nachrichten, `ticket_created` und `done` verschwinden aus der Inbox.
-- `Mail senden` wurde neu gewichtet: EmpfÃ¤ngerbereich schmaler, Editor grÃ¶ÃŸer, bei `Einzelne EmpfÃ¤nger` jetzt Auswahl `Immobilie -> Mieter` plus manuelle E-Mail und Vorlagenwahl.
-- Nachrichtendetail wurde gestrafft: kompakte Zuordnungsinfos oben, kein separates Zuordnungsfeld mehr, keine Buttons fÃ¼r Antwortentwurf/Dienstleister/LÃ¶schen mehr. Stattdessen direkter Antwortbereich mit Vorlagenwahl, `Ticket erstellen` und `Als erledigt markieren` bzw. RÃ¼ckgÃ¤ngig.
-- `Bestand > Mieter` zeigt jetzt zusÃ¤tzlich den Nachrichten- bzw. Chatverlauf des Mieters mit Link in die jeweilige Nachricht.
-- Globale Einstellungen wurden erweitert: `/admin/einstellungen` hat jetzt Reiter fÃ¼r `E-Mail-Postfach` und `Signaturen`; im Zahnrad-MenÃ¼ im Admin-Header gibt es jetzt auch den Link `Signaturen`.
-- Signaturen bleiben pro Firma pflegbar, inklusive Logo-Upload Ã¼ber Firebase Storage.
-- `Tickets` zeigt keine sichtbaren EntwurfsblÃ¶cke mehr.
+- `Nachrichten` wurde weiter vereinfacht: sichtbare EntwÃƒÂ¼rfe sind aus dem UI entfernt, `Posteingang` zeigt nur offene eingehende Nachrichten, `ticket_created` und `done` verschwinden aus der Inbox.
+- `Mail senden` wurde neu gewichtet: EmpfÃƒÂ¤ngerbereich schmaler, Editor grÃƒÂ¶ÃƒÅ¸er, bei `Einzelne EmpfÃƒÂ¤nger` jetzt Auswahl `Immobilie -> Mieter` plus manuelle E-Mail und Vorlagenwahl.
+- Nachrichtendetail wurde gestrafft: kompakte Zuordnungsinfos oben, kein separates Zuordnungsfeld mehr, keine Buttons fÃƒÂ¼r Antwortentwurf/Dienstleister/LÃƒÂ¶schen mehr. Stattdessen direkter Antwortbereich mit Vorlagenwahl, `Ticket erstellen` und `Als erledigt markieren` bzw. RÃƒÂ¼ckgÃƒÂ¤ngig.
+- `Bestand > Mieter` zeigt jetzt zusÃƒÂ¤tzlich den Nachrichten- bzw. Chatverlauf des Mieters mit Link in die jeweilige Nachricht.
+- Globale Einstellungen wurden erweitert: `/admin/einstellungen` hat jetzt Reiter fÃƒÂ¼r `E-Mail-Postfach` und `Signaturen`; im Zahnrad-MenÃƒÂ¼ im Admin-Header gibt es jetzt auch den Link `Signaturen`.
+- Signaturen bleiben pro Firma pflegbar, inklusive Logo-Upload ÃƒÂ¼ber Firebase Storage.
+- `Tickets` zeigt keine sichtbaren EntwurfsblÃƒÂ¶cke mehr.
 - Verifiziert mit `npm run build` in `C:\Users\simon\Documents\halbmann-app`.
 - Signaturen erweitert: neues Feld `Name` oberhalb des Firmennamens, Feld `Rollenzeile` inhaltlich durch `Mobilfunk` ersetzt. Logo-Upload speichert jetzt direkt; wenn Firebase Storage im Projekt noch nicht eingerichtet ist, wird als lokaler Fallback ein eingebettetes Bild gespeichert und ein klarer Hinweis angezeigt.
-- `Mail senden` wurde weiter verschoben: EmpfÃ¤ngerbereich schmaler, Editor breiter.
-- `Tickets` wurde neu geordnet: keine zusammenfallenden schmalen Spalten mehr, klare Zweiteilung aus Liste und Detail, Ticket-LÃ¶schen ergÃ¤nzt.
-- `storage.rules` und `firebase.json` um Storage-Regeln ergÃ¤nzt. Beim Deploy zeigte sich: Firebase Storage ist im Projekt `halbmann-app` noch nicht initialisiert. FÃ¼r echtes Bucket-Hosting muss Storage in der Firebase-Konsole einmal aktiviert werden.
+- `Mail senden` wurde weiter verschoben: EmpfÃƒÂ¤ngerbereich schmaler, Editor breiter.
+- `Tickets` wurde neu geordnet: keine zusammenfallenden schmalen Spalten mehr, klare Zweiteilung aus Liste und Detail, Ticket-LÃƒÂ¶schen ergÃƒÂ¤nzt.
+- `storage.rules` und `firebase.json` um Storage-Regeln ergÃƒÂ¤nzt. Beim Deploy zeigte sich: Firebase Storage ist im Projekt `halbmann-app` noch nicht initialisiert. FÃƒÂ¼r echtes Bucket-Hosting muss Storage in der Firebase-Konsole einmal aktiviert werden.
 - Verifiziert mit `npm run build`.
 
-## Update 2026-04-03 â€“ Signaturen, Mail senden und Tickets
-- Signaturen wurden fachlich erweitert: pro Firma jetzt mit `Name`, `Firmenname`, `StraÃŸe`, `Hausnummer`, `PLZ`, `Ort`, `Mobilfunk`, `Telefon`, `E-Mail`, `Website` und Logo.
-- Die Signaturfelder werden jetzt aus vorhandenen Firmendaten vorausgefÃ¼llt und bleiben anschlieÃŸend manuell anpassbar.
-- Die Signaturvorschau wurde optisch gestrafft: Name Ã¼ber Firmenname, Anschrift integriert, Kontaktblock kleiner und enger gesetzt.
-- Der bisher hÃ¤ngende Logo-Upload wurde von Firebase Storage entkoppelt und lÃ¤uft jetzt lokal Ã¼ber `/api/admin/signature-logo` direkt in `public/uploads/signatures`.
-- `Mail senden` nutzt jetzt die gewÃ¤hlte Firmen-/Mieter-Zuordnung fÃ¼r die Signatur automatisch mit.
+## Update 2026-04-03 Ã¢â‚¬â€œ Signaturen, Mail senden und Tickets
+- Signaturen wurden fachlich erweitert: pro Firma jetzt mit `Name`, `Firmenname`, `StraÃƒÅ¸e`, `Hausnummer`, `PLZ`, `Ort`, `Mobilfunk`, `Telefon`, `E-Mail`, `Website` und Logo.
+- Die Signaturfelder werden jetzt aus vorhandenen Firmendaten vorausgefÃƒÂ¼llt und bleiben anschlieÃƒÅ¸end manuell anpassbar.
+- Die Signaturvorschau wurde optisch gestrafft: Name ÃƒÂ¼ber Firmenname, Anschrift integriert, Kontaktblock kleiner und enger gesetzt.
+- Der bisher hÃƒÂ¤ngende Logo-Upload wurde von Firebase Storage entkoppelt und lÃƒÂ¤uft jetzt lokal ÃƒÂ¼ber `/api/admin/signature-logo` direkt in `public/uploads/signatures`.
+- `Mail senden` nutzt jetzt die gewÃƒÂ¤hlte Firmen-/Mieter-Zuordnung fÃƒÂ¼r die Signatur automatisch mit.
 - Bei Einzelversand wird die passende Signatur direkt in den Editor eingesetzt.
-- Beim Sammelversand an mehrere Mieter wird die Signatur pro EmpfÃ¤nger anhand der zugehÃ¶rigen Firma erzeugt.
-- Das EmpfÃ¤ngerfeld in `Mail senden` wurde weiter verkleinert, der Editorbereich entsprechend vergrÃ¶ÃŸert.
-- Eine Nachricht kann jetzt mehrere Tickets erzeugen; dafÃ¼r werden zusÃ¤tzliche Ticket-IDs an der Nachricht mitgefÃ¼hrt.
+- Beim Sammelversand an mehrere Mieter wird die Signatur pro EmpfÃƒÂ¤nger anhand der zugehÃƒÂ¶rigen Firma erzeugt.
+- Das EmpfÃƒÂ¤ngerfeld in `Mail senden` wurde weiter verkleinert, der Editorbereich entsprechend vergrÃƒÂ¶ÃƒÅ¸ert.
+- Eine Nachricht kann jetzt mehrere Tickets erzeugen; dafÃƒÂ¼r werden zusÃƒÂ¤tzliche Ticket-IDs an der Nachricht mitgefÃƒÂ¼hrt.
 - `Tickets` wurde auf dieselbe Arbeitslogik wie `Nachrichten` umgestellt:
   - `/admin/tickets` ist jetzt reine Listenansicht mit einer Zeile pro Ticket
-  - Klick auf ein Ticket Ã¶ffnet `/admin/tickets/[ticketId]`
-- Die neue Ticket-Detailseite enthÃ¤lt jetzt:
-  - Verlauf aus verknÃ¼pften Nachrichten und Ticket-Events
+  - Klick auf ein Ticket ÃƒÂ¶ffnet `/admin/tickets/[ticketId]`
+- Die neue Ticket-Detailseite enthÃƒÂ¤lt jetzt:
+  - Verlauf aus verknÃƒÂ¼pften Nachrichten und Ticket-Events
   - manuellen Verlaufsblock
   - Mieter kontaktieren
   - Gewerk kontaktieren
   - Gewerk-Vorschlag aus der App, aber mit freier Auswahl aus allen hinterlegten Gewerken
-  - Statuswechsel und Ticket-LÃ¶schen
+  - Statuswechsel und Ticket-LÃƒÂ¶schen
 - Antwort- und Dienstleistertexte bauen Signaturen jetzt nicht mehr hart selbst, sondern bekommen sie aus der Firmen-Signaturlogik.
 - Verifiziert mit `npm run build` in `C:\Users\simon\Documents\halbmann-app`.
 
-## Update 2026-04-03 â€“ Ticket-Detailseite und professionelle Signaturen
-- Die Ticket-Detailseite wurde erneut neu geordnet und stÃ¤rker an einen echten Arbeitschat angelehnt.
+## Update 2026-04-03 Ã¢â‚¬â€œ Ticket-Detailseite und professionelle Signaturen
+- Die Ticket-Detailseite wurde erneut neu geordnet und stÃƒÂ¤rker an einen echten Arbeitschat angelehnt.
 - Oben steht jetzt nur noch der Ticketkopf mit Ticketnummer sowie Firma, Objekt, Einheit und Mieter in einer kompakten Zeile.
-- Der frÃ¼here breite Info-Block unter dem Ticketkopf wurde entfernt.
-- Der Status wird jetzt primÃ¤r Ã¼ber hervorgehobene Status-Buttons gesteuert statt Ã¼ber einen separaten Statusblock.
-- Tickets haben jetzt zusÃ¤tzlich eine echte Wiedervorlage Ã¼ber `followUpDate`.
-- Der Verlauf auf der Ticketseite fÃ¼hrt jetzt alles zusammen:
+- Der frÃƒÂ¼here breite Info-Block unter dem Ticketkopf wurde entfernt.
+- Der Status wird jetzt primÃƒÂ¤r ÃƒÂ¼ber hervorgehobene Status-Buttons gesteuert statt ÃƒÂ¼ber einen separaten Statusblock.
+- Tickets haben jetzt zusÃƒÂ¤tzlich eine echte Wiedervorlage ÃƒÂ¼ber `followUpDate`.
+- Der Verlauf auf der Ticketseite fÃƒÂ¼hrt jetzt alles zusammen:
   - Nachricht vom Mieter
   - Antworten an den Mieter
   - Nachrichten an Gewerke
   - interne Notizen
   - sonstige Ticket-Events
-- Diese VerlaufseintrÃ¤ge sind farblich und inhaltlich voneinander getrennt, damit klar bleibt, was Mieterchat ist und was interner bzw. Gewerk-Verlauf.
-- Die ursprÃ¼ngliche Nachricht des Mieters steht jetzt nicht mehr separat als freier Textblock im Kopf, sondern im eigentlichen Verlauf.
-- Das bisher getrennte Feld `Mieter kontaktieren`, das Feld `Gewerk kontaktieren` und das Feld `Verlauf manuell ergÃ¤nzen` wurden in einen gemeinsamen Eingabebereich Ã¼berfÃ¼hrt.
+- Diese VerlaufseintrÃƒÂ¤ge sind farblich und inhaltlich voneinander getrennt, damit klar bleibt, was Mieterchat ist und was interner bzw. Gewerk-Verlauf.
+- Die ursprÃƒÂ¼ngliche Nachricht des Mieters steht jetzt nicht mehr separat als freier Textblock im Kopf, sondern im eigentlichen Verlauf.
+- Das bisher getrennte Feld `Mieter kontaktieren`, das Feld `Gewerk kontaktieren` und das Feld `Verlauf manuell ergÃƒÂ¤nzen` wurden in einen gemeinsamen Eingabebereich ÃƒÂ¼berfÃƒÂ¼hrt.
 - Dort kann jetzt zwischen drei Modi gewechselt werden:
   - `Mieter`
   - `Gewerk`
   - `Notiz`
-- FÃ¼r `Gewerk` gibt es eine Auswahl aller hinterlegten Gewerke am Objekt; der von der App erkannte Vorschlag wird vorausgewÃ¤hlt.
-- Nachrichten an den Mieter werden weiter als regulÃ¤re ausgehende Nachrichten gespeichert und erscheinen dadurch sowohl im Ticketverlauf als auch im Nachrichtenverlauf des Mieters.
+- FÃƒÂ¼r `Gewerk` gibt es eine Auswahl aller hinterlegten Gewerke am Objekt; der von der App erkannte Vorschlag wird vorausgewÃƒÂ¤hlt.
+- Nachrichten an den Mieter werden weiter als regulÃƒÂ¤re ausgehende Nachrichten gespeichert und erscheinen dadurch sowohl im Ticketverlauf als auch im Nachrichtenverlauf des Mieters.
 - Nachrichten an Gewerke werden ebenfalls aus dem Ticket verschickt, sind aber im Verlauf als eigener Typ gekennzeichnet.
-- Tickets bleiben lÃ¶schbar.
+- Tickets bleiben lÃƒÂ¶schbar.
 - Signaturen wurden fachlich deutlich erweitert:
-  - zusÃ¤tzlich zu Name, Firma, Anschrift, Mobilfunk, Telefon, E-Mail und Website jetzt auch Rechtsform, Abteilung/Zusatz, Registergericht, Handelsregister, Steuernummer und USt-IdNr.
-- Diese Signaturfelder werden beim Ã–ffnen einer Firma aus vorhandenen Firmendaten vorausgefÃ¼llt.
+  - zusÃƒÂ¤tzlich zu Name, Firma, Anschrift, Mobilfunk, Telefon, E-Mail und Website jetzt auch Rechtsform, Abteilung/Zusatz, Registergericht, Handelsregister, Steuernummer und USt-IdNr.
+- Diese Signaturfelder werden beim Ãƒâ€“ffnen einer Firma aus vorhandenen Firmendaten vorausgefÃƒÂ¼llt.
 - Die Signaturvorschau wurde gestalterisch verfeinert:
-  - Logo grÃ¶ÃŸer
-  - Name Ã¼ber Firmenname
+  - Logo grÃƒÂ¶ÃƒÅ¸er
+  - Name ÃƒÂ¼ber Firmenname
   - Kontaktblock kleiner und enger
   - Anschrift und Pflichtangaben eingebunden
-- Der Logo-Upload lÃ¤uft weiter lokal Ã¼ber `/api/admin/signature-logo` und legt Dateien in `public/uploads/signatures` ab.
-- Der Versandpfad schreibt jetzt bei ausgehenden Nachrichten zusÃ¤tzlich `draftKind`, `recipientType` und `recipientId` mit, damit Ticket- und NachrichtenverlÃ¤ufe sauber unterscheiden kÃ¶nnen, ob eine Nachricht an Mieter oder Gewerk ging.
+- Der Logo-Upload lÃƒÂ¤uft weiter lokal ÃƒÂ¼ber `/api/admin/signature-logo` und legt Dateien in `public/uploads/signatures` ab.
+- Der Versandpfad schreibt jetzt bei ausgehenden Nachrichten zusÃƒÂ¤tzlich `draftKind`, `recipientType` und `recipientId` mit, damit Ticket- und NachrichtenverlÃƒÂ¤ufe sauber unterscheiden kÃƒÂ¶nnen, ob eine Nachricht an Mieter oder Gewerk ging.
 - Verifiziert mit `npm run build` in `C:\Users\simon\Documents\halbmann-app`.
 
 ## Update 2026-04-03 21:05
 - Ticket-Detailseite in components/admin/TicketDetailWorkspace.tsx stark verdichtet und auf echten Chatfokus umgebaut.
 - Ticketkopf jetzt kompakt: TK-... plus Firma, Objekt, Einheit, Mieter in einer Zeile ohne Kartenhintergrund.
-- Wiedervorlage sitzt jetzt direkt bei den Status-/LÃ¶sch-Buttons im Kopf.
+- Wiedervorlage sitzt jetzt direkt bei den Status-/LÃƒÂ¶sch-Buttons im Kopf.
 - Timeline zeigt nur noch Mieter-Nachrichten, Gewerk-Nachrichten und manuelle Notizen; doppelte System-/Vorgangsboxen werden im Ticket nicht mehr angezeigt.
-- Einheit wird lesbar aufgelÃ¶st statt UUID-Fallback, bevorzugt aus 	enant.unitLabel bzw. property.units mit kompakter Floor/Positionslogik.
+- Einheit wird lesbar aufgelÃƒÂ¶st statt UUID-Fallback, bevorzugt aus 	enant.unitLabel bzw. property.units mit kompakter Floor/Positionslogik.
 - Composer im Ticket vereinheitlicht: Modi Mieter, Gewerk, Notiz; Eingabe wird nach Senden/Speichern geleert.
 - Portal-/Mietertext nutzt kleine Portal-Signatur, E-Mail-Version nutzt volle Firmensignatur.
-- Signaturen erweitert: zusÃ¤tzliche Felder Sitz der Gesellschaft und GeschÃ¤ftsfÃ¼hrung in lib/signatures.ts und components/admin/AdminSignatureSettings.tsx.
-- Signaturvorschau dichter gestaltet, Kontaktdaten kleiner gesetzt, Logo in der Vorschau deutlich grÃ¶ÃŸer.
+- Signaturen erweitert: zusÃƒÂ¤tzliche Felder Sitz der Gesellschaft und GeschÃƒÂ¤ftsfÃƒÂ¼hrung in lib/signatures.ts und components/admin/AdminSignatureSettings.tsx.
+- Signaturvorschau dichter gestaltet, Kontaktdaten kleiner gesetzt, Logo in der Vorschau deutlich grÃƒÂ¶ÃƒÅ¸er.
 -
-pm run build lÃ¤uft grÃ¼n.
+pm run build lÃƒÂ¤uft grÃƒÂ¼n.
 
 ## Update 2026-04-03 21:28
 - Ticket-Detailseite erneut verdichtet und funktional angepasst.
-- Ticketkopf jetzt mit editierbarem Titel, kompakter Metazeile (Firma, Objekt, Einheit, Mieter) und nur noch Status In Bearbeitung / Erledigt plus Ticket lÃ¶schen und Wiedervorlage.
-- Ticket lÃ¶schen fragt jetzt per BestÃ¤tigungsdialog nach und leitet danach zur Ticketliste zurÃ¼ck.
-- Composer im Ticket steht jetzt Ã¼ber dem Verlauf; Verlauf sortiert neueste Nachricht zuerst.
-- Tenant-/Gewerk-Nachrichten und Notizen laufen im Verlauf mit klar unterschiedlichen Karten; doppelte System-VorgÃ¤nge bleiben ausgeblendet.
-- AntwortentwÃ¼rfe an Mieter verwenden jetzt bevorzugt den erkannten Mieter statt romName.
-- Gewerk-Composer nutzt im Editor die kleine Signatur; E-Mail-Versand erhÃ¤lt zusÃ¤tzlich HTML mit kompaktem Signaturblock plus Footer.
-- Signaturen erweitert um Sitz der Gesellschaft und GeschÃ¤ftsfÃ¼hrung; Vorschau dichter und Logo grÃ¶ÃŸer.
+- Ticketkopf jetzt mit editierbarem Titel, kompakter Metazeile (Firma, Objekt, Einheit, Mieter) und nur noch Status In Bearbeitung / Erledigt plus Ticket lÃƒÂ¶schen und Wiedervorlage.
+- Ticket lÃƒÂ¶schen fragt jetzt per BestÃƒÂ¤tigungsdialog nach und leitet danach zur Ticketliste zurÃƒÂ¼ck.
+- Composer im Ticket steht jetzt ÃƒÂ¼ber dem Verlauf; Verlauf sortiert neueste Nachricht zuerst.
+- Tenant-/Gewerk-Nachrichten und Notizen laufen im Verlauf mit klar unterschiedlichen Karten; doppelte System-VorgÃƒÂ¤nge bleiben ausgeblendet.
+- AntwortentwÃƒÂ¼rfe an Mieter verwenden jetzt bevorzugt den erkannten Mieter statt romName.
+- Gewerk-Composer nutzt im Editor die kleine Signatur; E-Mail-Versand erhÃƒÂ¤lt zusÃƒÂ¤tzlich HTML mit kompaktem Signaturblock plus Footer.
+- Signaturen erweitert um Sitz der Gesellschaft und GeschÃƒÂ¤ftsfÃƒÂ¼hrung; Vorschau dichter und Logo grÃƒÂ¶ÃƒÅ¸er.
 - pp/api/message-drafts/send/route.ts akzeptiert jetzt optional htmlBody.
 -
-pm run build lÃ¤uft grÃ¼n.
+pm run build lÃƒÂ¤uft grÃƒÂ¼n.
 
 ## Update 2026-04-03 21:46
 - Ticket-Composer weiter korrigiert: Mieteransprache priorisiert erkannte Tenant-Daten, nicht mehr romName.
-- Gewerk-EntwÃ¼rfe nutzen jetzt einen stabileren EmpfÃ¤ngernamen-Fallback (Person, Firma oder E-Mail), damit nicht nur Guten Tag, erscheint.
+- Gewerk-EntwÃƒÂ¼rfe nutzen jetzt einen stabileren EmpfÃƒÂ¤ngernamen-Fallback (Person, Firma oder E-Mail), damit nicht nur Guten Tag, erscheint.
 - Ticket-Textarea setzt jetzt lang=de und spellCheck=false, damit die rote Browser-Unterstreichung im Editor verschwindet.
-- HTML-Mail-Signatur im Versandpfad optisch verbessert: oberer Signaturblock kompakt, restliche Pflichtangaben zentriert in mehreren Spalten statt als lange EinzelsÃ¤ule.
+- HTML-Mail-Signatur im Versandpfad optisch verbessert: oberer Signaturblock kompakt, restliche Pflichtangaben zentriert in mehreren Spalten statt als lange EinzelsÃƒÂ¤ule.
 -
-pm run build bleibt grÃ¼n.
+pm run build bleibt grÃƒÂ¼n.
 
 ## Update 2026-04-04 00:06
-- OpenAI-Anbindung fÃ¼r individuelle Ticket-Antworten vorbereitet.
+- OpenAI-Anbindung fÃƒÂ¼r individuelle Ticket-Antworten vorbereitet.
 - Neue Serverroute: pp/api/ai/ticket-draft/route.ts.
-- Nutzt OpenAI Responses API Ã¼ber das offizielle openai SDK.
-- Ticket-Composer hat jetzt einen Button KI-Entwurf fÃ¼r die Modi Mieter und Gewerk; Notiz bleibt manuell.
+- Nutzt OpenAI Responses API ÃƒÂ¼ber das offizielle openai SDK.
+- Ticket-Composer hat jetzt einen Button KI-Entwurf fÃƒÂ¼r die Modi Mieter und Gewerk; Notiz bleibt manuell.
 - KI bekommt Tickettitel, Objekt, Einheit, Mieter, Gewerk und Originalnachricht und erzeugt daraus einen fallbezogenen Text statt starrer Vorlagen.
 - Die erzeugten Texte landen direkt im Composer und werden dort noch manuell angepasst/freigegeben.
-- FÃ¼r produktive Nutzung muss OPENAI_API_KEY in .env.local gesetzt sein; optional OPENAI_MODEL (Fallback aktuell gpt-5-mini).
+- FÃƒÂ¼r produktive Nutzung muss OPENAI_API_KEY in .env.local gesetzt sein; optional OPENAI_MODEL (Fallback aktuell gpt-5-mini).
 -
-pm run build lÃ¤uft grÃ¼n.
-[2026-04-04T10:35:00+02:00] KI- und Kommunikations-Feinschliff weitergezogen: Im globalen Zahnrad-MenÃ¼ gibt es jetzt einen direkten Link zu /admin/einstellungen?tab=ki. FÃ¼r Mehrfach-Themen in einer Eingangsnachricht existiert nun /api/ai/message-ticket-suggestions; die Nachrichtendetailseite nutzt lokale Fallback-VorschlÃ¤ge plus KI-TitelvorschlÃ¤ge, zeigt sie als auswÃ¤hlbare Chips und speichert beim Ticket-Anlegen zusÃ¤tzlich issueFocus. Ticket-KI liest jetzt diesen issueFocus statt pauschal die gesamte Ursprungsnachricht. In Nachrichten-Details wurden Ticket-Hinweis, KI-Titel/Anwenden sowie grÃ¶ÃŸere Chat-/Antwort-/NotizflÃ¤chen ergÃ¤nzt. In Tickets wurden Composer und Verlauf deutlich vergrÃ¶ÃŸert und beim KI-Hinweis ein zusÃ¤tzlicher Anwenden-Button ergÃ¤nzt. Im Mieterbereich wurde der Chatverlauf auf ein nachrichtenÃ¤hnliches Muster erweitert: eigener Composer mit KI-Entwurf, grÃ¶ÃŸere EingabeflÃ¤che, Scrollbereich fÃ¼r den Verlauf und direkte Antworten an genau diesen Mieter. Mail senden in Nachrichten wurde weiter vergrÃ¶ÃŸert. Build ist grÃ¼n.
+pm run build lÃƒÂ¤uft grÃƒÂ¼n.
+[2026-04-04T10:35:00+02:00] KI- und Kommunikations-Feinschliff weitergezogen: Im globalen Zahnrad-MenÃƒÂ¼ gibt es jetzt einen direkten Link zu /admin/einstellungen?tab=ki. FÃƒÂ¼r Mehrfach-Themen in einer Eingangsnachricht existiert nun /api/ai/message-ticket-suggestions; die Nachrichtendetailseite nutzt lokale Fallback-VorschlÃƒÂ¤ge plus KI-TitelvorschlÃƒÂ¤ge, zeigt sie als auswÃƒÂ¤hlbare Chips und speichert beim Ticket-Anlegen zusÃƒÂ¤tzlich issueFocus. Ticket-KI liest jetzt diesen issueFocus statt pauschal die gesamte Ursprungsnachricht. In Nachrichten-Details wurden Ticket-Hinweis, KI-Titel/Anwenden sowie grÃƒÂ¶ÃƒÅ¸ere Chat-/Antwort-/NotizflÃƒÂ¤chen ergÃƒÂ¤nzt. In Tickets wurden Composer und Verlauf deutlich vergrÃƒÂ¶ÃƒÅ¸ert und beim KI-Hinweis ein zusÃƒÂ¤tzlicher Anwenden-Button ergÃƒÂ¤nzt. Im Mieterbereich wurde der Chatverlauf auf ein nachrichtenÃƒÂ¤hnliches Muster erweitert: eigener Composer mit KI-Entwurf, grÃƒÂ¶ÃƒÅ¸ere EingabeflÃƒÂ¤che, Scrollbereich fÃƒÂ¼r den Verlauf und direkte Antworten an genau diesen Mieter. Mail senden in Nachrichten wurde weiter vergrÃƒÂ¶ÃƒÅ¸ert. Build ist grÃƒÂ¼n.
 
 ## Update 2026-04-04 12:03
-- Nachrichten: Posteingang zeigt keine EndlÃ¶schung mehr. Alte Nachrichten bietet jetzt EndgÃ¼ltig lÃ¶schen nur dort an.
-- Tickets: Filter GelÃ¶scht bleibt aktiv. Soft-Delete lÃ¤uft Ã¼ber Ticketstatus deleted, endgÃ¼ltige LÃ¶schung nur in der GelÃ¶scht-Ansicht.
-- Dritte & Dienstleister: Chatbereich in PersonDetailView ist aktiv. Ausgehende Gewerk-Nachrichten aus Tickets landen Ã¼ber messages.recipientType = contact und
-ecipientId im Kontakt-Chat, wÃ¤hrend sie im Ticketverlauf weiterhin sichtbar bleiben.
-- Encoding-SchÃ¤den in den zuletzt bearbeiteten Admin-Dateien bereinigt;
-pm run build ist wieder grÃ¼n.
+- Nachrichten: Posteingang zeigt keine EndlÃƒÂ¶schung mehr. Alte Nachrichten bietet jetzt EndgÃƒÂ¼ltig lÃƒÂ¶schen nur dort an.
+- Tickets: Filter GelÃƒÂ¶scht bleibt aktiv. Soft-Delete lÃƒÂ¤uft ÃƒÂ¼ber Ticketstatus deleted, endgÃƒÂ¼ltige LÃƒÂ¶schung nur in der GelÃƒÂ¶scht-Ansicht.
+- Dritte & Dienstleister: Chatbereich in PersonDetailView ist aktiv. Ausgehende Gewerk-Nachrichten aus Tickets landen ÃƒÂ¼ber messages.recipientType = contact und
+ecipientId im Kontakt-Chat, wÃƒÂ¤hrend sie im Ticketverlauf weiterhin sichtbar bleiben.
+- Encoding-SchÃƒÂ¤den in den zuletzt bearbeiteten Admin-Dateien bereinigt;
+pm run build ist wieder grÃƒÂ¼n.
 
 ## Update 2026-04-04 12:42
-- Tickets: Composer fÃ¼llt sich nicht mehr automatisch bei Mieter/Gewerk. Inhalt entsteht erst durch Freitext oder KI-Entwurf.
-- Ticket-KI: Promptlogik auf Revision umgestellt. ZusÃ¤tzliche Anweisung Ã¼berschreibt Standardformulierungen, bestehender Entwurf wird gezielt Ã¼berarbeitet.
-- Nachrichten > Mail senden: lÃ¤dt Absenderadresse aus den Mailbox-Einstellungen, zeigt sie im Formular an und gibt sie an die KI mit.
-- Nachrichten > Mail senden: ZÃ¤hlerauswahl fÃ¼r den gewÃ¤hlten Mieter / das gewÃ¤hlte Objekt ergÃ¤nzt; ausgewÃ¤hlte ZÃ¤hler gehen in den KI-Entwurf ein.
+- Tickets: Composer fÃƒÂ¼llt sich nicht mehr automatisch bei Mieter/Gewerk. Inhalt entsteht erst durch Freitext oder KI-Entwurf.
+- Ticket-KI: Promptlogik auf Revision umgestellt. ZusÃƒÂ¤tzliche Anweisung ÃƒÂ¼berschreibt Standardformulierungen, bestehender Entwurf wird gezielt ÃƒÂ¼berarbeitet.
+- Nachrichten > Mail senden: lÃƒÂ¤dt Absenderadresse aus den Mailbox-Einstellungen, zeigt sie im Formular an und gibt sie an die KI mit.
+- Nachrichten > Mail senden: ZÃƒÂ¤hlerauswahl fÃƒÂ¼r den gewÃƒÂ¤hlten Mieter / das gewÃƒÂ¤hlte Objekt ergÃƒÂ¤nzt; ausgewÃƒÂ¤hlte ZÃƒÂ¤hler gehen in den KI-Entwurf ein.
 - Nachrichten > Mail senden: KI-Hinweis hat jetzt sichtbaren Anwenden-Button.
-- Mieter und Dritte & Dienstleister: KI-Hinweis + Anwenden im Chatbereich ergÃ¤nzt.
+- Mieter und Dritte & Dienstleister: KI-Hinweis + Anwenden im Chatbereich ergÃƒÂ¤nzt.
 - Mail-Footer: kompakter auf maximal drei zentrierte Zeilen reduziert.
-- message-drafts/send: nutzt fÃ¼r gespeicherte ausgehende Nachrichten jetzt die konfigurierte Mailbox-Adresse als romEmail statt hartem Fallback.
+- message-drafts/send: nutzt fÃƒÂ¼r gespeicherte ausgehende Nachrichten jetzt die konfigurierte Mailbox-Adresse als romEmail statt hartem Fallback.
 -
-pm run build ist grÃ¼n.
-[2026-04-04T11:34:00+02:00] UI/Workflow-Runde: TicketDetailWorkspace komplett neu aufgebaut (eigener Verlauf je Ticket plus gemeinsame Ursprungsnachricht, KI-Hinweis/Anwenden/Entwurf jetzt Ã¼ber dem Texteingabefeld, Composer leer bei Moduswechsel, Wiedervorlage/Status/Delete oben kompakt). TenantDetailView und PersonDetailView neu aufgebaut, Chatbereich jetzt ganz oben vor den Stammdaten. MessagesWorkspace: manuelle ZÃ¤hlerauswahl entfernt, stattdessen automatische ZÃ¤hlerÃ¼bergabe an die KI bei passenden Betreffen; permanentes LÃ¶schen alter Nachrichten schreibt jetzt Tombstones in deletedMessages. Mailbox-Einstellungen um mailHeaderText erweitert; ausgehende E-Mails erhalten jetzt einen gestalteten Header-Banner aus den Mail-Einstellungen. KI-Routen ticket-draft, message-draft, message-reply-draft vollstÃ¤ndig in sauberem UTF-8 ersetzt und auf strengere Einzelthemen-/Anweisungslogik umgestellt. Firestore-Regeln erweitert um deletedMessages und live nach halbmann-app deployt. npm run build grÃ¼n.
+pm run build ist grÃƒÂ¼n.
+[2026-04-04T11:34:00+02:00] UI/Workflow-Runde: TicketDetailWorkspace komplett neu aufgebaut (eigener Verlauf je Ticket plus gemeinsame Ursprungsnachricht, KI-Hinweis/Anwenden/Entwurf jetzt ÃƒÂ¼ber dem Texteingabefeld, Composer leer bei Moduswechsel, Wiedervorlage/Status/Delete oben kompakt). TenantDetailView und PersonDetailView neu aufgebaut, Chatbereich jetzt ganz oben vor den Stammdaten. MessagesWorkspace: manuelle ZÃƒÂ¤hlerauswahl entfernt, stattdessen automatische ZÃƒÂ¤hlerÃƒÂ¼bergabe an die KI bei passenden Betreffen; permanentes LÃƒÂ¶schen alter Nachrichten schreibt jetzt Tombstones in deletedMessages. Mailbox-Einstellungen um mailHeaderText erweitert; ausgehende E-Mails erhalten jetzt einen gestalteten Header-Banner aus den Mail-Einstellungen. KI-Routen ticket-draft, message-draft, message-reply-draft vollstÃƒÂ¤ndig in sauberem UTF-8 ersetzt und auf strengere Einzelthemen-/Anweisungslogik umgestellt. Firestore-Regeln erweitert um deletedMessages und live nach halbmann-app deployt. npm run build grÃƒÂ¼n.
 
-[2026-04-04T14:10:00+02:00] Chat-/Mail-Logik erneut gehÃ¤rtet: Mail-Import nutzt jetzt zusÃ¤tzlich externalMessageKey (lib/mailIdentity.ts) fÃ¼r Dedupe/Tombstones, sowohl serverseitig in lib/inboundEmailIngest.ts als auch im Client-Fallback in lib/clientWorkflow.ts. Alte, endgÃ¼ltig gelÃ¶schte Mails sollen dadurch nicht mehr wieder erscheinen, selbst wenn Message-IDs fehlen oder variieren. Outbound-Mails werden in app/api/message-drafts/send/route.ts jetzt immer als messages-Dokument gespeichert, auch ohne related messageId, und Ã¼bernehmen tenantId/propertyId/unitId/recipientType sauber aus dem Draft. Dadurch sollen ausgehende Nachrichten aus Mail senden kÃ¼nftig auch im Mieter-/Dienstleister-Chat auftauchen. Der Sendepfad nutzt jetzt Signaturdaten aus dem Draft und baut HTML-Footer zentraler Ã¼ber lib/signatures.ts. KI-Routen message-reply-draft, message-draft und ticket-draft wurden erneut in sauberem UTF-8 Ã¼berarbeitet und um klaren Kontextmodus Neue Nachricht vs. Antwort auf Verlauf erweitert. TenantDetailView, PersonDetailView, TicketDetailWorkspace und MessageDetailWorkspace Ã¼bergeben diesen Modus jetzt an die KI bzw. setzen ihn im UI sichtbar. MessageDetailWorkspace wurde funktional aufgerÃ¤umt: direkte Antwort steht jetzt Ã¼ber dem Verlauf, Ticket-KI-Hinweis und KI-Titel-Button sind entfernt, stattdessen bleiben nur noch Vorschlags-Chips fÃ¼r Mehrfachthemen-Tickets. TicketDetailWorkspace setzt Composer-Zustand beim Ticketwechsel zurÃ¼ck, damit Inhalte nicht ins nÃ¤chste Ticket mitwandern. PersonDetailView nutzt jetzt ebenfalls Firmen-Signaturdaten beim Versand. npm run build grÃ¼n.
-[2026-04-04T15:55:00+02:00] Navigation/Signatur/Composer weiter bereinigt: In ProtectedAreaLayout wird der aktive Link jetzt als lÃ¤ngster passender Treffer bestimmt, damit links nur noch genau eine Seite markiert bleibt. Neue Hilfslogik in lib/draftComposer.ts setzt BegrÃ¼ÃŸung und Portal-Signatur systemseitig, strippt KI-BegrÃ¼ÃŸung/Abschluss aus Antworten heraus und verhindert damit falsche Anreden oder EmpfÃ¤nger-Signaturen in TenantDetailView, PersonDetailView, TicketDetailWorkspace, MessageDetailWorkspace und MessagesWorkspace. lib/signatures.ts vollstÃ¤ndig in sauberes UTF-8 ersetzt; E-Mail-Signatur besteht nun aus kurzem Abschlussblock (Mit freundlichen GrÃ¼ÃŸen / Name / Firma) plus kompaktem, zentriertem Footer mit bis zu drei Zeilen und absolut aufgelÃ¶stem Logo. app/api/message-drafts/send/route.ts ebenfalls in sauberem UTF-8 ersetzt und an die neue Abschluss-/Footer-Logik angepasst. buildTenantContact in lib/adminWorkflow.ts leitet Anreden nun zusÃ¤tzlich aus anrede/gender ab. MessagesWorkspace zeigt Wiedervorlage jetzt nicht mehr nur im Einzelmodus, sondern Ã¼berall dort, wo EmpfÃ¤nger ausgewÃ¤hlt sind. npm run build grÃ¼n.
+[2026-04-04T14:10:00+02:00] Chat-/Mail-Logik erneut gehÃƒÂ¤rtet: Mail-Import nutzt jetzt zusÃƒÂ¤tzlich externalMessageKey (lib/mailIdentity.ts) fÃƒÂ¼r Dedupe/Tombstones, sowohl serverseitig in lib/inboundEmailIngest.ts als auch im Client-Fallback in lib/clientWorkflow.ts. Alte, endgÃƒÂ¼ltig gelÃƒÂ¶schte Mails sollen dadurch nicht mehr wieder erscheinen, selbst wenn Message-IDs fehlen oder variieren. Outbound-Mails werden in app/api/message-drafts/send/route.ts jetzt immer als messages-Dokument gespeichert, auch ohne related messageId, und ÃƒÂ¼bernehmen tenantId/propertyId/unitId/recipientType sauber aus dem Draft. Dadurch sollen ausgehende Nachrichten aus Mail senden kÃƒÂ¼nftig auch im Mieter-/Dienstleister-Chat auftauchen. Der Sendepfad nutzt jetzt Signaturdaten aus dem Draft und baut HTML-Footer zentraler ÃƒÂ¼ber lib/signatures.ts. KI-Routen message-reply-draft, message-draft und ticket-draft wurden erneut in sauberem UTF-8 ÃƒÂ¼berarbeitet und um klaren Kontextmodus Neue Nachricht vs. Antwort auf Verlauf erweitert. TenantDetailView, PersonDetailView, TicketDetailWorkspace und MessageDetailWorkspace ÃƒÂ¼bergeben diesen Modus jetzt an die KI bzw. setzen ihn im UI sichtbar. MessageDetailWorkspace wurde funktional aufgerÃƒÂ¤umt: direkte Antwort steht jetzt ÃƒÂ¼ber dem Verlauf, Ticket-KI-Hinweis und KI-Titel-Button sind entfernt, stattdessen bleiben nur noch Vorschlags-Chips fÃƒÂ¼r Mehrfachthemen-Tickets. TicketDetailWorkspace setzt Composer-Zustand beim Ticketwechsel zurÃƒÂ¼ck, damit Inhalte nicht ins nÃƒÂ¤chste Ticket mitwandern. PersonDetailView nutzt jetzt ebenfalls Firmen-Signaturdaten beim Versand. npm run build grÃƒÂ¼n.
+[2026-04-04T15:55:00+02:00] Navigation/Signatur/Composer weiter bereinigt: In ProtectedAreaLayout wird der aktive Link jetzt als lÃƒÂ¤ngster passender Treffer bestimmt, damit links nur noch genau eine Seite markiert bleibt. Neue Hilfslogik in lib/draftComposer.ts setzt BegrÃƒÂ¼ÃƒÅ¸ung und Portal-Signatur systemseitig, strippt KI-BegrÃƒÂ¼ÃƒÅ¸ung/Abschluss aus Antworten heraus und verhindert damit falsche Anreden oder EmpfÃƒÂ¤nger-Signaturen in TenantDetailView, PersonDetailView, TicketDetailWorkspace, MessageDetailWorkspace und MessagesWorkspace. lib/signatures.ts vollstÃƒÂ¤ndig in sauberes UTF-8 ersetzt; E-Mail-Signatur besteht nun aus kurzem Abschlussblock (Mit freundlichen GrÃƒÂ¼ÃƒÅ¸en / Name / Firma) plus kompaktem, zentriertem Footer mit bis zu drei Zeilen und absolut aufgelÃƒÂ¶stem Logo. app/api/message-drafts/send/route.ts ebenfalls in sauberem UTF-8 ersetzt und an die neue Abschluss-/Footer-Logik angepasst. buildTenantContact in lib/adminWorkflow.ts leitet Anreden nun zusÃƒÂ¤tzlich aus anrede/gender ab. MessagesWorkspace zeigt Wiedervorlage jetzt nicht mehr nur im Einzelmodus, sondern ÃƒÂ¼berall dort, wo EmpfÃƒÂ¤nger ausgewÃƒÂ¤hlt sind. npm run build grÃƒÂ¼n.
 
-[2026-04-04T16:35:00+02:00] Mail-/Ticket-Runde weiter bereinigt: draftComposer priorisiert jetzt eine im Kontext gefundene Anrede (z. B. Frau Tran) vor fehlerhaften Stammdaten-Anreden. app/api/ai/ticket-draft/route.ts wurde auf strikteren Einzelticket-Fokus gehÃ¤rtet: andere Maengel aus derselben Ursprungsmail sollen explizit ignoriert werden, und Nutzerkorrekturen muessen Vorrang haben. AdminMailboxSettings wurde komplett in sauberes UTF-8 ersetzt und erlaubt jetzt getrennte Bearbeitung von Mail-Header und Mail-Footer mit benutzerfreundlichen Formatoptionen (Schriftart, Schriftgroesse, Ausrichtung, Fett, Kursiv, Unterstreichen, Trennlinie) neben den IMAP/SMTP-Daten. MailboxSettings/LocalConfig/ServerConfig/API wurden um diese Header-/Footer-Felder erweitert. app/api/message-drafts/send/route.ts rendert Header und Footer nun mit den gespeicherten Stiloptionen. Build ist gruen.
+[2026-04-04T16:35:00+02:00] Mail-/Ticket-Runde weiter bereinigt: draftComposer priorisiert jetzt eine im Kontext gefundene Anrede (z. B. Frau Tran) vor fehlerhaften Stammdaten-Anreden. app/api/ai/ticket-draft/route.ts wurde auf strikteren Einzelticket-Fokus gehÃƒÂ¤rtet: andere Maengel aus derselben Ursprungsmail sollen explizit ignoriert werden, und Nutzerkorrekturen muessen Vorrang haben. AdminMailboxSettings wurde komplett in sauberes UTF-8 ersetzt und erlaubt jetzt getrennte Bearbeitung von Mail-Header und Mail-Footer mit benutzerfreundlichen Formatoptionen (Schriftart, Schriftgroesse, Ausrichtung, Fett, Kursiv, Unterstreichen, Trennlinie) neben den IMAP/SMTP-Daten. MailboxSettings/LocalConfig/ServerConfig/API wurden um diese Header-/Footer-Felder erweitert. app/api/message-drafts/send/route.ts rendert Header und Footer nun mit den gespeicherten Stiloptionen. Build ist gruen.
 
-[2026-04-04T16:55:00+02:00] Navigations-/Ticket-/Settings-Runde: ProtectedAreaLayout weiter verdichtet (Bestand-Block optisch neutraler, Sidebar-Logo grÃ¶ÃŸer). TicketsWorkspace nach oben gezogen, Filterbuttons und manueller Ticketbutton kompakter. TicketDetailWorkspace weiter nach oben gezogen; ZurÃ¼ck-Link sitzt jetzt links oben im Content, Ticketkopf dichter in einer Zeile mit TK/Firma/Objekt/Einheit/Mieter. Einstellungen umgebaut: Tab Postfach heiÃŸt nun Postfach-Zugang und zeigt nur noch Zugangsdaten; unter Signaturen werden jetzt AdminSignatureSettings plus die vollstÃ¤ndige Header-/Footer-Steuerung aus AdminMailboxSettings angezeigt. Mailbox-Einstellungen unterstÃ¼tzen getrennte Header-/Footer-Formatierung (Schriftart, SchriftgrÃ¶ÃŸe, Ausrichtung, Fett, Kursiv, Unterstreichen, Trennlinie) serverseitig und lokal. buildIssueSuggestionsFromText in lib/adminWorkflow.ts ergÃ¤nzt bekannte ProblemvorschlÃ¤ge priorisiert (u.a. Verstopfung in KÃ¼che, Tropfende Toilette, Mangelhafte Treppenhausreinigung), damit Tickettitel aus Mehrfach-Nachrichten brauchbarer vorgeschlagen werden. npm run build grÃ¼n.
+[2026-04-04T16:55:00+02:00] Navigations-/Ticket-/Settings-Runde: ProtectedAreaLayout weiter verdichtet (Bestand-Block optisch neutraler, Sidebar-Logo grÃƒÂ¶ÃƒÅ¸er). TicketsWorkspace nach oben gezogen, Filterbuttons und manueller Ticketbutton kompakter. TicketDetailWorkspace weiter nach oben gezogen; ZurÃƒÂ¼ck-Link sitzt jetzt links oben im Content, Ticketkopf dichter in einer Zeile mit TK/Firma/Objekt/Einheit/Mieter. Einstellungen umgebaut: Tab Postfach heiÃƒÅ¸t nun Postfach-Zugang und zeigt nur noch Zugangsdaten; unter Signaturen werden jetzt AdminSignatureSettings plus die vollstÃƒÂ¤ndige Header-/Footer-Steuerung aus AdminMailboxSettings angezeigt. Mailbox-Einstellungen unterstÃƒÂ¼tzen getrennte Header-/Footer-Formatierung (Schriftart, SchriftgrÃƒÂ¶ÃƒÅ¸e, Ausrichtung, Fett, Kursiv, Unterstreichen, Trennlinie) serverseitig und lokal. buildIssueSuggestionsFromText in lib/adminWorkflow.ts ergÃƒÂ¤nzt bekannte ProblemvorschlÃƒÂ¤ge priorisiert (u.a. Verstopfung in KÃƒÂ¼che, Tropfende Toilette, Mangelhafte Treppenhausreinigung), damit Tickettitel aus Mehrfach-Nachrichten brauchbarer vorgeschlagen werden. npm run build grÃƒÂ¼n.
 
 ## Update 2026-04-04 17:20
 - `Signaturen` und `Postfach-Zugang` weiter getrennt: unter `Signaturen` werden jetzt Signatur plus Header/Footer-Editor gezeigt, ohne IMAP/SMTP-Zugangsdaten.
-- `AdminMailboxSettings` unterstÃ¼tzt jetzt die Modi `credentials`, `layout`, `full`.
-- KI fÃ¼r `Neue Nachricht` bei Mieter/Dienstleister hÃ¤rter vom Verlauf getrennt: `message-reply-draft` ignoriert alte Themen in `new`-Kontext jetzt explizit, und Mieter sollen nicht mehr zur Firmen-Mailadresse geschickt werden.
+- `AdminMailboxSettings` unterstÃƒÂ¼tzt jetzt die Modi `credentials`, `layout`, `full`.
+- KI fÃƒÂ¼r `Neue Nachricht` bei Mieter/Dienstleister hÃƒÂ¤rter vom Verlauf getrennt: `message-reply-draft` ignoriert alte Themen in `new`-Kontext jetzt explizit, und Mieter sollen nicht mehr zur Firmen-Mailadresse geschickt werden.
 - Sidebar `Bestand` optisch weiter neutralisiert, damit es nicht wie ein aktiver Link wirkt.
-- Header/Settings-MenÃ¼ mit hÃ¶herem `z-index`, damit das Zahnrad nicht hinter Ticketfeldern verschwindet.
+- Header/Settings-MenÃƒÂ¼ mit hÃƒÂ¶herem `z-index`, damit das Zahnrad nicht hinter Ticketfeldern verschwindet.
 - Ticketliste und Ticketdetail weiter nach oben gezogen; Ticketdetail mit kompakterem Kopf und Back-Button oben links.
-- Build geprÃ¼ft: `npm run build` grÃ¼n.
+- Build geprÃƒÂ¼ft: `npm run build` grÃƒÂ¼n.
 ## Update 2026-04-04 17:40
-- Ticket-/Ticketdetail-Headerleiste weiter vereinfacht: globaler Kopfstreifen fÃ¼r `/admin/tickets` und `/admin/tickets/[ticketId]` entfernt, Settings-Zahnrad dort jetzt separat/floating.
-- `AdminSignatureSettings` erweitert: Signatur hat jetzt eigenen Formatierungsblock mit Schriftart, SchriftgrÃ¶ÃŸe, Ausrichtung, Fett, Kursiv, Unterstreichen und Trennlinie.
-- Signaturdaten speichern jetzt zusÃ¤tzliche Felder `signatureFontFamily`, `signatureFontSize`, `signatureTextAlign`, `signatureFontBold`, `signatureFontItalic`, `signatureFontUnderline`, `signatureUseDivider`.
-- `lib/signatures.ts` aktualisiert, damit E-Mail-Signaturen diese Formatierung auch tatsÃ¤chlich im HTML-Footer berÃ¼cksichtigen.
+- Ticket-/Ticketdetail-Headerleiste weiter vereinfacht: globaler Kopfstreifen fÃƒÂ¼r `/admin/tickets` und `/admin/tickets/[ticketId]` entfernt, Settings-Zahnrad dort jetzt separat/floating.
+- `AdminSignatureSettings` erweitert: Signatur hat jetzt eigenen Formatierungsblock mit Schriftart, SchriftgrÃƒÂ¶ÃƒÅ¸e, Ausrichtung, Fett, Kursiv, Unterstreichen und Trennlinie.
+- Signaturdaten speichern jetzt zusÃƒÂ¤tzliche Felder `signatureFontFamily`, `signatureFontSize`, `signatureTextAlign`, `signatureFontBold`, `signatureFontItalic`, `signatureFontUnderline`, `signatureUseDivider`.
+- `lib/signatures.ts` aktualisiert, damit E-Mail-Signaturen diese Formatierung auch tatsÃƒÂ¤chlich im HTML-Footer berÃƒÂ¼cksichtigen.
 - UTF-8-Fehler nach Dateineuschreiben bereinigt.
-- Build geprÃ¼ft: `npm run build` grÃ¼n.
+- Build geprÃƒÂ¼ft: `npm run build` grÃƒÂ¼n.
 
 ---
 
 ## Update 2026-04-04 19:51
 
-- Ticketliste und Ticketdetail wurden weiter nach oben gezogen, damit die Kopfzeilen nÃƒÂ¤her an die Zahnrad-Zeile rÃƒÂ¼cken.
-- Die Ticketdetailseite nutzt jetzt eine kompaktere Metadatenzeile oben und einen zurÃƒÂ¼ckgesetzten Arbeitsbereich darunter.
-- Die Sidebar im Bereich Bestand wurde optisch entschÃƒÂ¤rft, damit nur noch echte aktive EintrÃƒÂ¤ge hervortreten.
-- Im Mieterchat nutzt Neue Nachricht jetzt den KI-Pfad fÃƒÂ¼r eigenstÃƒÂ¤ndige Nachrichten statt den Antwortpfad auf den Verlauf.
-- Der KI-Kontext fÃƒÂ¼r Mieter berÃƒÂ¼cksichtigt jetzt zusÃƒÂ¤tzlich die konfigurierte Absenderadresse und vorhandene ZÃƒÂ¤hlerdaten.
-- Die KI-Regeln wurden verschÃƒÂ¤rft, damit bei Tickets und Mieter-Nachrichten die Anrede Frau/Herr verbindlich ist und nur das aktuelle Einzelticket behandelt wird.
-- matchCategory() priorisiert Hausreinigung und konkrete ProblemfÃƒÂ¤lle wie Treppenhausreinigung, tropfende Toilette und Verstopfung in KÃƒÂ¼che jetzt vor allgemeineren Treffern.
+- Ticketliste und Ticketdetail wurden weiter nach oben gezogen, damit die Kopfzeilen nÃƒÆ’Ã‚Â¤her an die Zahnrad-Zeile rÃƒÆ’Ã‚Â¼cken.
+- Die Ticketdetailseite nutzt jetzt eine kompaktere Metadatenzeile oben und einen zurÃƒÆ’Ã‚Â¼ckgesetzten Arbeitsbereich darunter.
+- Die Sidebar im Bereich Bestand wurde optisch entschÃƒÆ’Ã‚Â¤rft, damit nur noch echte aktive EintrÃƒÆ’Ã‚Â¤ge hervortreten.
+- Im Mieterchat nutzt Neue Nachricht jetzt den KI-Pfad fÃƒÆ’Ã‚Â¼r eigenstÃƒÆ’Ã‚Â¤ndige Nachrichten statt den Antwortpfad auf den Verlauf.
+- Der KI-Kontext fÃƒÆ’Ã‚Â¼r Mieter berÃƒÆ’Ã‚Â¼cksichtigt jetzt zusÃƒÆ’Ã‚Â¤tzlich die konfigurierte Absenderadresse und vorhandene ZÃƒÆ’Ã‚Â¤hlerdaten.
+- Die KI-Regeln wurden verschÃƒÆ’Ã‚Â¤rft, damit bei Tickets und Mieter-Nachrichten die Anrede Frau/Herr verbindlich ist und nur das aktuelle Einzelticket behandelt wird.
+- matchCategory() priorisiert Hausreinigung und konkrete ProblemfÃƒÆ’Ã‚Â¤lle wie Treppenhausreinigung, tropfende Toilette und Verstopfung in KÃƒÆ’Ã‚Â¼che jetzt vor allgemeineren Treffern.
 - Im Reiter Signaturen bleibt Header/Footer-Bearbeitung erhalten, aber der Postfach-Aktiv-Schalter wird dort nicht mehr angezeigt.
 -
-pm run build ist auf diesem Stand grÃƒÂ¼n.
+pm run build ist auf diesem Stand grÃƒÆ’Ã‚Â¼n.
 
 ---
 
@@ -784,12 +784,12 @@ pm run build ist auf diesem Stand grÃƒÂ¼n.
   - `Briefvorlage`
   - `Anrede`
   - `Abschluss`
-- Die Umschaltung lÃ¤uft Ã¼ber:
+- Die Umschaltung lÃƒÂ¤uft ÃƒÂ¼ber:
   - `/admin/einstellungen?tab=brief&sub=vorlage`
   - `/admin/einstellungen?tab=brief&sub=anrede`
   - `/admin/einstellungen?tab=brief&sub=abschluss`
-- `app/admin/einstellungen/page.tsx` wurde dafÃ¼r erweitert und Ã¼bergibt den aktiven Unterbereich an `components/admin/AdminLetterSettings.tsx`.
-- `AdminLetterSettings` unterstÃ¼tzt jetzt einen `view`-Prop:
+- `app/admin/einstellungen/page.tsx` wurde dafÃƒÂ¼r erweitert und ÃƒÂ¼bergibt den aktiven Unterbereich an `components/admin/AdminLetterSettings.tsx`.
+- `AdminLetterSettings` unterstÃƒÂ¼tzt jetzt einen `view`-Prop:
   - `vorlage`
   - `anrede`
   - `abschluss`
@@ -799,36 +799,36 @@ pm run build ist auf diesem Stand grÃƒÂ¼n.
 
 ### Aktueller Stand Brief-Einstellungen
 
-- `Briefvorlage` zeigt weiterhin das groÃŸe Vorlagenfeld mit Logo, Linien, RÃ¤ndern und Platzhaltern.
-- `Anrede` hat jetzt ein eigenes groÃŸes Rich-Text-Feld nur fÃ¼r die formatierbare Brief-Anrede.
-- `Abschluss` hat jetzt ein eigenes groÃŸes Rich-Text-Feld nur fÃ¼r den formatierbaren Abschlussblock.
+- `Briefvorlage` zeigt weiterhin das groÃƒÅ¸e Vorlagenfeld mit Logo, Linien, RÃƒÂ¤ndern und Platzhaltern.
+- `Anrede` hat jetzt ein eigenes groÃƒÅ¸es Rich-Text-Feld nur fÃƒÂ¼r die formatierbare Brief-Anrede.
+- `Abschluss` hat jetzt ein eigenes groÃƒÅ¸es Rich-Text-Feld nur fÃƒÂ¼r den formatierbaren Abschlussblock.
 - Die Toolbar-Buttons wurden bereits so angepasst, dass ihre Auswahl per `selectionchange` zentraler gemerkt wird.
-- Speichern der Rich-Text-Inhalte fÃ¼r Anrede und Abschluss erfolgt nicht mehr bei jedem Tastendruck, sondern erst beim Verlassen des Feldes bzw. beim Speichern.
-- `npm run build` lief nach dieser Umstellung erfolgreich grÃ¼n.
+- Speichern der Rich-Text-Inhalte fÃƒÂ¼r Anrede und Abschluss erfolgt nicht mehr bei jedem Tastendruck, sondern erst beim Verlassen des Feldes bzw. beim Speichern.
+- `npm run build` lief nach dieser Umstellung erfolgreich grÃƒÂ¼n.
 
 ### Noch offener Punkt vor dem Neustart
 
-- Die Trennung in drei Unterseiten ist jetzt drin, aber noch nicht abschlieÃŸend im Browser verifiziert.
-- Vor dem Neustart war genau das der nÃ¤chste PrÃ¼fpunkt:
+- Die Trennung in drei Unterseiten ist jetzt drin, aber noch nicht abschlieÃƒÅ¸end im Browser verifiziert.
+- Vor dem Neustart war genau das der nÃƒÂ¤chste PrÃƒÂ¼fpunkt:
   - Funktioniert Formatieren in `Anrede` jetzt sauber?
   - Funktioniert Formatieren in `Abschluss` jetzt sauber?
-  - Bleibt `Briefvorlage` stabil und arbeitet nur noch auf dem groÃŸen Vorlagenfeld?
+  - Bleibt `Briefvorlage` stabil und arbeitet nur noch auf dem groÃƒÅ¸en Vorlagenfeld?
 
 ### Wichtige betroffene Dateien
 
 - `app/admin/einstellungen/page.tsx`
 - `components/admin/AdminLetterSettings.tsx`
-- auÃŸerdem weiter relevant fÃ¼r Brief-/Signatur-Rendering:
+- auÃƒÅ¸erdem weiter relevant fÃƒÂ¼r Brief-/Signatur-Rendering:
   - `lib/signatures.ts`
 
-### Hinweis fÃ¼r den nÃ¤chsten Chat
+### Hinweis fÃƒÂ¼r den nÃƒÂ¤chsten Chat
 
 - Erster sinnvoller Schritt im neuen Chat:
   1. VS Code / Browser neu starten
   2. `Einstellungen > Brief > Anrede` testen: markieren + Fett/Kursiv/Unterstreichen
   3. `Einstellungen > Brief > Abschluss` genauso testen
-  4. danach `Briefvorlage` kurz gegenprÃ¼fen
-- Falls die Selektion dort immer noch springt, dann als nÃ¤chstes nicht wieder symptomatisch patchen, sondern die Toolbar-/Selection-Logik in `AdminLetterSettings.tsx` fÃ¼r die drei Views jeweils strikt getrennt behandeln.
+  4. danach `Briefvorlage` kurz gegenprÃƒÂ¼fen
+- Falls die Selektion dort immer noch springt, dann als nÃƒÂ¤chstes nicht wieder symptomatisch patchen, sondern die Toolbar-/Selection-Logik in `AdminLetterSettings.tsx` fÃƒÂ¼r die drei Views jeweils strikt getrennt behandeln.
 
 ---
 
@@ -1185,17 +1185,17 @@ Dieser Eintrag wurde nachtraeglich aus `git status`, `git diff` und einem frisch
 - Mieter-Bearbeiten laedt das vergebene Passwort jetzt wieder verborgen in das Feld und kann es per Anzeigen-Schalter sichtbar machen.
 - Lokale Portalsitzung liest die Portaldatei jetzt robust auch dann, wenn eine UTF-8-BOM vorhanden ist.
 - Lokaler Login /api/portal-local/login und Session /api/portal-local/session fuer den echten Test-Mieter erfolgreich verifiziert.
-- npm run build ist gruÂ¨n.
+- npm run build ist gruÃ‚Â¨n.
 [2026-04-28 08:05] Portal-Weiterleitung nach Login korrigiert
 - ProtectedAreaLayout akzeptiert fuer requiredRole='portal' jetzt auch lokale Portalsitzungen ohne Firebase-User.
 - Vorher wurde bei role='portal' aber user=null das Layout verworfen; dadurch landete der Mieter nach Login wieder auf der Startseite.
 - Sidebar zeigt fuer Portal jetzt contactEmail oder Benutzername, falls kein Firebase-User vorhanden ist.
-- npm run build ist gruÂ¨n.
+- npm run build ist gruÃ‚Â¨n.
 [2026-04-28 08:12] Lokalen Portal-Login auf harten Seitenwechsel umgestellt
 - Nach erfolgreichem lokalem Portal-Login nutzt LoginForm jetzt window.location.assign('/mieterportal') statt nur router.push().
 - Hintergrund: Der Client-Auth-Context bekam bei lokaler Sitzung ohne Firebase-Auth-Event den neuen Portalstatus auf der Startseite nicht rechtzeitig mit und leitete wieder zur Startseite zurueck.
 - AuthContext hat zusaetzlich einen manuellen Loader fuer lokale Portalsitzungen und einen Event-Hook fuer spaetere Session-Refreshes erhalten.
-- npm run build ist gruÂ¨n.
+- npm run build ist gruÃ‚Â¨n.
 
 [2026-04-28 08:58] Portal-Datenzugriff und Portal-Chat auf serverseitige APIs umgestellt
 - Mieterportal-, Dokumente- und Nachrichten-Seite greifen lokal nicht mehr direkt per Firestore-Client auf Daten zu.
@@ -1329,7 +1329,7 @@ Dieser Eintrag wurde nachtraeglich aus `git status`, `git diff` und einem frisch
 - Geprueft: `npm run build` ist gruen.
 
 ## Update 2026-04-28 17:40
-- Alter Ticket-Zweig jetzt technisch deutlich hÃ¤rter entfernt.
+- Alter Ticket-Zweig jetzt technisch deutlich hÃƒÂ¤rter entfernt.
 - Geloescht wurden die alten Admin-Ticketseiten (`/admin/tickets` und Detailroute) samt der zugehoerigen Workspaces.
 - Ebenfalls entfernt wurden die speziellen KI-Endpunkte fuer Ticketvorschlaege und Ticketentwuerfe.
 - In der Nachrichten-Detailansicht wurden die ungenutzten Ticket-Helfer aus dem aktiven Codepfad entfernt.
@@ -1412,7 +1412,7 @@ pm run build nach dem UI- und Briefvorschau-Feinschliff erfolgreich gruen.
 
 ## Update 2026-04-29 13:45
 - Splitten auf der konkreten Mieter-Nachrichtenseite grundlegend vereinfacht.
-- In components/admin/TenantDetailView.tsx wird beim Splitten nicht mehr mit vielen auswÃ¤hlbaren VerlaufseintrÃ¤gen gearbeitet.
+- In components/admin/TenantDetailView.tsx wird beim Splitten nicht mehr mit vielen auswÃƒÂ¤hlbaren VerlaufseintrÃƒÂ¤gen gearbeitet.
 - Neuer Flow: aktives Thema oeffnen -> letzte Nachricht des Themas sehen -> Titel fuer neues Thema vergeben -> daraus neues Thema erzeugen.
 - Nach dem Split bleibt die Ansicht im aktuellen Thema, damit dieselbe letzte Nachricht mehrfach nacheinander in weitere neue Themen aufgeteilt werden kann.
 - In lib/messageThemes.ts die Themenzuordnung erweitert, sodass dieselbe Ausgangsnachricht mehreren Themen als Startpunkt zugeordnet werden kann.
@@ -1561,17 +1561,17 @@ pm run build nach dem Einladungsmail-/Popup-Feinschliff erfolgreich gruen.
 - `app/api/message-drafts/send/route.ts`: Der normale Nachrichtenversand erkennt jetzt, ob `draft.signature` bereits ein fertiger `SignatureRecord` ist. In dem Fall wird er direkt weiterverwendet statt erneut durch `createSignatureRecord` aus Rohdaten gejagt. Dadurch sollten Logo, Umlaute und Form wie bei der Einladungsmail erhalten bleiben.
 - `components/admin/TenantDetailView.tsx`: Aktives Thema rechts deutlicher markiert (staerkerer Hintergrund, Ring, klarere Rahmen-/Titelbetonung).
 - Verifiziert: `npm run build` gruen.
-## 2026-05-05 10:05 - Portal-Ãœbersicht aufgerÃ¤umt
-- `components/ProtectedAreaLayout.tsx`: FÃ¼r `requiredRole="portal"` zeigt die linke obere Kachel jetzt nur noch den Portal-Namen (`profile.displayName` / Benutzername) ohne `Interner Bereich`. Der obere Header-Bereich wird fÃ¼r Portal-Seiten komplett ausgeblendet.
-- `app/mieterportal/page.tsx`: Die groÃŸe Einstiegskachel mit `Portal`, Mieternamen und ErklÃ¤rungstext wurde entfernt.
-- Verifiziert: `npm run build` grÃ¼n.
-## 2026-05-05 10:28 - Portal-Ãœbersicht auf Mieterblick umgebaut
-- `components/ProtectedAreaLayout.tsx`: Portal-Seitenleiste lÃ¤dt jetzt den echten Portal-Anzeigenamen aus `/api/portal/context` und zeigt dadurch oben links den Mieternamen statt E-Mail/Benutzername.
-- `app/mieterportal/page.tsx`: Ãœbersicht komplett neu aufgebaut. Statt alter Kacheln jetzt BegrÃ¼ÃŸungstext, kompakte Mieterinformationen und ein ZÃ¤hlerbereich mit aktuellem Stand pro ZÃ¤hler.
-- `app/api/portal/meters/route.ts`: Neuer Server-Endpunkt fÃ¼r ZÃ¤hlerstand-Meldungen aus dem Portal. Aktualisiert im Admin-Modus die Property/Unit-Meter in Firestore und im lokalen Portalmodus die hinterlegten lokalen Portaldaten.
-- `app/api/portal/context/route.ts`: Lokaler Portal-Kontext liefert jetzt vorhandene `propertyData` aus `.portal-access.local.json` aus und unterstÃ¼tzt Meterdaten in `targetData`/`unitMeters`.
+## 2026-05-05 10:05 - Portal-ÃƒÅ“bersicht aufgerÃƒÂ¤umt
+- `components/ProtectedAreaLayout.tsx`: FÃƒÂ¼r `requiredRole="portal"` zeigt die linke obere Kachel jetzt nur noch den Portal-Namen (`profile.displayName` / Benutzername) ohne `Interner Bereich`. Der obere Header-Bereich wird fÃƒÂ¼r Portal-Seiten komplett ausgeblendet.
+- `app/mieterportal/page.tsx`: Die groÃƒÅ¸e Einstiegskachel mit `Portal`, Mieternamen und ErklÃƒÂ¤rungstext wurde entfernt.
+- Verifiziert: `npm run build` grÃƒÂ¼n.
+## 2026-05-05 10:28 - Portal-ÃƒÅ“bersicht auf Mieterblick umgebaut
+- `components/ProtectedAreaLayout.tsx`: Portal-Seitenleiste lÃƒÂ¤dt jetzt den echten Portal-Anzeigenamen aus `/api/portal/context` und zeigt dadurch oben links den Mieternamen statt E-Mail/Benutzername.
+- `app/mieterportal/page.tsx`: ÃƒÅ“bersicht komplett neu aufgebaut. Statt alter Kacheln jetzt BegrÃƒÂ¼ÃƒÅ¸ungstext, kompakte Mieterinformationen und ein ZÃƒÂ¤hlerbereich mit aktuellem Stand pro ZÃƒÂ¤hler.
+- `app/api/portal/meters/route.ts`: Neuer Server-Endpunkt fÃƒÂ¼r ZÃƒÂ¤hlerstand-Meldungen aus dem Portal. Aktualisiert im Admin-Modus die Property/Unit-Meter in Firestore und im lokalen Portalmodus die hinterlegten lokalen Portaldaten.
+- `app/api/portal/context/route.ts`: Lokaler Portal-Kontext liefert jetzt vorhandene `propertyData` aus `.portal-access.local.json` aus und unterstÃƒÂ¼tzt Meterdaten in `targetData`/`unitMeters`.
 - `lib/localPortalAccess.ts`: Lokale Portalrecords um optionales `propertyData` erweitert.
-- Verifiziert: `npm run build` grÃ¼n.
+- Verifiziert: `npm run build` grÃƒÂ¼n.
 ## 2026-05-05 10:42 - Portal-Uebersicht weiter beruhigt
 - `app/mieterportal/page.tsx`: Mini-Dashboard-Kacheln auf der Uebersichtsseite weiter reduziert. Mieterinformationen jetzt als ruhige Zeilenuebersicht statt Einzelkarten; offene Themen nur noch als kleine Textzeile im Begruessungsblock.
 - Portal-Uebersicht sprachlich bereinigt: sichtbare Umlaute/Trennzeichen im Begruessungstext, Zaehlerbereich und Zaehler-Popup korrigiert.
@@ -1585,7 +1585,7 @@ pm run build nach dem Einladungsmail-/Popup-Feinschliff erfolgreich gruen.
 ## 2026-05-05 11:14 - Lokale Portal-Zaehler und Mojibake
 - `components/admin/TenantAdminManager.tsx`: Lokale Portalzugang-Anlage uebergibt jetzt neben dem Tenant-Snapshot auch einen `propertySnapshot` mit Objekt-/Einheitsdaten sowie hinterlegten Zaehlern und Unit-Metern.
 - `app/api/admin/portal-access/route.ts`: Speichert diesen `propertySnapshot` in `.portal-access.local.json` als `propertyData`, damit das Portal im lokalen Modus Objekt-/Einheitszaehler wirklich anzeigen kann.
-- `lib/portalAccess.ts`: `cleanPortalText(...)` repariert jetzt haeufige Mojibake-Sequenzen (`StraÃƒÅ¸e`, `Ã‚Â·`, Umlaute usw.) direkt beim Lesen, damit alte lokale Portal-Datensaetze sauberer dargestellt werden.
+- `lib/portalAccess.ts`: `cleanPortalText(...)` repariert jetzt haeufige Mojibake-Sequenzen (`StraÃƒÆ’Ã…Â¸e`, `Ãƒâ€šÃ‚Â·`, Umlaute usw.) direkt beim Lesen, damit alte lokale Portal-Datensaetze sauberer dargestellt werden.
 - Verifiziert: `npm run build` gruen.
 ## 2026-05-05 11:24 - Portal ohne Zaehleruebersicht
 - `app/mieterportal/page.tsx`: Zaehler-Kachel komplett aus der Portal-Uebersicht entfernt.
@@ -1611,7 +1611,7 @@ pm run build nach dem Einladungsmail-/Popup-Feinschliff erfolgreich gruen.
 ## 2026-05-05 14:29 - Neue Portal-Nachricht mit Ruecksprung auf Uebersicht
 - `app/mieterportal/nachrichten/neu/page.tsx`: Erklaertext unter `Neues Anliegen an die Verwaltung` entfernt.
 - Nach erfolgreichem Senden bleibt der Portal-Flow nicht mehr auf einer Detailseite, sondern springt zur Nachrichtenuebersicht zurueck.
-- `app/mieterportal/nachrichten/page.tsx`: Bei Rueckkehr mit `?sent=1` erscheint ein BestÃ¤tigungs-Popup `Nachricht wurde verschickt.` und der Query-Parameter wird direkt wieder bereinigt.
+- `app/mieterportal/nachrichten/page.tsx`: Bei Rueckkehr mit `?sent=1` erscheint ein BestÃƒÂ¤tigungs-Popup `Nachricht wurde verschickt.` und der Query-Parameter wird direkt wieder bereinigt.
 
 ## 2026-05-05 - Portal-Nachrichten mit Anhaengen
 - Mieter koennen im Portal jetzt bei neuer Nachricht und bei Antworten Anhaenge hochladen und mitsenden.
@@ -1693,20 +1693,20 @@ pm run build (gruen).
 - Konkrete Mieterseite im Nachrichtenmodus gleicht jetzt auch die linke Seitenleisten-Kachel an den allgemeinen Posteingang an: Bei `messageId`/`tab` auf `/admin/mieter/[id]` steht dort jetzt `Posteingang` oder `Archiv` statt `Mieter`.
 - Der Ansicht-Dropdown auf der konkreten Mieterseite sendet jetzt denselben `admin-mailbox-view`-Status wie die allgemeine Nachrichtenseite, damit die Seitenleiste sofort synchron bleibt.
 - Die konkrete Mieterseite `/admin/mieter/[id]` wird in der Seitenleiste jetzt konsequent wie die allgemeine Nachrichtenansicht behandelt: links oben steht dort im Nachrichtenmodus immer `Posteingang` bzw. `Archiv` statt `Mieter`.
-- Konkrete Mieterseite im Nachrichtenmodus nutzt jetzt denselben Zweispalten-Grid wie der allgemeine Posteingang: die rechte Nachrichtenliste bleibt neben Composer/ArbeitsflÃ¤che und rutscht nicht mehr unter das Eingabefeld.
+- Konkrete Mieterseite im Nachrichtenmodus nutzt jetzt denselben Zweispalten-Grid wie der allgemeine Posteingang: die rechte Nachrichtenliste bleibt neben Composer/ArbeitsflÃƒÂ¤che und rutscht nicht mehr unter das Eingabefeld.
 - Die obere Arbeitskachel im Nachrichtenmodus wurde vertikal gestrafft: weniger Top-Padding, geringerer Abstand unter der Titelzeile und kompaktere Aktionsbox, damit die oberen Buttons sauberer und hoeher sitzen.
 - Auf Mieterseiten ohne Kopf-Aktionen wird die leere obere Header-Zeile nicht mehr gerendert. Dadurch verschiebt die alte Negativmarge den Nachrichtenblock nicht mehr nach unten.
 - Auf Mieterseiten ohne Kopf-Aktionen wird die leere obere Header-Zeile nicht mehr gerendert. Dadurch verschiebt die alte Negativmarge den Nachrichtenblock nicht mehr nach unten.
-- Build-Blocker nebenbei bereinigt: `app/Ã¼ber/page.tsx` war leer und wurde als gueltiges Modul ergÃ¤nzt.
+- Build-Blocker nebenbei bereinigt: `app/ÃƒÂ¼ber/page.tsx` war leer und wurde als gueltiges Modul ergÃƒÂ¤nzt.
 - In den Nachrichten-Infokacheln heisst `Einzug` jetzt `Mietbeginn`.
-- Darunter wurden fuer beide Nachrichtenansichten `Mietende` und `Optionen` ergÃ¤nzt. Wenn im Datensatz nichts vorhanden ist, erscheinen die Defaultwerte `Unbefristet` und `Keine Option hinterlegt`.
+- Darunter wurden fuer beide Nachrichtenansichten `Mietende` und `Optionen` ergÃƒÂ¤nzt. Wenn im Datensatz nichts vorhanden ist, erscheinen die Defaultwerte `Unbefristet` und `Keine Option hinterlegt`.
 - Unter `Nebenkosten` wird die ausgewiesene Umsatzsteuer jetzt als Eurobetrag gezeigt; `Gesamtmiete` bleibt die Summe inklusive Umsatzsteuer.
 - Die Kachel `Mietentwicklung` ist aus beiden Admin-Nachrichtenansichten entfernt.
 - Im Dashboard wurde die Mietentwicklungs-Grafik auf einen erweiterten Filter umgestellt: `Alle`, `Objekte`, `Firmen` und einzelne `Mieter`.
-- `Bankbuergschaft` ist in der Nachrichten-Stammdatenkachel auf `BankbÃ¼rgschaft` korrigiert.
+- `Bankbuergschaft` ist in der Nachrichten-Stammdatenkachel auf `BankbÃƒÂ¼rgschaft` korrigiert.
 - Brief-Paginierung gestrafft: Die Vorschau reserviert auf jeder Seite jetzt konsequent Platz am unteren Rand, statt der ersten Seite kuenstlich Extra-Hoehe zu geben. Dadurch wird der Abschlussblock bei der ersten ueberlaufenden Zeile sauber auf eine zweite Seite umgebrochen.
-- Brief-Paginierung weiter robuster gemacht: Der Umbruch misst jetzt direkt die reale Scrollhoehe des Brief-Body-Bereichs statt Body- und Closing-Offsets manuell zusammenzurechnen. Das ist verlÃ¤sslicher fuer den Fall, dass der Abschlussblock noch verdeckt unter der ersten Seite haengt.
-- Der Briefmodus arbeitet jetzt ohne Seitenvorschau und Pagination. Stattdessen erscheint beim Versandmodus `Brief` ein direkt editierbares A4-Blatt mit sichtbarem Header, EmpfÃ¤ngerblock, Betreff, Footer und bearbeitbarem Body.
+- Brief-Paginierung weiter robuster gemacht: Der Umbruch misst jetzt direkt die reale Scrollhoehe des Brief-Body-Bereichs statt Body- und Closing-Offsets manuell zusammenzurechnen. Das ist verlÃƒÂ¤sslicher fuer den Fall, dass der Abschlussblock noch verdeckt unter der ersten Seite haengt.
+- Der Briefmodus arbeitet jetzt ohne Seitenvorschau und Pagination. Stattdessen erscheint beim Versandmodus `Brief` ein direkt editierbares A4-Blatt mit sichtbarem Header, EmpfÃƒÂ¤ngerblock, Betreff, Footer und bearbeitbarem Body.
 - Die Formatierungsleiste im Briefeditor bleibt erhalten.
 - Alter Vorschau-/Pagination-Rest im Briefeditor entfernt. Der Briefmodus verwendet jetzt nur noch das direkte editierbare A4-Blatt.
 
@@ -1716,9 +1716,9 @@ pm run build (gruen).
 
 - 2026-05-06: Briefmodus im Admin jetzt an die echte Briefvorlage aus Einstellungen > Brief gekoppelt. LetterComposeEditor rendert Header/Body/Footer direkt aus signature.letterTemplateHtml und portalt den editierbaren TipTap-Body in den vorgesehenen Body-Slot der Vorlage. Dadurch kommen Logo, Header, Footer und Layout aus derselben Vorlage wie in den Brief-Einstellungen. Build gruen.
 
-- 2026-05-06: Briefeditor-Slot im A4-Template stabilisiert: Der Vorlagenrahmen aus der Briefvorlage wird im Compose-Modus nicht mehr bei jeder Body-Aenderung neu aufgebaut. Der editierbare TipTap-Body aktualisiert jetzt den Inhalt, ohne den Body-Slot selbst zu zerstÃ¶ren. Das behebt den Fall, dass KI-Entwuerfe zwar erzeugt werden, aber im Briefblatt nicht erscheinen. Build gruen.
+- 2026-05-06: Briefeditor-Slot im A4-Template stabilisiert: Der Vorlagenrahmen aus der Briefvorlage wird im Compose-Modus nicht mehr bei jeder Body-Aenderung neu aufgebaut. Der editierbare TipTap-Body aktualisiert jetzt den Inhalt, ohne den Body-Slot selbst zu zerstÃƒÂ¶ren. Das behebt den Fall, dass KI-Entwuerfe zwar erzeugt werden, aber im Briefblatt nicht erscheinen. Build gruen.
 
-- 2026-05-06: Briefeditor-Body-Sync nachgezogen: externer Text (z. B. KI-Entwurf) wird nun gegen den aktuellen TipTap-Inhalt geprÃ¼ft und mit setContent direkt in den Body geschrieben, statt nur gegen einen internen Ref zu vergleichen. Das stabilisiert den Fall, dass KI-EntwÃ¼rfe im Briefmodus erzeugt, aber nicht sichtbar wurden. Build gruen.
+- 2026-05-06: Briefeditor-Body-Sync nachgezogen: externer Text (z. B. KI-Entwurf) wird nun gegen den aktuellen TipTap-Inhalt geprÃƒÂ¼ft und mit setContent direkt in den Body geschrieben, statt nur gegen einen internen Ref zu vergleichen. Das stabilisiert den Fall, dass KI-EntwÃƒÂ¼rfe im Briefmodus erzeugt, aber nicht sichtbar wurden. Build gruen.
 
 - 2026-05-06: Doppelter Editor-Mount im Briefmodus entfernt. LetterComposeEditor hatte oberhalb des A4-Blatts noch einen separaten 'Briefinhalt'-Editor fuer denselben TipTap-Editor. Dieser Block ist jetzt weg, damit der Body nur noch einmal existiert und im A4-Blatt selbst gerendert wird. Build gruen.
 
@@ -1727,7 +1727,7 @@ pm run build (gruen).
 - 2026-05-06: Briefeditor-Overlay korrekt in denselben relativen A4-Container gezogen. Der editierbare Body war zuvor als falsches Geschwister des Briefblatts positioniert; jetzt liegt er im selben positionierten Wrapper wie die Vorlagenflaeche. Das behebt den Fall, dass KI-Entwuerfe bei Mail sichtbar, bei Brief aber unsichtbar blieben. Build gruen.
 
 - 2026-05-06: Briefeditor-Body-Messung im A4-Template korrigiert. Der Overlay-Body wurde zuvor ueber getBoundingClientRect() in skalierten Pixeln gemessen und dann im unskalierten Blatt positioniert. Jetzt nutzt der Editor fuer den Body-Slot offsetLeft, offsetTop, offsetWidth und offsetHeight/scrollHeight aus dem echten Layout. Das richtet den editierbaren Body im Briefmodus an die korrekte Stelle der Vorlage aus. Build gruen.
-- 2026-05-06: Briefeditor-Body in LetterComposeEditor jetzt nicht mehr am leeren Compose-Slot gemessen, sondern am echten [data-letter-body="true"]-Container. Damit soll der KI-Entwurf im Briefblatt in normaler Breite statt als schmale Buchstabenspalte erscheinen. useEffect-AbhÃ¤ngigkeit fÃ¼r die Body-Messung auf konstante Form gebracht.
+- 2026-05-06: Briefeditor-Body in LetterComposeEditor jetzt nicht mehr am leeren Compose-Slot gemessen, sondern am echten [data-letter-body="true"]-Container. Damit soll der KI-Entwurf im Briefblatt in normaler Breite statt als schmale Buchstabenspalte erscheinen. useEffect-AbhÃƒÂ¤ngigkeit fÃƒÂ¼r die Body-Messung auf konstante Form gebracht.
 - 2026-05-06: Briefeditor-Overlay in LetterComposeEditor misst den Body-Slot jetzt per getBoundingClientRect relativ zum echten A4-Canvas und rechnet die Skalierung ueber sheetScale heraus. Ziel: korrekte linke/top Position und volle Breite des editierbaren Briefkoerpers statt schmaler vertikaler Textspalte links.
 - 2026-05-06: LetterComposeEditor nutzt im Briefmodus jetzt keinen absolut positionierten Overlay-Editor mehr. Der TipTap-Editor wird per createPortal direkt in den echten Compose-Slot der Briefvorlage gemountet. Damit entfaellt die fehleranfaellige Slot-Messung, die zuvor den KI-Entwurf als schmale vertikale Textspalte links zeigte bzw. kurz aufblitzen liess.
 - 2026-05-06: Briefvorlage in LetterComposeEditor als memoisiertes StaticTemplateSheet gekapselt. Ziel: der per createPortal gemountete Body-Slot bleibt bei KI-Entwurf und Editor-Updates stabil und wird nicht durch wiederholtes dangerous innerHTML-Neurendern kurz aufgebaut und sofort wieder entfernt.
@@ -1751,13 +1751,13 @@ pm run build (gruen).
 
 - 2026-06-02: Einstellungen > Brief auf firmenspezifische Word-Vorlagenverwaltung umgestellt. Der alte sichtbare Brief-Vorlageneditor mit Untertabs Vorlage/Anrede/Abschluss wurde aus der Einstellungsnavigation entfernt. Neue Komponente components/admin/AdminLetterTemplateSettings.tsx listet Firmen, zeigt vorhandene Vorlage und erlaubt Upload/Entfernen von .doc/.docx/.dot/.dotx pro Firma. Neue Route app/api/admin/letter-templates/route.ts speichert Dateien lokal unter public/uploads/letter-templates und gibt Metadaten zurueck; Metadaten werden an companies gespeichert (letterTemplateUrl, letterTemplateOriginalName usw.). Build gruen mit npm.cmd run build.
 
-- 2026-06-02: Zweite Betreffzeile fuer Briefe ergaenzt. lib/signatures.ts kennt jetzt die Platzhalter {{BETREFF_ZEILE_2}} und {{SUBJECT_LINE_2}}; der aktuelle HTML/.doc-Uebergang rendert diese Zeile unter dem Betreff. Die drei Brief-Erzeugungsstellen fuellen die zweite Betreffzeile automatisch aus Objektadresse plus Einheit (StraÃŸe Hausnummer, PLZ Ort Â· Einheit). Build gruen mit npm.cmd run build.
+- 2026-06-02: Zweite Betreffzeile fuer Briefe ergaenzt. lib/signatures.ts kennt jetzt die Platzhalter {{BETREFF_ZEILE_2}} und {{SUBJECT_LINE_2}}; der aktuelle HTML/.doc-Uebergang rendert diese Zeile unter dem Betreff. Die drei Brief-Erzeugungsstellen fuellen die zweite Betreffzeile automatisch aus Objektadresse plus Einheit (StraÃƒÅ¸e Hausnummer, PLZ Ort Ã‚Â· Einheit). Build gruen mit npm.cmd run build.
 
 - 2026-06-02: Briefversand nutzt jetzt hochgeladene Word-Vorlagen, sofern an der Firma letterTemplateUrl hinterlegt ist. Neue Route /api/admin/letter-documents liest die .docx aus public/uploads/letter-templates, ersetzt Platzhalter in Word-XML-Dateien und liefert eine fertige .docx aus. Neue Hilfen lib/docxTemplate.ts und downloadFilledLetterTemplate(...). Fallback bleibt: ohne Firmenvorlage wird weiterhin die alte Word-kompatible .doc aus Brief-HTML erzeugt. Ersetzte Platzhalter u. a. {{BETREFF}}, {{SUBJECT}}, {{BETREFF_ZEILE_2}}, {{BRIEFTEXT}}, {{EMPFAENGER_BLOCK}}, {{DATUM}}, {{ANREDE}}. Build gruen mit npm.cmd run build.
 
 - 2026-06-02: DOCX-Platzhalterersetzung robuster gemacht. lib/docxTemplate.ts ersetzt Platzhalter jetzt auch, wenn Word/OpenOffice sie intern ueber mehrere <w:t>-Textknoten splitten. Das soll Faelle beheben, in denen einzelne Platzhalter in der hochgeladenen Vorlage nicht erkannt wurden. Build gruen mit npm.cmd run build.
 
-- 2026-06-02: DOCX-Vorlagenbefuellung nach Word-Test korrigiert: Mehrzeilige Werte wie {{EMPFAENGER_BLOCK}} und {{BETREFF_ZEILE_2}} werden jetzt mit echten Word-Zeilenumbruechen (w:br) ersetzt statt als zusammenlaufender Text. Zusaetzlich Platzhalter {{ABSCHLUSS}}, {{CLOSING}} und {{CLOSING_BLOCK}} ergaenzt; Abschluss kommt aus der Firmensignatur, Fallback Mit freundlichen GrÃ¼ÃŸen. Build gruen mit npm.cmd run build.
+- 2026-06-02: DOCX-Vorlagenbefuellung nach Word-Test korrigiert: Mehrzeilige Werte wie {{EMPFAENGER_BLOCK}} und {{BETREFF_ZEILE_2}} werden jetzt mit echten Word-Zeilenumbruechen (w:br) ersetzt statt als zusammenlaufender Text. Zusaetzlich Platzhalter {{ABSCHLUSS}}, {{CLOSING}} und {{CLOSING_BLOCK}} ergaenzt; Abschluss kommt aus der Firmensignatur, Fallback Mit freundlichen GrÃƒÂ¼ÃƒÅ¸en. Build gruen mit npm.cmd run build.
 
 - 2026-06-02: Absenderperson dynamisch gemacht. Neue Hilfsdatei components/admin/adminSenderSignature.ts ermittelt den eingeloggten Adminnamen aus profile.displayName, Firebase-DisplayName oder E-Mail und ueberschreibt damit signature.name/portalName. Angewendet in MessagesWorkspace, TenantDetailView, MessageDetailWorkspace und PersonDetailView fuer Mail-/Portal-/Briefsignaturen. {{ABSCHLUSS}} in Word-Vorlagen enthaelt jetzt Abschlussformel, eingeloggten Namen und Firmenname untereinander. Build gruen mit npm.cmd run build.
 
@@ -2099,4 +2099,10 @@ pm run build (gruen).
 ## 2026-06-17 - Mietermail App-/Portal-Hinweis entfernt
 - Den alten Standard-Mailheader "Holen Sie sich die App oder nutzen Sie das Online-Mieterportal..." aus `lib/mailboxConfigServer.ts` entfernt.
 - Mailbox-Headertexte werden beim Laden zusaetzlich bereinigt, damit der Hinweis auch aus vorhandenen ENV-/lokalen-/DB-Einstellungen nicht mehr in ausgehenden Mietermails erscheint.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-17 - Uebergabeprotokoll-Mail nutzt Mailvorlage
+- components/admin/TenantHandoverWorkspace.tsx uebergibt beim Versand des Uebergabeprotokolls jetzt die Firmensignatur an `/api/message-drafts/send`, damit die gleiche Mailvorlage wie bei normalen Mietermails verwendet wird.
+- Der Body der Uebergabe-Mail enthaelt keine manuell angehaengte Halbmann-Signatur mehr; Signatur, Logo und Adresse kommen aus der Vorlage.
+- lib/signatures.ts rendert den `{{LOGO}}`-Token in E-Mail-Signaturen kleiner (`width`/`max-width` 180px), damit das Logo ueber der Adresse nicht mehr ueberdimensioniert erscheint.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.

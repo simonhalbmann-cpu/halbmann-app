@@ -7,8 +7,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
+import { createSignatureRecord } from '../../lib/signatures';
 import type { WorkflowRecord } from '../../lib/adminWorkflow';
 import { sanitizeStorageFileName, type TenantDocumentEntry } from '../../lib/tenantDocuments';
+import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 
 type HandoverKind = 'moveIn' | 'moveOut';
 type DynamicRow = {
@@ -250,7 +252,7 @@ export default function TenantHandoverWorkspace({
   tenantId: string;
 }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { profile, user } = useAuth();
   const [tenant, setTenant] = useState<DocumentData | null>(null);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
@@ -502,10 +504,11 @@ export default function TenantHandoverWorkspace({
       '',
       'anbei erhalten Sie das gespeicherte Uebergabeprotokoll zu Ihrer Wohnung.',
       'Die bei der Uebergabe aufgenommenen Fotos und Videos werden intern gespeichert und koennen den Vertragsparteien auf Anfrage bereitgestellt werden.',
-      '',
-      'Mit freundlichen Gruessen',
-      'Halbmann Holding',
     ].join('\n');
+    const signature = applyAdminSenderToSignature(
+      createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
+      resolveAdminSenderContact(profile, user)
+    );
 
     const response = await fetch('/api/message-drafts/send', {
       body: JSON.stringify({
@@ -518,6 +521,7 @@ export default function TenantHandoverWorkspace({
           recipientEmail,
           recipientId: tenantId,
           recipientType: 'tenant',
+          signature,
           subject,
           unitId: cleanText(tenant?.unitId),
         },

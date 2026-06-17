@@ -2220,7 +2220,7 @@ function buildEmailSignatureTokenMap(signature: SignatureRecord) {
     '{{LOGO}}': resolvedLogoUrl
       ? `<img src="${encodeHtml(resolvedLogoUrl)}" alt="${encodeHtml(
           signature.logoAlt || signature.companyName || 'Logo'
-        )}" style="display:block;max-width:100%;height:auto;object-fit:contain;" />`
+        )}" width="180" style="display:block;width:180px;max-width:180px;height:auto;object-fit:contain;" />`
       : '',
     '{{LOGO_ALT}}': encodeHtml(signature.logoAlt || signature.companyName || 'Logo'),
     '{{LOGO_URL}}': encodeHtml(resolvedLogoUrl),
