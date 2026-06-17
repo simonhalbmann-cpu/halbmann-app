@@ -1,5 +1,6 @@
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './firebase';
+import { createClientId } from './tenantDocuments';
 
 export type OutgoingAttachment = {
   contentType: string;
@@ -35,7 +36,7 @@ export async function uploadOutgoingMessageAttachments(files: PendingOutgoingAtt
     if (!file) continue;
 
     const safeName = cleanFileName(file.name || 'anhang');
-    const storagePath = `message-attachments/outgoing/${cleanScope}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const storagePath = `message-attachments/outgoing/${cleanScope}/${Date.now()}-${createClientId('file')}-${safeName}`;
     const storageRef = ref(storage, storagePath);
     await uploadBytes(storageRef, file, {
       contentType: file.type || 'application/octet-stream',

@@ -11,6 +11,7 @@ import { db, storage } from '../../lib/firebase';
 import { sanitizeAiContext } from '../../lib/aiContext';
 import {
   cleanStoredDocuments,
+  createClientId,
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
@@ -451,7 +452,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
 
       for (const file of Array.from(files)) {
         const safeName = sanitizeStorageFileName(file.name);
-        const storagePath = `person-documents/${personId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storagePath = `person-documents/${personId}/${Date.now()}-${createClientId('file')}-${safeName}`;
         const storageRef = ref(storage, storagePath);
         await uploadBytes(storageRef, file, {
           contentType: file.type || 'application/octet-stream',
@@ -780,7 +781,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
       }
       if (messageAction === 'split') {
         if (!selectedPersonMessage) return;
-        const newThemeId = globalThis.crypto.randomUUID();
+        const newThemeId = createClientId('theme');
         await savePersonThemeMeta(newThemeId, {
           archived: false,
           messageIds: [selectedPersonMessage.id],
@@ -915,7 +916,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
             cleanText(selectedPersonTheme?.subject) ||
             cleanText(messageSubjectDraft) ||
             `Notiz zu ${[cleanText(person.lastName), cleanText(person.firstName)].filter(Boolean).join(', ') || 'Kontakt'}`;
-          const noteId = globalThis.crypto.randomUUID();
+          const noteId = createClientId('note');
           const relatedMessageId = selectedPersonTheme?.id || noteId;
           await addDoc(collection(db, 'messages'), {
             bodyText: cleanText(replyText),

@@ -53,6 +53,48 @@ function documentKey(document: StoredDocumentEntry) {
   return cleanText(document.path) || cleanText(document.url) || cleanText(document.name);
 }
 
+function DotsIcon() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="M12 6h.01" />
+      <path d="M12 12h.01" />
+      <path d="M12 18h.01" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" viewBox="0 0 24 24">
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="M4 7h16" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M6 7l1 14h10l1-14" />
+      <path d="M9 7V4h6v3" />
+    </svg>
+  );
+}
+
+function FileUploadIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M12 18v-6" />
+      <path d="M9 15l3-3 3 3" />
+    </svg>
+  );
+}
+
 export default function DocumentLibrarySection({
   documents,
   emptyText = 'Noch keine Dokumente hochgeladen.',
@@ -65,9 +107,11 @@ export default function DocumentLibrarySection({
   title = 'Dokumente',
 }: DocumentLibrarySectionProps) {
   const [activeCategory, setActiveCategory] = useState('Alle');
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
   const [search, setSearch] = useState('');
-  const [uploadCategory, setUploadCategory] = useState(DEFAULT_DOCUMENT_CATEGORY);
+  const [selectTrigger, setSelectTrigger] = useState(0);
+  const [uploadCategory, setUploadCategory] = useState('');
   const [localCategories, setLocalCategories] = useState<string[]>([]);
 
   const categories = useMemo(
@@ -80,6 +124,7 @@ export default function DocumentLibrarySection({
       ]),
     [documents, legacyDocuments, localCategories, uploadCategory]
   );
+
   const usedCategories = useMemo(
     () =>
       mergeDocumentCategories([
@@ -90,6 +135,7 @@ export default function DocumentLibrarySection({
       ),
     [documents, legacyDocuments]
   );
+
   const filteredDocuments = useMemo(() => {
     const needle = search.toLowerCase();
     return documents.filter((document) => {
@@ -105,6 +151,9 @@ export default function DocumentLibrarySection({
     });
   }, [activeCategory, documents, search]);
 
+  const selectedUploadCategory = cleanText(uploadCategory);
+  const showCustomCategoryField = selectedUploadCategory === DEFAULT_DOCUMENT_CATEGORY;
+
   function addCustomCategory() {
     const nextCategory = cleanText(customCategory);
     if (!nextCategory) return;
@@ -112,6 +161,7 @@ export default function DocumentLibrarySection({
     setUploadCategory(nextCategory);
     setActiveCategory(nextCategory);
     setCustomCategory('');
+    setActionMenuOpen(false);
   }
 
   useEffect(() => {
@@ -128,16 +178,10 @@ export default function DocumentLibrarySection({
       (document) => (cleanText(document.category) || DEFAULT_DOCUMENT_CATEGORY) === category
     );
     await Promise.all(affectedDocuments.map((document) => onUpdateCategory(document, DEFAULT_DOCUMENT_CATEGORY)));
-    if (false && affectedDocuments.length > 0) {
-      const confirmed = window.confirm(
-        `Kategorie "${category}" löschen? ${affectedDocuments.length} Datei(en) werden auf "${DEFAULT_DOCUMENT_CATEGORY}" gesetzt.`
-      );
-      if (!confirmed) return;
-      await Promise.all(affectedDocuments.map((document) => onUpdateCategory(document, DEFAULT_DOCUMENT_CATEGORY)));
-    }
     setLocalCategories((current) => current.filter((entry) => entry !== category));
     if (activeCategory === category) setActiveCategory('Alle');
-    setUploadCategory(DEFAULT_DOCUMENT_CATEGORY);
+    setUploadCategory('');
+    setActionMenuOpen(false);
   }
 
   return (
@@ -148,43 +192,87 @@ export default function DocumentLibrarySection({
           <h3 className="mt-1 text-xl text-slate-950">{title}</h3>
         </div>
         <div className="min-w-[min(100%,620px)] flex-1 space-y-3">
-          <div className="grid gap-2 md:grid-cols-[minmax(160px,220px)_minmax(120px,260px)_auto_auto]">
+          <div className="grid grid-cols-[minmax(0,1fr)_44px] gap-2">
             <select
               className="rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-              onChange={(event) => setUploadCategory(event.target.value)}
+              onChange={(event) => {
+                const nextCategory = event.target.value;
+                setUploadCategory(nextCategory);
+                if (nextCategory !== DEFAULT_DOCUMENT_CATEGORY) setCustomCategory('');
+              }}
               value={uploadCategory}
             >
+              <option disabled value="">
+                Kategorie waehlen
+              </option>
               {categories.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
               ))}
             </select>
+            <div className="relative">
+              <button
+                aria-expanded={actionMenuOpen}
+                aria-label="Dokumentaktionen"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-300 bg-white text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                onClick={() => setActionMenuOpen((current) => !current)}
+                type="button"
+              >
+                <DotsIcon />
+              </button>
+              {actionMenuOpen ? (
+                <div className="absolute right-0 z-30 mt-2 flex gap-1 rounded-full border border-stone-200 bg-white p-1 shadow-[0_18px_48px_-30px_rgba(0,0,0,0.35)]">
+                  <button
+                    aria-label="Kategorie hinzufuegen"
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-slate-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-35"
+                    disabled={!showCustomCategoryField || !cleanText(customCategory)}
+                    onClick={addCustomCategory}
+                    title="Kategorie hinzufuegen"
+                    type="button"
+                  >
+                    <PlusIcon />
+                  </button>
+                  <button
+                    aria-label="Kategorie loeschen"
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-35"
+                    disabled={!selectedUploadCategory || selectedUploadCategory === DEFAULT_DOCUMENT_CATEGORY}
+                    onClick={() => void removeSelectedCategory()}
+                    title="Kategorie loeschen"
+                    type="button"
+                  >
+                    <TrashIcon />
+                  </button>
+                  <button
+                    aria-label="Datei auswaehlen"
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-slate-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-35"
+                    disabled={!selectedUploadCategory || isUploading}
+                    onClick={() => {
+                      setSelectTrigger((current) => current + 1);
+                      setActionMenuOpen(false);
+                    }}
+                    title="Datei auswaehlen"
+                    type="button"
+                  >
+                    <FileUploadIcon />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          {showCustomCategoryField ? (
             <input
-              className="rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              className="w-full rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
               onChange={(event) => setCustomCategory(event.target.value)}
               placeholder="Neue Kategorie"
               value={customCategory}
             />
-            <button
-              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-              onClick={addCustomCategory}
-              type="button"
-            >
-              Hinzufügen
-            </button>
-            <button
-              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:border-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={uploadCategory === DEFAULT_DOCUMENT_CATEGORY}
-              onClick={() => void removeSelectedCategory()}
-              type="button"
-            >
-              Löschen
-            </button>
-          </div>
+          ) : null}
           <DocumentUploadControl
-            disabled={isUploading}
+            disabled={isUploading || !selectedUploadCategory}
+            hideSelectButton
             onUpload={(files) => onUpload(files, uploadCategory)}
+            selectTrigger={selectTrigger}
           />
         </div>
       </div>
@@ -215,7 +303,7 @@ export default function DocumentLibrarySection({
           {filteredDocuments.map((document) => {
             const meta = [cleanText(document.source) === 'mail' ? 'Mailanhang' : 'Upload', formatFileSize(document.size), formatUploadDate(document.uploadedAt)]
               .filter(Boolean)
-              .join(' · ');
+              .join(' - ');
 
             return (
               <div
@@ -244,19 +332,13 @@ export default function DocumentLibrarySection({
                   ))}
                 </select>
                 <button
-                  aria-label={`${document.name} löschen`}
+                  aria-label={`${document.name} loeschen`}
                   className="inline-flex h-8 w-8 items-center justify-center rounded-none border border-rose-200 bg-rose-50 text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
                   onClick={() => void onDelete(document)}
-                  title="Löschen"
+                  title="Loeschen"
                   type="button"
                 >
-                  <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
-                    <path d="M4 7h16" />
-                    <path d="M10 11v6" />
-                    <path d="M14 11v6" />
-                    <path d="M6 7l1 14h10l1-14" />
-                    <path d="M9 7V4h6v3" />
-                  </svg>
+                  <TrashIcon />
                 </button>
               </div>
             );

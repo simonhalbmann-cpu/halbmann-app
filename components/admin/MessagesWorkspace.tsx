@@ -2327,25 +2327,21 @@ export default function MessagesWorkspace() {
           <span>Ansicht</span>
           <select
             className="bg-transparent text-sm text-slate-900 outline-none"
-            onChange={(event) =>
-              handleMailboxViewChange(event.target.value as 'archive' | 'inbox')
-            }
-            value={currentMailboxView}
+            onChange={(event) => {
+              const nextValue = event.target.value as MailboxTab;
+              if (nextValue === 'compose') {
+                router.push(buildTabHref('compose'));
+                return;
+              }
+              handleMailboxViewChange(nextValue);
+            }}
+            value={currentTab === 'compose' ? 'compose' : currentMailboxView}
           >
             <option value="inbox">Posteingang</option>
+            <option value="compose">Neue Nachricht</option>
             <option value="archive">Archiv</option>
           </select>
         </label>
-        <Link
-          className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-            currentTab === 'compose'
-              ? 'border border-stone-200 bg-[linear-gradient(180deg,rgba(255,250,240,0.94)_0%,rgba(244,236,224,0.92)_100%)] text-slate-950 shadow-[0_18px_40px_-32px_rgba(148,119,77,0.45)]'
-              : 'border border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-          }`}
-          href={buildTabHref('compose')}
-        >
-          Neue Nachricht
-        </Link>
       </div>
 
       {renderContent()}

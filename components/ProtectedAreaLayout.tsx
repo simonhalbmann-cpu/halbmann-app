@@ -276,6 +276,7 @@ export default function ProtectedAreaLayout({
   const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
   const [mailSyncNote, setMailSyncNote] = useState('');
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [mobileAdminMenuOpen, setMobileAdminMenuOpen] = useState(false);
   const [mobileInventoryOpen, setMobileInventoryOpen] = useState(false);
   const [portalSidebarName, setPortalSidebarName] = useState('');
   const settingsMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -594,7 +595,7 @@ export default function ProtectedAreaLayout({
           );
         }
       } catch (error) {
-        console.error('Fehler beim automatischen Mail-Sync:', error);
+        console.warn('Fehler beim automatischen Mail-Sync:', error);
         if (!isCancelled) {
           setMailSyncNote('');
         }
@@ -975,9 +976,26 @@ export default function ProtectedAreaLayout({
     if (requiredRole !== 'admin') return null;
 
     return (
-      <div className="lg:hidden border-b border-white/10 bg-[linear-gradient(180deg,#111820_0%,#17222d_100%)] px-4 pb-4 pt-3 text-stone-100">
-        <div className="flex items-center justify-between gap-3">
-          <Link className="min-w-0" href="/admin">
+      <div className="relative border-b border-white/10 bg-[linear-gradient(180deg,#111820_0%,#17222d_100%)] px-4 pb-3 pt-3 text-stone-100 lg:hidden">
+        <div className="grid grid-cols-[48px_minmax(0,1fr)_76px] items-center gap-2">
+          <button
+            aria-expanded={mobileAdminMenuOpen}
+            aria-label="Menü öffnen"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-white/8 text-stone-100"
+            onClick={() => setMobileAdminMenuOpen((current) => !current)}
+            type="button"
+          >
+            <span className="grid gap-1.5">
+              <span className="block h-0.5 w-5 rounded-full bg-current" />
+              <span className="block h-0.5 w-5 rounded-full bg-current" />
+              <span className="block h-0.5 w-5 rounded-full bg-current" />
+            </span>
+          </button>
+          <Link
+            className="mx-auto min-w-0"
+            href="/admin"
+            onClick={() => setMobileAdminMenuOpen(false)}
+          >
             <Image
               alt="Halbmann Holding"
               className="h-12 w-auto object-contain opacity-90"
@@ -987,7 +1005,7 @@ export default function ProtectedAreaLayout({
             />
           </Link>
           <button
-            className="rounded-full border border-white/15 px-3 py-1.5 text-xs font-medium text-stone-100"
+            className="justify-self-end rounded-full border border-white/15 px-3 py-1.5 text-xs font-medium text-stone-100"
             onClick={handleLogout}
             type="button"
           >
@@ -995,134 +1013,192 @@ export default function ProtectedAreaLayout({
           </button>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Link
-            className={`rounded-full border px-4 py-2 text-center text-sm font-medium ${
-              isCurrentPath(pathname, '/admin')
-                ? 'border-amber-300/40 bg-white text-slate-950'
-                : 'border-white/15 bg-white/8 text-stone-100'
-            }`}
-            href="/admin"
-          >
-            Dashboard
-          </Link>
-          <Link
-            className={`rounded-full border px-4 py-2 text-center text-sm font-medium ${
-              isCurrentPath(pathname, '/admin/nachrichten')
-                ? 'border-amber-300/40 bg-white text-slate-950'
-                : 'border-white/15 bg-white/8 text-stone-100'
-            }`}
-            href="/admin/nachrichten"
-          >
-            Nachrichten
-          </Link>
-        </div>
+        {mobileAdminMenuOpen ? (
+          <div className="absolute left-3 right-3 top-[calc(100%-0.25rem)] z-50 rounded-[22px] border border-white/10 bg-[#121c26] p-3 shadow-[0_24px_70px_-32px_rgba(0,0,0,0.55)]">
+            <nav className="space-y-1">
+              <Link
+                className={`block rounded-[16px] px-4 py-3 text-sm font-medium ${
+                  isCurrentPath(pathname, '/admin') ? 'bg-white text-slate-950' : 'text-stone-100 hover:bg-white/8'
+                }`}
+                href="/admin"
+                onClick={() => setMobileAdminMenuOpen(false)}
+              >
+                Dashboard
+              </Link>
+              <Link
+                className={`block rounded-[16px] px-4 py-3 text-sm font-medium ${
+                  isCurrentPath(pathname, '/admin/nachrichten') ? 'bg-white text-slate-950' : 'text-stone-100 hover:bg-white/8'
+                }`}
+                href="/admin/nachrichten"
+                onClick={() => setMobileAdminMenuOpen(false)}
+              >
+                Nachrichten
+              </Link>
+              {canViewInventoryTree ? (
+                <div className="rounded-[16px] border border-white/10 bg-white/[0.04]">
+                  <button
+                    className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-stone-100"
+                    onClick={() => setMobileInventoryOpen((current) => !current)}
+                    type="button"
+                  >
+                    <span>Bestand</span>
+                    <span className="text-lg leading-none">{mobileInventoryOpen ? '-' : '+'}</span>
+                  </button>
 
-        {canViewInventoryTree ? (
-          <div className="mt-3 rounded-[22px] border border-white/10 bg-white/[0.04] p-3">
-            <button
-              className="flex w-full items-center justify-between text-left text-[11px] font-medium uppercase tracking-[0.18em] text-amber-200/90"
-              onClick={() => setMobileInventoryOpen((current) => !current)}
-              type="button"
-            >
-              <span>Bestand</span>
-              <span>{mobileInventoryOpen ? '-' : '+'}</span>
-            </button>
+                  {mobileInventoryOpen ? (
+                    <div className="space-y-2 border-t border-white/10 p-3">
+                      <input
+                        className="w-full rounded-2xl border border-white/15 bg-white/8 px-4 py-2.5 text-sm text-stone-100 outline-none placeholder:text-stone-400"
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Bestand suchen"
+                        type="search"
+                        value={search}
+                      />
 
-            {mobileInventoryOpen ? (
-              <div className="mt-3 space-y-2">
-                <input
-                  className="w-full rounded-2xl border border-white/15 bg-white/8 px-4 py-2.5 text-sm text-stone-100 outline-none placeholder:text-stone-400"
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Bestand suchen"
-                  type="search"
-                  value={search}
-                />
-
-                {searchResults.length > 0 ? (
-                  <div className="space-y-1">
-                    {searchResults.map((result) => (
-                      <button
-                        className="block w-full rounded-[16px] border border-white/10 bg-white/8 px-3 py-2 text-left text-sm text-stone-100"
-                        key={`mobile-${result.type}-${result.label}-${result.propertyId ?? ''}-${result.unitId ?? ''}-${result.tenantId ?? ''}`}
-                        onClick={() => revealSearchResult(result)}
-                        type="button"
-                      >
-                        <span className="block text-[10px] uppercase tracking-[0.18em] text-stone-400">
-                          {result.type === 'company'
-                            ? 'Firma'
-                            : result.type === 'property'
-                              ? 'Immobilie'
-                              : result.type === 'unit'
-                                ? 'Einheit'
-                                : 'Mieter'}
-                        </span>
-                        {result.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-
-                {companyTree.map((company) => (
-                  <div className="space-y-1" key={`mobile-company-${company.id}`}>
-                    <button
-                      className="w-full rounded-[16px] bg-white/8 px-3 py-2 text-left text-sm font-medium text-stone-100"
-                      onClick={() => openCompany(company.id)}
-                      type="button"
-                    >
-                      {company.label}
-                    </button>
-                    <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
-                      {company.properties.map((property) => (
-                        <div className="space-y-1" key={`mobile-property-${property.id}`}>
-                          <button
-                            className="w-full rounded-[14px] px-3 py-2 text-left text-sm text-stone-200"
-                            onClick={() => openProperty(company.id, property.id)}
-                            type="button"
-                          >
-                            {property.label}
-                          </button>
-                          {canReadContacts ? (
+                      {searchResults.length > 0 ? (
+                        <div className="space-y-1">
+                          {searchResults.map((result) => (
                             <button
-                              className="w-full rounded-[14px] px-3 py-2 text-left text-xs text-stone-300"
-                              onClick={() => openPropertyServices(company.id, property.id)}
+                              className="block w-full rounded-[16px] border border-white/10 bg-white/8 px-3 py-2 text-left text-sm text-stone-100"
+                              key={`mobile-${result.type}-${result.label}-${result.propertyId ?? ''}-${result.unitId ?? ''}-${result.tenantId ?? ''}`}
+                              onClick={() => {
+                                revealSearchResult(result);
+                                setMobileAdminMenuOpen(false);
+                              }}
                               type="button"
                             >
-                              Dienstleister
+                              <span className="block text-[10px] uppercase tracking-[0.18em] text-stone-400">
+                                {result.type === 'company'
+                                  ? 'Firma'
+                                  : result.type === 'property'
+                                    ? 'Immobilie'
+                                    : result.type === 'unit'
+                                      ? 'Einheit'
+                                      : 'Mieter'}
+                              </span>
+                              {result.label}
                             </button>
-                          ) : null}
-                          <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
-                            {property.units.map((unit) => (
-                              <div className="space-y-1" key={`mobile-unit-${property.id}-${unit.id}`}>
-                                <button
-                                  className="w-full rounded-[14px] px-3 py-2 text-left text-xs text-stone-300"
-                                  onClick={() => openUnit(company.id, property.id, unit.id)}
-                                  type="button"
-                                >
-                                  {unit.menuLabel}
-                                </button>
-                                {unit.currentTenant ? (
-                                  <button
-                                    className="ml-3 flex items-center gap-2 rounded-[14px] px-3 py-2 text-left text-xs text-stone-200"
-                                    onClick={() => openTenant(company.id, property.id, unit.id, unit.currentTenant!.id)}
-                                    type="button"
-                                  >
-                                    <span className="h-2 w-2 rounded-full bg-amber-300" />
-                                    {[cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
-                                      .filter(Boolean)
-                                      .join(', ')}
-                                  </button>
-                                ) : null}
-                              </div>
-                            ))}
-                          </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : null}
+
+                      <div className="max-h-[62vh] space-y-1 overflow-y-auto pr-1">
+                        {companyTree.map((company) => (
+                          <div className="space-y-1" key={`mobile-company-${company.id}`}>
+                            <div className="flex items-center gap-1 rounded-[16px] bg-white/8">
+                              <button
+                                className="min-w-0 flex-1 px-3 py-2 text-left text-sm font-medium text-stone-100"
+                                onClick={() => {
+                                  openCompany(company.id);
+                                  setMobileAdminMenuOpen(false);
+                                }}
+                                type="button"
+                              >
+                                {company.label}
+                              </button>
+                              <button
+                                aria-label={openCompanies[company.id] ?? false ? 'Firma einklappen' : 'Firma aufklappen'}
+                                className="flex h-9 w-9 shrink-0 items-center justify-center text-lg leading-none text-amber-200"
+                                onClick={() => toggleCompany(company.id)}
+                                type="button"
+                              >
+                                {openCompanies[company.id] ?? false ? '-' : '+'}
+                              </button>
+                            </div>
+                            {openCompanies[company.id] ? (
+                              <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
+                                {company.properties.map((property) => (
+                                  <div className="space-y-1" key={`mobile-property-${property.id}`}>
+                                    <div className="flex items-center gap-1 rounded-[14px] hover:bg-white/6">
+                                      <button
+                                        className="min-w-0 flex-1 px-3 py-2 text-left text-sm text-stone-200"
+                                        onClick={() => {
+                                          openProperty(company.id, property.id);
+                                          setMobileAdminMenuOpen(false);
+                                        }}
+                                        type="button"
+                                      >
+                                        {property.label}
+                                      </button>
+                                      <button
+                                        aria-label={openProperties[property.id] ?? false ? 'Objekt einklappen' : 'Objekt aufklappen'}
+                                        className="flex h-8 w-8 shrink-0 items-center justify-center text-base leading-none text-amber-200"
+                                        onClick={() => toggleProperty(property.id)}
+                                        type="button"
+                                      >
+                                        {openProperties[property.id] ?? false ? '-' : '+'}
+                                      </button>
+                                    </div>
+                                  {canReadContacts ? (
+                                    <button
+                                      className="w-full rounded-[14px] px-3 py-2 text-left text-xs text-stone-300"
+                                      onClick={() => {
+                                        openPropertyServices(company.id, property.id);
+                                        setMobileAdminMenuOpen(false);
+                                      }}
+                                      type="button"
+                                    >
+                                      Dienstleister
+                                    </button>
+                                  ) : null}
+                                  {openProperties[property.id] ? (
+                                    <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
+                                      {property.units.map((unit) => {
+                                        const unitKey = `${property.id}-${unit.id}`;
+                                        return (
+                                          <div className="space-y-1" key={`mobile-unit-${property.id}-${unit.id}`}>
+                                            <div className="flex items-center gap-1 rounded-[14px] hover:bg-white/6">
+                                              <button
+                                                className="min-w-0 flex-1 px-3 py-2 text-left text-xs text-stone-300"
+                                                onClick={() => {
+                                                  openUnit(company.id, property.id, unit.id);
+                                                  setMobileAdminMenuOpen(false);
+                                                }}
+                                                type="button"
+                                              >
+                                                {unit.menuLabel}
+                                              </button>
+                                              <button
+                                                aria-label={openUnits[unitKey] ?? false ? 'Einheit einklappen' : 'Einheit aufklappen'}
+                                                className="flex h-8 w-8 shrink-0 items-center justify-center text-base leading-none text-amber-200"
+                                                onClick={() => toggleUnit(unitKey)}
+                                                type="button"
+                                              >
+                                                {openUnits[unitKey] ?? false ? '-' : '+'}
+                                              </button>
+                                            </div>
+                                            {openUnits[unitKey] && unit.currentTenant ? (
+                                              <button
+                                                className="ml-3 flex items-center gap-2 rounded-[14px] px-3 py-2 text-left text-xs text-stone-200"
+                                                onClick={() => {
+                                                  openTenant(company.id, property.id, unit.id, unit.currentTenant!.id);
+                                                  setMobileAdminMenuOpen(false);
+                                                }}
+                                                type="button"
+                                              >
+                                                <span className="h-2 w-2 rounded-full bg-amber-300" />
+                                                {[cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
+                                                  .filter(Boolean)
+                                                  .join(', ')}
+                                              </button>
+                                            ) : null}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+                  ) : null}
+                </div>
+              ) : null}
+            </nav>
           </div>
         ) : null}
       </div>
@@ -1507,11 +1583,11 @@ export default function ProtectedAreaLayout({
                 : 'px-6 py-2'
             }`}
           >
-            <div className="flex items-start justify-between gap-6">
-              <div>
+            <div className="flex items-start justify-center gap-6 text-center lg:justify-between lg:text-left">
+              <div className="min-w-0">
                 {resolvedHeaderContent.title ? <h1 className="font-serif text-3xl text-slate-950">{resolvedHeaderContent.title}</h1> : null}
                 {resolvedHeaderContent.description ? (
-                  <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">{resolvedHeaderContent.description}</p>
+                  <p className="mx-auto mt-2 max-w-3xl text-sm leading-7 text-slate-600 lg:mx-0">{resolvedHeaderContent.description}</p>
                 ) : null}
                 {mailSyncNote &&
                 requiredRole === 'admin' &&
@@ -1534,8 +1610,8 @@ export default function ProtectedAreaLayout({
           </header>
           ) : requiredRole === 'admin' ? (
             <div
-              className={`pointer-events-none relative z-40 flex justify-end px-6 xl:px-10 ${
-                isTenantDetailRoute ? 'pt-2 mb-0' : 'pt-3 -mb-11'
+              className={`pointer-events-none relative z-40 hidden justify-end px-6 lg:flex xl:px-10 ${
+                isTenantDetailRoute ? 'pt-2 mb-0' : isMessageRoute ? 'pt-3 mb-2' : 'pt-3 -mb-11'
               }`}
             >
               {requiredRole === 'admin' && visibleSettingsLinks.length > 0 ? (

@@ -19,7 +19,7 @@ import {
 } from './adminWorkflow';
 import { db, storage } from './firebase';
 import { buildExternalMessageKey } from './mailIdentity';
-import { sanitizeStorageFileName, type StoredDocumentEntry } from './tenantDocuments';
+import { createClientId, sanitizeStorageFileName, type StoredDocumentEntry } from './tenantDocuments';
 
 export type SyncedInboundEmail = {
   attachments?: Array<{
@@ -87,7 +87,7 @@ async function uploadSyncedEmailAttachments(messageId: string, email: SyncedInbo
     const contentType = cleanText(attachment.contentType) || 'application/octet-stream';
     const blob = base64ToBlob(contentBase64, contentType);
     const safeName = sanitizeStorageFileName(name);
-    const storagePath = `message-attachments/${messageId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const storagePath = `message-attachments/${messageId}/${Date.now()}-${createClientId('file')}-${safeName}`;
     const storageRef = ref(storage, storagePath);
 
     await uploadBytes(storageRef, blob, { contentType });

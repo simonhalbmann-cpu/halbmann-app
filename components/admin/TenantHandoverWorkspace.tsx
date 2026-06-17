@@ -1,9 +1,10 @@
 'use client';
 
-import { doc, onSnapshot, query, collection, serverTimestamp, updateDoc, type DocumentData } from 'firebase/firestore';
+import { doc, onSnapshot, query, collection, serverTimestamp, writeBatch, type DocumentData } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import Link from 'next/link';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
 import type { WorkflowRecord } from '../../lib/adminWorkflow';
@@ -17,6 +18,9 @@ type DynamicRow = {
   meterNumber?: string;
   value: string;
 };
+
+const HANDOVER_CONFIRMATION_TEXT =
+  'Mieter und Vermieter bestaetigen mit ihrer Unterschrift, dass die Angaben in diesem Uebergabeprotokoll nach gemeinsamer Besichtigung vollstaendig und richtig festgehalten wurden. Die bei der Uebergabe aufgenommenen Fotos und Videos sind als digitale Anlagen Bestandteil der Dokumentation zu diesem Uebergabeprotokoll. Sie werden intern gespeichert und koennen den Vertragsparteien auf Anfrage bereitgestellt werden.';
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -69,6 +73,175 @@ function unitDisplayLabel(unit: DocumentData | null | undefined, fallback: unkno
   );
 }
 
+function buildReadingHistoryEntries(meter: DocumentData | null | undefined) {
+  if (!meter || typeof meter !== 'object') return [];
+
+  const entries: Array<{ date: string; note: string; value: string }> = [];
+  const seen = new Set<string>();
+
+  const pushEntry = (dateValue: unknown, valueValue: unknown, noteValue?: unknown) => {
+    const date = cleanText(dateValue);
+    const value = cleanText(valueValue);
+    const note = cleanText(noteValue);
+    if (!date || !value) return;
+    const key = `${date}__${value}__${note}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({ date, note, value });
+  };
+
+  if (Array.isArray(meter.readingHistory)) {
+    meter.readingHistory.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      pushEntry((entry as DocumentData).date, (entry as DocumentData).value, (entry as DocumentData).note);
+    });
+  }
+
+  pushEntry(meter.initialReadingDate, meter.initialReading, 'Erster Stand');
+  pushEntry(meter.latestReadingDate, meter.latestReading);
+
+  return entries.sort((left, right) => right.date.localeCompare(left.date, 'de'));
+}
+
+function appendReadingHistoryEntry(
+  meter: DocumentData,
+  nextEntry: { date: string; note: string; value: string }
+) {
+  const history = buildReadingHistoryEntries(meter);
+  const duplicate = history.some(
+    (entry) =>
+      entry.date === nextEntry.date &&
+      entry.value === nextEntry.value &&
+      entry.note === nextEntry.note
+  );
+
+  if (duplicate) return history;
+  return [...history, nextEntry];
+}
+
+function SignaturePad({
+  label,
+  name,
+  onChange,
+  value,
+}: {
+  label: string;
+  name: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    if (!value) return;
+
+    const image = new Image();
+    image.onload = () => {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    };
+    image.src = value;
+  }, [value]);
+
+  function getCanvasPoint(event: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }
+
+  function prepareContext() {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return null;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.lineWidth = 3;
+    context.strokeStyle = '#0f172a';
+    return { canvas, context };
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+    const drawing = prepareContext();
+    const point = getCanvasPoint(event);
+    if (!drawing || !point) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    isDrawingRef.current = true;
+    drawing.context.beginPath();
+    drawing.context.moveTo(point.x, point.y);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (!isDrawingRef.current) return;
+    const drawing = prepareContext();
+    const point = getCanvasPoint(event);
+    if (!drawing || !point) return;
+    drawing.context.lineTo(point.x, point.y);
+    drawing.context.stroke();
+  }
+
+  function finishDrawing() {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    onChange(canvas.toDataURL('image/png'));
+  }
+
+  function clearSignature() {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    onChange('');
+  }
+
+  return (
+    <div className="min-w-0 rounded-[22px] border border-stone-200 bg-white p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-950">{label}</p>
+        <button
+          className="rounded-full border border-stone-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!value}
+          onClick={clearSignature}
+          type="button"
+        >
+          Loeschen
+        </button>
+      </div>
+      <canvas
+        aria-label={label}
+        className="block h-36 w-full touch-none rounded-2xl border border-stone-300 bg-white"
+        data-name={name}
+        height={180}
+        onPointerCancel={finishDrawing}
+        onPointerDown={handlePointerDown}
+        onPointerLeave={finishDrawing}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrawing}
+        ref={canvasRef}
+        width={640}
+      />
+    </div>
+  );
+}
+
 export default function TenantHandoverWorkspace({
   initialKind,
   tenantId,
@@ -76,6 +249,7 @@ export default function TenantHandoverWorkspace({
   initialKind: HandoverKind;
   tenantId: string;
 }) {
+  const router = useRouter();
   const { user } = useAuth();
   const [tenant, setTenant] = useState<DocumentData | null>(null);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
@@ -91,6 +265,8 @@ export default function TenantHandoverWorkspace({
   const [meterRows, setMeterRows] = useState<DynamicRow[]>([]);
   const [keyRows, setKeyRows] = useState<DynamicRow[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [tenantSignatureImage, setTenantSignatureImage] = useState('');
+  const [landlordSignatureImage, setLandlordSignatureImage] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -187,6 +363,15 @@ export default function TenantHandoverWorkspace({
     setKeyRows((current) => [...current, { count: '', id: createClientId('key'), label: '', value: '' }]);
   }
 
+  function addProtocolFiles(nextFiles: File[]) {
+    if (nextFiles.length === 0) return;
+    setFiles((current) => [...current, ...nextFiles]);
+  }
+
+  function removeProtocolFile(index: number) {
+    setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
   function buildProtocolHtml(protocolId: string) {
     const title = kind === 'moveIn' ? 'Übergabeprotokoll Einzug' : 'Übergabeprotokoll Auszug';
     const tableRows = (rows: string[]) => rows.join('');
@@ -196,7 +381,9 @@ export default function TenantHandoverWorkspace({
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
-    return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.5;color:#111827;padding:32px}h1{font-size:24px}h2{font-size:16px;margin-top:28px}table{width:100%;border-collapse:collapse;margin-top:8px}td,th{border:1px solid #d6d3d1;padding:8px;text-align:left;vertical-align:top}.muted{color:#64748b}.box{white-space:pre-wrap;border:1px solid #d6d3d1;padding:12px;min-height:64px}</style></head><body><h1>${escapeHtml(title)}</h1><p class="muted">Protokoll-ID: ${escapeHtml(protocolId)} · ${escapeHtml(new Date().toLocaleString('de-DE'))}</p><table><tbody><tr><th>Ort / Treffpunkt</th><td>${escapeHtml(form.place)}</td></tr><tr><th>Mieter</th><td>${escapeHtml(form.tenantSignatureName)}</td></tr><tr><th>Vermieter</th><td>${escapeHtml(form.landlordName)}</td></tr><tr><th>Objekt</th><td>${escapeHtml(cleanText(selectedProperty?.data.name) || objectAddress)}</td></tr><tr><th>Einheit</th><td>${escapeHtml(unitLabel)}</td></tr></tbody></table><h2>Mängel / offene Punkte</h2><div class="box">${escapeHtml(form.defects) || 'Keine Angaben'}</div><h2>Zählerstände</h2><table><thead><tr><th>Bezeichnung</th><th>Zählernummer</th><th>Stand</th></tr></thead><tbody>${tableRows(meterRows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.meterNumber)}</td><td>${escapeHtml(row.value)}</td></tr>`))}</tbody></table><h2>Schlüssel</h2><table><thead><tr><th>Bezeichnung</th><th>Soll</th><th>Übergabe</th></tr></thead><tbody>${tableRows(keyRows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.count)}</td><td>${escapeHtml(row.value)}</td></tr>`))}</tbody></table><h2>Notizen</h2><div class="box">${escapeHtml(form.notes) || 'Keine Angaben'}</div></body></html>`;
+    const signatureImage = (value: string) =>
+      value ? `<img src="${escapeHtml(value)}" alt="Unterschrift" style="display:block;max-width:260px;max-height:90px;" />` : 'Nicht erfasst';
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.5;color:#111827;padding:32px}h1{font-size:24px}h2{font-size:16px;margin-top:28px}table{width:100%;border-collapse:collapse;margin-top:8px}td,th{border:1px solid #d6d3d1;padding:8px;text-align:left;vertical-align:top}.muted{color:#64748b}.box{white-space:pre-wrap;border:1px solid #d6d3d1;padding:12px;min-height:64px}</style></head><body><h1>${escapeHtml(title)}</h1><p class="muted">Protokoll-ID: ${escapeHtml(protocolId)} · ${escapeHtml(new Date().toLocaleString('de-DE'))}</p><table><tbody><tr><th>Ort / Treffpunkt</th><td>${escapeHtml(form.place)}</td></tr><tr><th>Mieter</th><td>${escapeHtml(form.tenantSignatureName)}</td></tr><tr><th>Vermieter</th><td>${escapeHtml(form.landlordName)}</td></tr><tr><th>Objekt</th><td>${escapeHtml(cleanText(selectedProperty?.data.name) || objectAddress)}</td></tr><tr><th>Einheit</th><td>${escapeHtml(unitLabel)}</td></tr></tbody></table><h2>Mängel / offene Punkte</h2><div class="box">${escapeHtml(form.defects) || 'Keine Angaben'}</div><h2>Zählerstände</h2><table><thead><tr><th>Bezeichnung</th><th>Zählernummer</th><th>Stand</th></tr></thead><tbody>${tableRows(meterRows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.meterNumber)}</td><td>${escapeHtml(row.value)}</td></tr>`))}</tbody></table><h2>Schlüssel</h2><table><thead><tr><th>Bezeichnung</th><th>Soll</th><th>Übergabe</th></tr></thead><tbody>${tableRows(keyRows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.count)}</td><td>${escapeHtml(row.value)}</td></tr>`))}</tbody></table><h2>Bestaetigung und Unterschriften</h2><div class="box">${escapeHtml(HANDOVER_CONFIRMATION_TEXT)}</div><table><thead><tr><th>Mieter</th><th>Vermieter</th></tr></thead><tbody><tr><td>${signatureImage(tenantSignatureImage)}</td><td>${signatureImage(landlordSignatureImage)}</td></tr><tr><td>${escapeHtml(form.tenantSignatureName)}</td><td>${escapeHtml(form.landlordName)}</td></tr></tbody></table><h2>Notizen</h2><div class="box">${escapeHtml(form.notes) || 'Keine Angaben'}</div></body></html>`;
   }
 
   function buildProtocolBody(protocolId: string) {
@@ -222,59 +409,54 @@ export default function TenantHandoverWorkspace({
         ? keyRows.map((row) => `${row.label || 'Schlüssel'}: Soll ${row.count || '-'}, Übergabe ${row.value || '-'}`)
         : ['Keine Schlüssel erfasst.']),
       '',
+      'Bestaetigung und Unterschriften:',
+      HANDOVER_CONFIRMATION_TEXT,
+      `Unterschrift Mieter: ${tenantSignatureImage ? 'digital erfasst' : 'nicht erfasst'}`,
+      `Unterschrift Vermieter: ${landlordSignatureImage ? 'digital erfasst' : 'nicht erfasst'}`,
+      '',
       'Notizen:',
       form.notes || 'Keine Angaben',
     ].join('\n');
   }
 
   async function createProtocolDocument(protocolId: string) {
-    const subject = kind === 'moveIn' ? 'Übergabeprotokoll Einzug' : 'Übergabeprotokoll Auszug';
-    const templateUrl = cleanText(
-      kind === 'moveIn'
-        ? selectedCompany?.data.handoverMoveInTemplateUrl
-        : selectedCompany?.data.handoverMoveOutTemplateUrl
-    );
+    const subject = kind === 'moveIn' ? 'Uebergabeprotokoll Einzug' : 'Uebergabeprotokoll Auszug';
     const baseName = `${subject} ${tenantName || tenantId}`;
-    const body = buildProtocolBody(protocolId);
-
-    if (templateUrl && user) {
-      const token = await user.getIdToken();
-      const response = await fetch('/api/admin/letter-documents', {
-        body: JSON.stringify({
-          fileName: baseName,
-          replacements: {
-            BODY: body,
-            CLOSING: '',
-            COMPANY_NAME: cleanText(selectedCompany?.data.name) || cleanText(selectedCompany?.data.companyName),
-            RECIPIENT_ADDRESS: form.place,
-            RECIPIENT_COMPANY: '',
-            RECIPIENT_NAME: form.tenantSignatureName,
-            RECIPIENT_SALUTATION: '',
-            SENDER_NAME: form.landlordName,
-            SUBJECT: subject,
-            SUBJECT_LINE_2: [cleanText(selectedProperty?.data.name) || objectAddress, unitLabel].filter(Boolean).join(' · '),
-          },
-          templateUrl,
-        }),
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      });
-      if (response.ok) {
-        return {
-          blob: await response.blob(),
-          contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          name: `${baseName}.docx`,
-        };
-      }
+    if (!user) throw new Error('admin_user_missing');
+    const token = await user.getIdToken();
+    const response = await fetch('/api/admin/handover-protocol-pdf', {
+      body: JSON.stringify({
+        confirmationText: HANDOVER_CONFIRMATION_TEXT,
+        defects: form.defects,
+        fileName: baseName,
+        keys: keyRows,
+        kind,
+        landlordName: form.landlordName,
+        landlordSignatureImage,
+        meters: meterRows,
+        notes: form.notes,
+        objectName: cleanText(selectedProperty?.data.name) || objectAddress,
+        place: form.place,
+        protocolId,
+        tenantName: form.tenantSignatureName,
+        tenantSignatureImage,
+        unitLabel,
+      }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(result.error || 'handover_pdf_create_failed');
     }
 
     return {
-      blob: new Blob([buildProtocolHtml(protocolId)], { type: 'text/html;charset=utf-8' }),
-      contentType: 'text/html',
-      name: `${baseName}.html`,
+      blob: await response.blob(),
+      contentType: 'application/pdf',
+      name: `${baseName}.pdf`,
     };
   }
 
@@ -303,8 +485,103 @@ export default function TenantHandoverWorkspace({
     return uploaded;
   }
 
+  async function sendProtocolEmail(protocolDocument: TenantDocumentEntry) {
+    if (!user) throw new Error('admin_user_missing');
+    const recipientEmail = cleanText(tenant?.email).toLowerCase();
+    if (!recipientEmail) throw new Error('tenant_email_missing');
+
+    const token = await user.getIdToken();
+    const subject = kind === 'moveIn' ? 'Uebergabeprotokoll Einzug' : 'Uebergabeprotokoll Auszug';
+    const attachments = [protocolDocument].map((documentEntry) => ({
+      contentType: documentEntry.contentType || 'application/octet-stream',
+      name: documentEntry.name,
+      url: documentEntry.url,
+    }));
+    const body = [
+      `Guten Tag${tenantName ? ` ${tenantName}` : ''},`,
+      '',
+      'anbei erhalten Sie das gespeicherte Uebergabeprotokoll zu Ihrer Wohnung.',
+      'Die bei der Uebergabe aufgenommenen Fotos und Videos werden intern gespeichert und koennen den Vertragsparteien auf Anfrage bereitgestellt werden.',
+      '',
+      'Mit freundlichen Gruessen',
+      'Halbmann Holding',
+    ].join('\n');
+
+    const response = await fetch('/api/message-drafts/send', {
+      body: JSON.stringify({
+        draft: {
+          attachments,
+          body,
+          deliveryMode: 'email',
+          kind: 'handover-protocol',
+          propertyId: cleanText(tenant?.propertyId),
+          recipientEmail,
+          recipientId: tenantId,
+          recipientType: 'tenant',
+          subject,
+          unitId: cleanText(tenant?.unitId),
+        },
+      }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+    const result = (await response.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+    if (!response.ok || result.ok === false) {
+      throw new Error(result.error || 'handover_email_failed');
+    }
+  }
+
+  function buildUnitsWithUpdatedMeterReadings(readingDate: string, note: string) {
+    const property = selectedProperty?.data;
+    const unitId = cleanText(tenant?.unitId);
+    if (!property || !unitId || !Array.isArray(property.units)) return null;
+
+    const readingRows = new Map(
+      meterRows
+        .map((row) => [row.id, cleanText(row.value)] as const)
+        .filter(([, value]) => value)
+    );
+    if (readingRows.size === 0) return null;
+
+    let didUpdate = false;
+    const nextUnits = property.units.map((entry: DocumentData) => {
+      if (!entry || typeof entry !== 'object' || cleanText(entry.id) !== unitId) return entry;
+      const meters = Array.isArray(entry.meters) ? entry.meters : [];
+      const nextMeters = meters.map((meter: DocumentData, index: number) => {
+        const meterId = cleanText(meter?.id) || `meter-${index}`;
+        const readingValue = readingRows.get(meterId);
+        if (!readingValue) return meter;
+        didUpdate = true;
+        return {
+          ...meter,
+          latestReading: readingValue,
+          latestReadingDate: readingDate,
+          readingHistory: appendReadingHistoryEntry(meter, {
+            date: readingDate,
+            note,
+            value: readingValue,
+          }),
+        };
+      });
+      return { ...entry, meters: nextMeters };
+    });
+
+    return didUpdate ? nextUnits : null;
+  }
+
   function saveProtocol() {
     if (!tenant) return;
+    if (!user) {
+      setError('Bitte neu anmelden, damit das Uebergabeprotokoll versendet werden kann.');
+      return;
+    }
+    if (!cleanText(tenant.email)) {
+      setError('Beim Mieter ist keine E-Mail-Adresse hinterlegt. Das Uebergabeprotokoll kann nicht versendet werden.');
+      return;
+    }
     const hasContent = Object.values(form).some((value) => cleanText(value));
     if (!hasContent) {
       setError('Bitte mindestens eine Angabe für das Übergabeprotokoll eintragen.');
@@ -316,6 +593,9 @@ export default function TenantHandoverWorkspace({
         setError('');
         setMessage('');
         const protocolId = `uebergabe-${Date.now()}`;
+        const createdAt = new Date().toISOString();
+        const readingDate = createdAt.slice(0, 10);
+        const readingNote = kind === 'moveIn' ? 'Uebergabeprotokoll Einzug' : 'Uebergabeprotokoll Auszug';
         const generatedProtocol = await createProtocolDocument(protocolId);
         const protocolDocument = await uploadDocumentBlob(
           generatedProtocol.blob,
@@ -329,21 +609,25 @@ export default function TenantHandoverWorkspace({
         const currentDocuments = Array.isArray(tenant.tenantDocuments)
           ? tenant.tenantDocuments
           : [];
-        await updateDoc(doc(db, 'tenants', tenantId), {
+        const batch = writeBatch(db);
+        batch.update(doc(db, 'tenants', tenantId), {
           handoverProtocols: [
             ...currentProtocols,
             {
               ...form,
               attachments: uploadedFiles,
-              createdAt: new Date().toISOString(),
+              confirmationText: HANDOVER_CONFIRMATION_TEXT,
+              createdAt,
               createdByEmail: user?.email ?? null,
               kind,
               keys: keyRows,
+              landlordSignatureImage,
               meters: meterRows,
               protocolDocument,
               protocolId,
               propertyId: cleanText(tenant.propertyId),
               propertyName: cleanText(selectedProperty?.data.name),
+              tenantSignatureImage,
               unitId: cleanText(tenant.unitId),
               unitLabel,
             },
@@ -353,6 +637,21 @@ export default function TenantHandoverWorkspace({
           updatedByEmail: user?.email ?? null,
           updatedByUid: user?.uid ?? null,
         });
+
+        const updatedUnits = buildUnitsWithUpdatedMeterReadings(readingDate, readingNote);
+        const propertyId = cleanText(tenant.propertyId);
+        if (updatedUnits && propertyId) {
+          batch.update(doc(db, 'properties', propertyId), {
+            units: updatedUnits,
+            updatedAt: serverTimestamp(),
+            updatedByEmail: user?.email ?? null,
+            updatedByUid: user?.uid ?? null,
+          });
+        }
+
+        await batch.commit();
+        setMessage('Uebergabeprotokoll wurde gespeichert. E-Mail wird versendet...');
+        await sendProtocolEmail(protocolDocument);
         setForm({
           defects: '',
           landlordName: cleanText(selectedCompany?.data.name) || cleanText(selectedCompany?.data.companyName),
@@ -361,10 +660,20 @@ export default function TenantHandoverWorkspace({
           tenantSignatureName: tenantName,
         });
         setFiles([]);
+        setTenantSignatureImage('');
+        setLandlordSignatureImage('');
         setMessage('Übergabeprotokoll wurde gespeichert.');
+        router.replace(`/admin/mieter/${tenantId}`);
       } catch (caughtError) {
-        console.error('Fehler beim Speichern des Übergabeprotokolls:', caughtError);
-        setError('Das Übergabeprotokoll konnte nicht gespeichert werden.');
+        console.error('Fehler beim Speichern des Uebergabeprotokolls:', caughtError);
+        const message = caughtError instanceof Error ? caughtError.message : '';
+        setError(
+          message === 'tenant_email_missing'
+            ? 'Beim Mieter ist keine E-Mail-Adresse hinterlegt. Das Uebergabeprotokoll wurde nicht versendet.'
+            : message === 'handover_email_failed'
+              ? 'Das Uebergabeprotokoll wurde gespeichert, konnte aber nicht per E-Mail versendet werden.'
+              : 'Das Uebergabeprotokoll konnte nicht gespeichert oder versendet werden.'
+        );
       }
     });
   }
@@ -472,21 +781,57 @@ export default function TenantHandoverWorkspace({
             placeholder="Notizen"
             value={form.notes}
           />
-          <label className="block rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4">
+          <div className="rounded-[22px] border border-stone-200 bg-stone-50 p-4">
+            <p className="text-sm font-semibold text-slate-950">Bestaetigung und Unterschriften</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{HANDOVER_CONFIRMATION_TEXT}</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <SignaturePad
+                label="Unterschrift Mieter"
+                name="tenantSignature"
+                onChange={setTenantSignatureImage}
+                value={tenantSignatureImage}
+              />
+              <SignaturePad
+                label="Unterschrift Vermieter"
+                name="landlordSignature"
+                onChange={setLandlordSignatureImage}
+                value={landlordSignatureImage}
+              />
+            </div>
+          </div>
+          <div className="block rounded-[22px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4">
             <p className="text-sm font-semibold text-slate-950">Foto- und Videoaufnahmen</p>
             <input
               accept="image/*,video/*"
               className="mt-3 block w-full text-sm text-slate-700 file:mr-4 file:rounded-full file:border-0 file:bg-white file:px-4 file:py-2 file:text-sm file:font-medium file:text-slate-700"
               multiple
-              onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+              onChange={(event) => {
+                const nextFiles = Array.from(event.currentTarget.files ?? []);
+                addProtocolFiles(nextFiles);
+                event.currentTarget.value = '';
+              }}
               type="file"
             />
             {files.length ? (
-              <div className="mt-3 grid gap-1 text-sm text-slate-600">
-                {files.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}
+              <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                {files.map((file, index) => (
+                  <div
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-2"
+                    key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                  >
+                    <span className="min-w-0 truncate">{file.name}</span>
+                    <button
+                      className="shrink-0 rounded-full border border-stone-300 px-3 py-1 text-xs font-medium text-slate-700"
+                      onClick={() => removeProtocolFile(index)}
+                      type="button"
+                    >
+                      Entfernen
+                    </button>
+                  </div>
+                ))}
               </div>
             ) : null}
-          </label>
+          </div>
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button

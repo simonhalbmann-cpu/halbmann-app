@@ -7,6 +7,13 @@ function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function cleanMailboxHeaderText(value: unknown) {
+  return cleanText(value)
+    .replace(/Holen Sie sich die App oder nutzen Sie das Online-Mieterportal f.{1,6}r ein besseres Erlebnis\.?/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function normalizeMailboxSettings(data: Partial<MailboxSettings>): MailboxSettings {
   const inboxEmail = cleanText(data.inboxEmail) || PORTAL_INBOX_EMAIL;
   const imapUser = cleanText(data.imapUser) || inboxEmail;
@@ -35,7 +42,7 @@ function normalizeMailboxSettings(data: Partial<MailboxSettings>): MailboxSettin
     mailHeaderFontFamily: cleanText(data.mailHeaderFontFamily) || 'Segoe UI, Arial, sans-serif',
     mailHeaderFontSize: cleanText(data.mailHeaderFontSize) || '14',
     mailHeaderItalic: data.mailHeaderItalic === true,
-    mailHeaderText: cleanText(data.mailHeaderText),
+    mailHeaderText: cleanMailboxHeaderText(data.mailHeaderText),
     mailHeaderTextAlign: data.mailHeaderTextAlign === 'left' ? 'left' : 'center',
     mailHeaderUnderline: data.mailHeaderUnderline === true,
     smtpHost: cleanText(data.smtpHost) || 'smtp.ionos.de',
@@ -53,9 +60,7 @@ function envFallback(): MailboxSettings {
     imapPort: process.env.IONOS_IMAP_PORT,
     imapUser: process.env.IONOS_IMAP_USER,
     inboxEmail: process.env.IONOS_IMAP_USER,
-    mailHeaderText:
-      process.env.IONOS_MAIL_HEADER_TEXT ||
-      'Holen Sie sich die App oder nutzen Sie das Online-Mieterportal für ein besseres Erlebnis.',
+    mailHeaderText: process.env.IONOS_MAIL_HEADER_TEXT || '',
     smtpHost: process.env.IONOS_SMTP_HOST,
     smtpPassword: process.env.IONOS_SMTP_PASSWORD,
     smtpPort: process.env.IONOS_SMTP_PORT,

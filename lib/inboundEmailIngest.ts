@@ -5,7 +5,7 @@ import { extractFirstEmail, normalizeEmail, PORTAL_INBOX_EMAIL } from './mailbox
 import { ensureWorkflowForMessage } from './workflowAutomation';
 import { addFirestoreDocument, queryFirestoreEquals } from './firestoreRest';
 import { buildExternalMessageKey } from './mailIdentity';
-import { sanitizeStorageFileName, type StoredDocumentEntry } from './tenantDocuments';
+import { createClientId, sanitizeStorageFileName, type StoredDocumentEntry } from './tenantDocuments';
 
 export type InboundEmailAttachmentPayload = {
   contentBase64?: string;
@@ -97,7 +97,7 @@ async function uploadInboundEmailAttachments(
     const content = Buffer.from(contentBase64, 'base64');
     const contentType = cleanText(attachment.contentType) || 'application/octet-stream';
     const safeName = sanitizeStorageFileName(name);
-    const storagePath = `message-attachments/${messageId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const storagePath = `message-attachments/${messageId}/${Date.now()}-${createClientId('file')}-${safeName}`;
     const file = bucket.file(storagePath);
 
     await file.save(content, {

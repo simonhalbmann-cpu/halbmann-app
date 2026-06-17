@@ -77,3 +77,22 @@ export function sanitizeStorageFileName(name: string) {
 
   return cleaned || 'dokument';
 }
+
+export function createClientId(prefix = 'id') {
+  const randomSource = globalThis.crypto as Crypto | undefined;
+  if (typeof randomSource?.randomUUID === 'function') {
+    return randomSource.randomUUID();
+  }
+
+  const randomBytes = new Uint8Array(16);
+  if (typeof randomSource?.getRandomValues === 'function') {
+    randomSource.getRandomValues(randomBytes);
+  } else {
+    randomBytes.forEach((_, index) => {
+      randomBytes[index] = Math.floor(Math.random() * 256);
+    });
+  }
+
+  const randomPart = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${prefix}-${Date.now().toString(36)}-${randomPart}`;
+}

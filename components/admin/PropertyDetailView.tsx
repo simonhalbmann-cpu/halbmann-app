@@ -16,6 +16,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
 import {
   cleanStoredDocuments,
+  createClientId,
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
@@ -206,6 +207,10 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
   const [maintenanceDrafts, setMaintenanceDrafts] = useState<Record<string, string>>({});
   const [maintenanceMonthDrafts, setMaintenanceMonthDrafts] = useState<Record<string, string>>({});
   const [meterReadingDrafts, setMeterReadingDrafts] = useState<Record<string, ReadingDraft>>({});
+  const [showObjectMeters, setShowObjectMeters] = useState(false);
+  const [showMaintenance, setShowMaintenance] = useState(false);
+  const [showServiceProviders, setShowServiceProviders] = useState(false);
+  const [showPropertyDocuments, setShowPropertyDocuments] = useState(false);
   const [selectedServiceField, setSelectedServiceField] = useState<string>(servicePartnerFields[0]?.idField || '');
   const [selectedServicePartnerId, setSelectedServicePartnerId] = useState('');
 
@@ -375,7 +380,7 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
 
       for (const file of Array.from(files)) {
         const safeName = sanitizeStorageFileName(file.name);
-        const storagePath = `property-documents/${propertyId}/object/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storagePath = `property-documents/${propertyId}/object/${Date.now()}-${createClientId('file')}-${safeName}`;
         const storageRef = ref(storage, storagePath);
         await uploadBytes(storageRef, file, {
           contentType: file.type || 'application/octet-stream',
@@ -765,79 +770,88 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
       </section>
 
       <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Zaehleruebersicht</p>
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setShowObjectMeters((current) => !current)}
+            type="button"
+          >
+            <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Zaehleruebersicht</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-base leading-none text-slate-700">
+              {showObjectMeters ? '-' : '+'}
+            </span>
+          </button>
+          {showObjectMeters ? (
+          <>
           {objectMeters.length === 0 ? (
             <div className="mt-4 rounded-[20px] border border-dashed border-stone-300 bg-stone-50 p-5 text-sm text-slate-600">
               Noch keine Objekt-Zaehler hinterlegt.
             </div>
           ) : (
-            <div className="mt-4 overflow-hidden rounded-[18px] border border-stone-200">
-              <div className="grid gap-3 bg-stone-100/70 px-4 py-3 text-[11px] uppercase tracking-[0.2em] text-stone-500 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,2.4fr)]">
-                <span>Zaehler</span>
-                <span>Letzter Stand</span>
-                <span>Datum</span>
-                <span>Neuer Stand</span>
-              </div>
-              <div className="divide-y divide-stone-200 bg-white">
-                {objectMeters.map((meter, index) => {
-                  const meterId = cleanText(meter.id) || `meter-${index}`;
-                  const draft = meterReadingDrafts[meterId] ?? { date: '', value: '' };
-                  return (
-                    <div
-                      className="grid gap-3 px-4 py-3 text-sm text-slate-800 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,2.4fr)] md:items-center"
-                      key={meterId}
-                    >
+            <div className="mt-4 grid gap-3">
+              {objectMeters.map((meter, index) => {
+                const meterId = cleanText(meter.id) || `meter-${index}`;
+                const draft = meterReadingDrafts[meterId] ?? { date: '', value: '' };
+                return (
+                  <article className="rounded-[18px] border border-stone-200 bg-stone-50 p-4" key={meterId}>
+                    <div className="mb-3 flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <Link
-                          className="font-medium text-slate-900 underline-offset-4 hover:underline"
-                          href={`/admin/zaehler/${propertyId}/${meterId}`}
-                        >
-                          {formatValue(meter.label || meter.type)}
-                        </Link>
-                        <p className="mt-0.5 truncate text-xs text-slate-500">
-                          {[cleanText(meter.meterNumber), cleanText(meter.position)].filter(Boolean).join(' · ')}
+                        <p className="text-sm font-medium text-slate-900">{formatValue(meter.label || meter.type)}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">
+                          {[cleanText(meter.meterNumber), cleanText(meter.position)].filter(Boolean).join(' - ')}
                         </p>
                       </div>
-                      <span>{formatValue(meter.latestReading)}</span>
-                      <span>{formatValue(meter.latestReadingDate)}</span>
-                      <div className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_170px_auto]">
-                        <input
-                          className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-                          onChange={(event) =>
-                            setMeterReadingDrafts((current) => ({
-                              ...current,
-                              [meterId]: { ...draft, value: event.target.value },
-                            }))
-                          }
-                          placeholder="Stand"
-                          value={draft.value}
-                        />
-                        <input
-                          className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-                          onChange={(event) =>
-                            setMeterReadingDrafts((current) => ({
-                              ...current,
-                              [meterId]: { ...draft, date: event.target.value },
-                            }))
-                          }
-                          type="date"
-                          value={draft.date}
-                        />
-                        <button
-                          className="rounded-full border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={!draft.value || !draft.date}
-                          onClick={() => void saveObjectMeterReading(meterId)}
-                          type="button"
-                        >
-                          Speichern
-                        </button>
-                      </div>
+                      <Link
+                        aria-label="Zaehlerdetails"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-xs font-semibold text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                        href={`/admin/zaehler/${propertyId}/${meterId}`}
+                      >
+                        i
+                      </Link>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.2fr)_repeat(2,minmax(0,0.8fr))]">
+                      <Field label="Letzter Stand" value={meter.latestReading} />
+                      <Field label="Datum Zaehlerstand" value={meter.latestReadingDate} />
+                      <Field label="Eichdatum" value={meter.calibrationDate} />
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_auto]">
+                      <input
+                        className="w-full rounded-2xl border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                        onChange={(event) =>
+                          setMeterReadingDrafts((current) => ({
+                            ...current,
+                            [meterId]: { ...draft, value: event.target.value },
+                          }))
+                        }
+                        placeholder="Neuer Stand"
+                        value={draft.value}
+                      />
+                      <input
+                        className="w-full rounded-2xl border border-stone-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                        onChange={(event) =>
+                          setMeterReadingDrafts((current) => ({
+                            ...current,
+                            [meterId]: { ...draft, date: event.target.value },
+                          }))
+                        }
+                        type="date"
+                        value={draft.date}
+                      />
+                      <button
+                        className="rounded-full border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={!draft.value || !draft.date}
+                        onClick={() => void saveObjectMeterReading(meterId)}
+                        type="button"
+                      >
+                        Speichern
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
+          </>
+          ) : null}
       </section>
 
       <div className="hidden">
@@ -927,7 +941,17 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
       </div>
 
       <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Wartungen dokumentieren</p>
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowMaintenance((current) => !current)}
+          type="button"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Wartungen dokumentieren</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-base leading-none text-slate-700">
+            {showMaintenance ? '-' : '+'}
+          </span>
+        </button>
+        {showMaintenance ? (
         <div className="mt-4 grid gap-3">
           {heatingEntries.length > 0 ? (
             heatingEntries.map((entry) => {
@@ -975,6 +999,7 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
             onSave={() => void saveMaintenanceDate('gutter', maintenanceDrafts.gutter ?? '', maintenanceMonthDrafts.gutter ?? (cleanText(property.gutterCleaningReminderMonths) || '11'))}
           />
         </div>
+        ) : null}
       </section>
 
       {false ? (
@@ -1136,7 +1161,18 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
       </section>
 
       <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dienstleister</p>
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowServiceProviders((current) => !current)}
+          type="button"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dienstleister</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-base leading-none text-slate-700">
+            {showServiceProviders ? '-' : '+'}
+          </span>
+        </button>
+        {showServiceProviders ? (
+        <>
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] lg:items-end">
           <label className="block">
             <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Dienstleisterart</p>
@@ -1209,6 +1245,8 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
             {saveMessage}
           </div>
         ) : null}
+        </>
+        ) : null}
       </section>
 
       {error ? (
@@ -1217,14 +1255,28 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </div>
       ) : null}
 
-      <DocumentLibrarySection
-        documents={propertyDocuments}
-        isUploading={isUploadingDocument}
-        onDelete={deletePropertyDocument}
-        onUpdateCategory={updatePropertyDocumentCategory}
-        onUpload={(files, category) => uploadPropertyDocuments(files, category)}
-        title="Immobiliendateien"
-      />
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowPropertyDocuments((current) => !current)}
+          type="button"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-base leading-none text-slate-700">
+            {showPropertyDocuments ? '-' : '+'}
+          </span>
+        </button>
+      </section>
+      {showPropertyDocuments ? (
+        <DocumentLibrarySection
+          documents={propertyDocuments}
+          isUploading={isUploadingDocument}
+          onDelete={deletePropertyDocument}
+          onUpdateCategory={updatePropertyDocumentCategory}
+          onUpload={(files, category) => uploadPropertyDocuments(files, category)}
+          title="Immobiliendateien"
+        />
+      ) : null}
     </div>
   );
 }

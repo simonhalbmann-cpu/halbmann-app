@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
 import {
   cleanStoredDocuments,
+  createClientId,
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
@@ -160,6 +161,9 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
   const [meterReadingDrafts, setMeterReadingDrafts] = useState<Record<string, ReadingDraft>>({});
   const [maintenanceDrafts, setMaintenanceDrafts] = useState<Record<string, string>>({});
   const [maintenanceMonthDrafts, setMaintenanceMonthDrafts] = useState<Record<string, string>>({});
+  const [showUnitMeters, setShowUnitMeters] = useState(false);
+  const [showUnitServiceProviders, setShowUnitServiceProviders] = useState(false);
+  const [showUnitDocuments, setShowUnitDocuments] = useState(false);
   const [selectedServiceField, setSelectedServiceField] = useState<string>(servicePartnerFields[0]?.idField || '');
   const [selectedServicePartnerId, setSelectedServicePartnerId] = useState('');
 
@@ -329,7 +333,7 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
 
       for (const file of Array.from(files)) {
         const safeName = sanitizeStorageFileName(file.name);
-        const storagePath = `property-documents/${propertyId}/units/${unitId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storagePath = `property-documents/${propertyId}/units/${unitId}/${Date.now()}-${createClientId('file')}-${safeName}`;
         const storageRef = ref(storage, storagePath);
         await uploadBytes(storageRef, file, {
           contentType: file.type || 'application/octet-stream',
@@ -724,15 +728,29 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
         </div>
       </section>
 
-      <MeterSection
-        drafts={meterReadingDrafts}
-        meters={unitMeters}
-        onDraftChange={(key, draft) => setMeterReadingDrafts((current) => ({ ...current, [key]: draft }))}
-        onSave={(meterId) => void saveMeterReading(meterId, unitId)}
-        propertyId={propertyId}
-        title="Einheiten-Zaehler"
-        unitId={unitId}
-      />
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowUnitMeters((current) => !current)}
+          type="button"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Einheiten-Zaehler</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-base leading-none text-slate-700">
+            {showUnitMeters ? '-' : '+'}
+          </span>
+        </button>
+      </section>
+      {showUnitMeters ? (
+        <MeterSection
+          drafts={meterReadingDrafts}
+          meters={unitMeters}
+          onDraftChange={(key, draft) => setMeterReadingDrafts((current) => ({ ...current, [key]: draft }))}
+          onSave={(meterId) => void saveMeterReading(meterId, unitId)}
+          propertyId={propertyId}
+          title="Einheiten-Zaehler"
+          unitId={unitId}
+        />
+      ) : null}
 
       {false ? (
         <DocumentLibrarySection
@@ -950,7 +968,18 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
       </section>
 
       <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dienstleister</p>
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowUnitServiceProviders((current) => !current)}
+          type="button"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dienstleister</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-base leading-none text-slate-700">
+            {showUnitServiceProviders ? '-' : '+'}
+          </span>
+        </button>
+        {showUnitServiceProviders ? (
+        <>
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] lg:items-end">
           <label className="block">
             <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Dienstleisterart</p>
@@ -1014,16 +1043,32 @@ export default function UnitDetailView({ propertyId, unitId }: UnitDetailViewPro
             ))
           )}
         </div>
+        </>
+        ) : null}
       </section>
 
-      <DocumentLibrarySection
-        documents={unitDocuments}
-        isUploading={isUploadingDocument}
-        onDelete={deleteUnitDocument}
-        onUpdateCategory={updateUnitDocumentCategory}
-        onUpload={(files, category) => uploadUnitDocuments(files, category)}
-        title="Einheitsdateien"
-      />
+      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+        <button
+          className="flex w-full items-center justify-between text-left"
+          onClick={() => setShowUnitDocuments((current) => !current)}
+          type="button"
+        >
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Dokumente</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-stone-300 bg-white text-base leading-none text-slate-700">
+            {showUnitDocuments ? '-' : '+'}
+          </span>
+        </button>
+      </section>
+      {showUnitDocuments ? (
+        <DocumentLibrarySection
+          documents={unitDocuments}
+          isUploading={isUploadingDocument}
+          onDelete={deleteUnitDocument}
+          onUpdateCategory={updateUnitDocumentCategory}
+          onUpload={(files, category) => uploadUnitDocuments(files, category)}
+          title="Einheitsdateien"
+        />
+      ) : null}
     </div>
   );
 }
@@ -1070,10 +1115,11 @@ function MeterSection({
                     <p className="mt-1 text-xs text-slate-500">{formatValue(meter.position)}</p>
                   </div>
                   <Link
-                    className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                    aria-label="Zaehlerdetails"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-xs font-semibold text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
                     href={unitId ? `/admin/zaehler/${propertyId}/${meterId}?unit=${unitId}` : `/admin/zaehler/${propertyId}/${meterId}`}
                   >
-                    Details
+                    i
                   </Link>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.2fr)_repeat(2,minmax(0,0.8fr))]">

@@ -35,6 +35,7 @@ import OutgoingAttachmentPicker, { type PendingOutgoingAttachment } from './Outg
 import RentHistoryChart, { type RentHistoryChartPoint } from './RentHistoryChart';
 import {
   cleanTenantDocuments,
+  createClientId,
   getLegacyTenantDocumentNames,
   sanitizeStorageFileName,
   type TenantDocumentEntry,
@@ -340,6 +341,7 @@ export default function TenantDetailView({
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [replyText, setReplyText] = useState('');
+  const [newMessageSubject, setNewMessageSubject] = useState('');
   const [aiInstruction, setAiInstruction] = useState('');
   const [replyAttachments, setReplyAttachments] = useState<PendingOutgoingAttachment[]>([]);
   const [contextMode, setContextMode] = useState<'new' | 'reply'>('reply');
@@ -451,7 +453,7 @@ export default function TenantDetailView({
           setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
         }
       } catch (caughtError) {
-        console.error('Fehler beim Laden der lokalen Portalnachrichten im Mieterbereich:', caughtError);
+        console.warn('Fehler beim Laden der lokalen Portalnachrichten im Mieterbereich:', caughtError);
       }
     }
 
@@ -482,7 +484,7 @@ export default function TenantDetailView({
           setMessageThemes(Array.isArray(result.themes) ? result.themes : []);
         }
       } catch (caughtError) {
-        console.error('Fehler beim Laden der Themen im Mieterbereich:', caughtError);
+        console.warn('Fehler beim Laden der Themen im Mieterbereich:', caughtError);
       }
     }
 
@@ -729,9 +731,9 @@ export default function TenantDetailView({
     );
   }, [isGeneralConversation, selectedTheme, tenantMessages]);
   const threadHistoryPanel = (
-    <div className="border-b border-stone-200 pb-4">
+    <div className="min-w-0 overflow-x-hidden border-b border-stone-200 pb-4">
       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Verlauf</p>
-      <div className="mt-4 max-h-[72vh] divide-y divide-stone-200 overflow-y-auto border-y border-stone-200 pr-1">
+      <div className="mt-4 max-h-[72vh] min-w-0 divide-y divide-stone-200 overflow-y-auto overflow-x-hidden border-y border-stone-200 pr-1">
         {!selectedRequest && !isGeneralConversation ? (
           <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-sm text-slate-600">
             Fuer diesen Mieter gibt es noch keine ausgewaehlte Anfrage.
@@ -755,18 +757,18 @@ export default function TenantDetailView({
 
             return (
               <div
-                className={`py-4 ${isOutbound ? 'pl-10' : 'pr-10'}`}
+                className={`min-w-0 overflow-x-hidden py-4 ${isOutbound ? 'sm:pl-10' : 'sm:pr-10'}`}
                 key={`${tenantId}-${selectedRequest?.id || 'general'}-${entry.id}`}
               >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-slate-950">
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 break-words text-sm font-medium text-slate-950">
                     {appendDeliveryLabel(heading, entry.data as Record<string, unknown>)}
                   </p>
-                  <span className="text-xs text-slate-500">
+                  <span className="shrink-0 text-xs text-slate-500">
                     {formatDateTime(entry.data.receivedAt ?? entry.data.createdAt)}
                   </span>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                <p className="mt-2 min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
                   {cleanText(entry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
                 </p>
                 <MessageAttachmentPreview
@@ -835,6 +837,7 @@ export default function TenantDetailView({
     setMergeSourceThemeId('');
     setThemeActionTargetId('');
     setReplyText('');
+    setNewMessageSubject('');
     setAiInstruction('');
     setFollowUpDate('');
     setVendorContactId('');
@@ -1135,7 +1138,7 @@ export default function TenantDetailView({
 
       for (const file of Array.from(files)) {
         const safeName = sanitizeStorageFileName(file.name);
-        const storagePath = `tenant-documents/${tenantId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storagePath = `tenant-documents/${tenantId}/${Date.now()}-${createClientId('file')}-${safeName}`;
         const storageRef = ref(storage, storagePath);
 
         await uploadBytes(storageRef, file, {
@@ -1714,7 +1717,7 @@ export default function TenantDetailView({
     visibleToTenant: boolean;
     deliveryMode?: DeliveryMode;
   }) {
-    const entryId = globalThis.crypto.randomUUID();
+    const entryId = createClientId('entry');
     const currentThemeId = cleanText(payload.themeId) || cleanText(selectedTheme?.id);
     if (!currentThemeId) return;
     const createdAt = new Date().toISOString();
@@ -2025,7 +2028,7 @@ export default function TenantDetailView({
     const baseTitle =
       cleanText(splitSourceRecord.data.subject) ||
       buildThemeTitle(cleanText(splitSourceRecord.data.bodyText), 'Abgesplittetes Thema');
-    const newThemeId = globalThis.crypto.randomUUID();
+    const newThemeId = createClientId('theme');
     const now = new Date().toISOString();
 
     const targetResponse = await authorizedFetch('/api/admin/message-themes', {
@@ -2198,7 +2201,7 @@ export default function TenantDetailView({
                 subject:
                   contextMode === 'reply'
                     ? cleanText(latestInbound?.data.subject) || cleanText(selectedTheme?.subject) || 'Nachricht an den Mieter'
-                    : 'Neue Nachricht an den Mieter',
+                    : cleanText(newMessageSubject) || 'Neue Nachricht an den Mieter',
                 unitLabel: contextMode === 'reply' ? cleanText(tenant.unitLabel) : '',
               }),
             });
@@ -2269,10 +2272,10 @@ export default function TenantDetailView({
           createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
           resolveAdminSenderContact(profile, user)
         );
-        const themeId = isGeneralConversation ? globalThis.crypto.randomUUID() : selectedTheme?.id || selectedRequest?.id || null;
+        const themeId = isGeneralConversation ? createClientId('theme') : selectedTheme?.id || selectedRequest?.id || null;
         const threadMessageId = themeId;
         const subject = isGeneralConversation
-          ? buildThemeTitle(baseBody, 'Neue Nachricht von Halbmann Holding')
+          ? cleanText(newMessageSubject) || buildThemeTitle(baseBody, 'Neue Nachricht von Halbmann Holding')
           : cleanText(selectedTheme?.subject) ||
             cleanText(selectedRequest?.data.subject) ||
             'Nachricht von Halbmann Holding';
@@ -2346,6 +2349,7 @@ export default function TenantDetailView({
           });
         }
         setReplyText('');
+        setNewMessageSubject('');
         setAiInstruction('');
         setContextMode('reply');
         setDeliveryMode('email');
@@ -2484,13 +2488,19 @@ export default function TenantDetailView({
   return (
     <div className="space-y-4">
       {showStandaloneMailboxLayout ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
             <span>Ansicht</span>
             <select
-              className="bg-transparent text-sm text-slate-900 outline-none"
+              className="min-w-0 bg-transparent text-sm text-slate-900 outline-none"
               onChange={(event) => {
-                const nextMode = event.target.value === 'archive' ? 'archive' : 'open';
+                const nextValue = event.target.value;
+                if (nextValue === 'new') {
+                  router.push(buildTenantMailboxHref(tenantId, resolvedThemeListMode === 'archive' ? 'archive' : 'open', GENERAL_THREAD_ID));
+                  return;
+                }
+
+                const nextMode = nextValue === 'archive' ? 'archive' : 'open';
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(
                     new CustomEvent('admin-mailbox-view', {
@@ -2503,41 +2513,27 @@ export default function TenantDetailView({
                 }
                 router.push(buildTenantMailboxHref(tenantId, nextMode));
               }}
-              value={resolvedThemeListMode === 'archive' ? 'archive' : 'inbox'}
+              value={isGeneralConversation ? 'new' : resolvedThemeListMode === 'archive' ? 'archive' : 'inbox'}
             >
               <option value="inbox">Posteingang</option>
+              <option value="new">Neue Nachricht</option>
               <option value="archive">Archiv</option>
             </select>
           </label>
-          <Link
-            className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-              isGeneralConversation
-                ? 'border border-stone-200 bg-[linear-gradient(180deg,rgba(255,250,240,0.94)_0%,rgba(244,236,224,0.92)_100%)] text-slate-950 shadow-[0_18px_40px_-32px_rgba(148,119,77,0.45)]'
-                : 'border border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-            }`}
-            href={buildTenantMailboxHref(tenantId, resolvedThemeListMode === 'archive' ? 'archive' : 'open', GENERAL_THREAD_ID)}
-          >
-            Neue Nachricht
-          </Link>
           <div className="ml-auto flex items-center gap-3">
-            <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
-              <span>Uebergabe</span>
-              <select
-                className="bg-transparent text-sm text-slate-900 outline-none"
-                onChange={(event) => setHandoverProtocolKind(event.target.value === 'moveOut' ? 'moveOut' : 'moveIn')}
-                value={handoverProtocolKind}
-              >
-                <option value="moveIn">Einzug</option>
-                <option value="moveOut">Auszug</option>
-              </select>
-            </label>
             <button
-              aria-label="Uebergabeformular oeffnen"
-              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-              onClick={() => router.push(`/admin/mieter/${tenantId}/uebergabe?art=${handoverProtocolKind}`)}
+              aria-label="Uebergabeprotokoll oeffnen"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-stone-300 bg-white text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+              onClick={() => router.push(`/admin/mieter/${tenantId}/uebergabe`)}
+              title="Uebergabeprotokoll"
               type="button"
             >
-              ✓
+              <svg aria-hidden="true" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+                <path d="M14 2v5h5" />
+                <path d="M8.5 13h7" />
+                <path d="M8.5 17h5" />
+              </svg>
             </button>
           </div>
         </div>
@@ -2739,9 +2735,9 @@ export default function TenantDetailView({
         </div>
       </section>
 
-      <section className="rounded-[24px] border border-stone-200 bg-white px-5 pb-5 pt-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
+      <section className="min-w-0 overflow-x-hidden rounded-[24px] border border-stone-200 bg-white px-4 pb-5 pt-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)] sm:px-5">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             {showArchiveHistoryInline && selectedTheme?.archived ? (
               <button
                 className="rounded-full border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:border-emerald-400"
@@ -2766,21 +2762,21 @@ export default function TenantDetailView({
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">{resolvedSectionTitle}</p>
           </div>
           {isGeneralConversation ? (
-            <div className="rounded-full border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-slate-600">
+            <div className="min-w-0 rounded-full border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-slate-600">
               Ausgewaehlt: Neues Thema
             </div>
           ) : selectedRequest ? (
-            <div className="rounded-full border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-slate-600">
+            <div className="min-w-0 break-words rounded-full border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-slate-600">
               Ausgewaehlt: {cleanText(selectedTheme?.subject) || cleanText(selectedRequest.data.subject) || 'Anfrage ohne Betreff'}
             </div>
           ) : null}
         </div>
         <div
-          className={`mt-4 grid gap-0 ${
+          className={`mt-4 grid min-w-0 gap-0 overflow-x-hidden ${
             showMailboxTwoColumnLayout ? 'xl:grid-cols-[280px_minmax(0,1fr)] xl:items-start' : ''
           }`}
         >
-          <div className={`space-y-0 ${showMailboxTwoColumnLayout ? 'xl:col-start-2 xl:row-start-1 xl:border-l xl:border-stone-200 xl:pl-5' : ''}`}>
+          <div className={`min-w-0 space-y-0 overflow-x-hidden ${showMailboxTwoColumnLayout ? 'xl:col-start-2 xl:row-start-1 xl:border-l xl:border-stone-200 xl:pl-5' : ''}`}>
             {selectedTheme && false && !isGeneralConversation && !showArchiveHistoryInline ? (
               <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-3 py-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2902,11 +2898,27 @@ export default function TenantDetailView({
             ) : (
             <>
             {threadHistoryPanel}
+            <div className="flex justify-start border-b border-stone-200 py-3">
+              <select
+                className="h-9 w-24 rounded-full border border-stone-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-amber-700/60 disabled:bg-stone-100 disabled:text-slate-400"
+                onChange={(event) => {
+                  const nextMode = event.target.value as DeliveryMode;
+                  setDeliveryMode(nextMode);
+                  setComposerMode(nextMode === 'note' ? 'note' : 'tenant');
+                }}
+                value={deliveryMode}
+              >
+                <option value="email">Mail</option>
+                <option value="letter">Brief</option>
+                <option value="both">Beides</option>
+                <option value="note">Notiz</option>
+              </select>
+            </div>
             {!isGeneralConversation ? (
-              <div className="border-b border-stone-200 py-3">
-                <div className="grid gap-2 lg:grid-cols-[150px_minmax(180px,280px)_minmax(180px,1fr)_34px] lg:items-center">
+              <div className="min-w-0 overflow-x-hidden border-b border-stone-200 py-3">
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_36px] items-center gap-2">
                   <select
-                    className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-amber-700/60"
+                    className="h-9 min-w-0 rounded-full border border-stone-300 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-amber-700/60"
                     onChange={(event) => setThemeAction(event.target.value as 'done' | 'merge' | 'reassign' | 'save' | 'split')}
                     value={themeAction}
                   >
@@ -2917,7 +2929,7 @@ export default function TenantDetailView({
                     <option value="reassign">Neu zuordnen</option>
                   </select>
                   <select
-                    className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-700 outline-none transition focus:border-amber-700/60 disabled:bg-stone-100 disabled:text-slate-400"
+                    className="h-9 min-w-0 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-700 outline-none transition focus:border-amber-700/60 disabled:bg-stone-100 disabled:text-slate-400"
                     disabled={themeAction !== 'merge' && themeAction !== 'reassign'}
                     onChange={(event) => setThemeActionTargetId(event.target.value)}
                     value={themeActionTargetId}
@@ -2944,12 +2956,6 @@ export default function TenantDetailView({
                       <option value="">Keine Auswahl nötig</option>
                     )}
                   </select>
-                  <input
-                    className="h-9 rounded-full border border-stone-300 bg-stone-50 px-3 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
-                    onChange={(event) => setThemeTitleDraft(event.target.value)}
-                    placeholder="Thementitel"
-                    value={themeTitleDraft}
-                  />
                   <button
                     aria-label="Aktion ausführen"
                     className="flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-slate-700 transition hover:border-amber-700/50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2973,36 +2979,44 @@ export default function TenantDetailView({
                 </div>
               </div>
             ) : null}
-            <div className="py-4">
-              <div className="grid gap-2 lg:grid-cols-[150px_54px_minmax(180px,1fr)] lg:items-center">
-                <select
-                  className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-900 outline-none transition focus:border-amber-700/60 disabled:bg-stone-100 disabled:text-slate-400"
-                  onChange={(event) => {
-                    const nextMode = event.target.value as DeliveryMode;
-                    setDeliveryMode(nextMode);
-                    setComposerMode(nextMode === 'note' ? 'note' : 'tenant');
-                  }}
-                  value={deliveryMode}
-                >
-                  <option value="email">Mail</option>
-                  <option value="letter">Brief</option>
-                  <option value="both">Mail/Brief</option>
-                  <option value="note">Notiz</option>
-                </select>
-                <button
-                  className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={composerMode !== 'tenant' || isGeneratingAiDraft || isPending || (!selectedRequest && !isGeneralConversation)}
-                  onClick={generateAiDraft}
-                  type="button"
-                >
-                  {isGeneratingAiDraft ? '...' : 'KI'}
-                </button>
-                <input
-                  className="h-9 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
-                  onChange={(event) => setAiInstruction(event.target.value)}
-                  placeholder="z. B. kürzer, verbindlicher, freundlicher"
-                  value={aiInstruction}
-                />
+            <div className="min-w-0 overflow-x-hidden py-4">
+              <div className="grid min-w-0 gap-2">
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_40px] items-center gap-2">
+                  <input
+                    className="h-9 min-w-0 rounded-full border border-stone-300 bg-white px-3 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                    onChange={(event) => setAiInstruction(event.target.value)}
+                    placeholder="KI-Hinweis"
+                    value={aiInstruction}
+                  />
+                  <button
+                    className="flex h-9 w-10 items-center justify-center rounded-full border border-stone-300 bg-white text-xs font-medium text-slate-700 transition hover:border-stone-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={composerMode !== 'tenant' || isGeneratingAiDraft || isPending || (!selectedRequest && !isGeneralConversation)}
+                    onClick={generateAiDraft}
+                    type="button"
+                  >
+                    {isGeneratingAiDraft ? '...' : 'KI'}
+                  </button>
+                </div>
+                {isGeneralConversation ? (
+                  <label className="grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center rounded-full border border-stone-300 bg-white px-3">
+                    <span className="text-xs font-medium text-slate-500">Betreff</span>
+                    <input
+                      className="h-9 min-w-0 bg-transparent text-xs text-slate-900 outline-none"
+                      onChange={(event) => setNewMessageSubject(event.target.value)}
+                      placeholder="Betreff eingeben"
+                      value={newMessageSubject}
+                    />
+                  </label>
+                ) : (
+                  <label className="grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center rounded-full border border-stone-300 bg-white px-3">
+                    <span className="text-xs font-medium text-slate-500">Betreff</span>
+                    <input
+                      className="h-9 min-w-0 bg-transparent text-xs text-slate-900 outline-none"
+                      onChange={(event) => setThemeTitleDraft(event.target.value)}
+                      value={themeTitleDraft}
+                    />
+                  </label>
+                )}
               </div>
 
               {composerMode === 'vendor' && selectedTheme && !isGeneralConversation ? (
@@ -3024,7 +3038,7 @@ export default function TenantDetailView({
               ) : null}
 
               <textarea
-                className="mt-3 min-h-[320px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-amber-700/60"
+                className="mt-3 min-h-[320px] w-full min-w-0 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-amber-700/60"
                 lang="de"
                 onChange={(event) => setReplyText(event.target.value)}
                 placeholder={
@@ -3083,10 +3097,10 @@ export default function TenantDetailView({
             )}
           </div>
           {externalThemesPanel ? (
-            <aside className={showMailboxTwoColumnLayout ? 'xl:col-start-1 xl:row-start-1' : ''}>{externalThemesPanel}</aside>
+            <aside className={`min-w-0 overflow-x-hidden ${showMailboxTwoColumnLayout ? 'xl:col-start-1 xl:row-start-1' : ''}`}>{externalThemesPanel}</aside>
           ) : (
           <aside
-            className={`px-0 py-0 ${
+            className={`min-w-0 overflow-x-hidden px-0 py-0 ${
               showMailboxTwoColumnLayout ? 'xl:col-start-1 xl:row-start-1' : ''
             }`}
           >
@@ -3136,7 +3150,7 @@ export default function TenantDetailView({
               </div>
             )}
 
-            <div className="mt-3 max-h-[calc(72vh-80px)] divide-y divide-stone-200 overflow-y-auto border-y border-stone-200 pr-1">
+            <div className="mt-3 max-h-[calc(72vh-80px)] min-w-0 divide-y divide-stone-200 overflow-y-auto overflow-x-hidden border-y border-stone-200 pr-1">
               {filteredVisibleThemes.length === 0 ? (
                 <div className="rounded-[16px] border border-dashed border-stone-300 bg-white px-3 py-6 text-sm text-slate-600">
                   {resolvedThemeListMode === 'archive'
@@ -3168,11 +3182,11 @@ export default function TenantDetailView({
                         x
                       </button>
                       <Link
-                        className="block pr-8"
+                        className="block min-w-0 pr-8"
                         href={messageHrefBuilder(tenantId, theme.id)}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={`line-clamp-2 text-sm font-medium leading-5 ${isSelected ? '!text-amber-950' : '!text-slate-950'}`}>
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <p className={`min-w-0 break-words text-sm font-medium leading-5 ${isSelected ? '!text-amber-950' : '!text-slate-950'}`}>
                             {cleanText(theme.subject) || cleanText(theme.latestInbound?.data.fromName) || 'Anfrage ohne Betreff'}
                           </p>
                           <span

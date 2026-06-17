@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
 import {
   cleanStoredDocuments,
+  createClientId,
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
@@ -120,7 +121,7 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
 
       for (const file of Array.from(files)) {
         const safeName = sanitizeStorageFileName(file.name);
-        const storagePath = `company-documents/${companyId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        const storagePath = `company-documents/${companyId}/${Date.now()}-${createClientId('file')}-${safeName}`;
         const storageRef = ref(storage, storagePath);
         await uploadBytes(storageRef, file, {
           contentType: file.type || 'application/octet-stream',

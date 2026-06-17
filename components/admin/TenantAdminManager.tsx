@@ -20,6 +20,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
 import {
   cleanTenantDocuments,
+  createClientId,
   sanitizeStorageFileName,
   type TenantDocumentEntry,
 } from '../../lib/tenantDocuments';
@@ -268,7 +269,7 @@ const createRentIncreaseRow = (baseColdRent: string): RentIncreaseRow => ({
   coldRent: baseColdRent || '0,00 EUR',
   euroIncrease: '0,00 EUR',
   fromDate: '',
-  id: crypto.randomUUID(),
+  id: createClientId('rent'),
   percentIncrease: '0,00 %',
   reminderDate: '',
   toDate: '',
@@ -405,7 +406,7 @@ const mapRentHistoryEntry = (entry: unknown): RentHistoryEntry | null => {
   return {
     coldRent: String((entry as DocumentData).coldRent ?? ''),
     effectiveDate: String((entry as DocumentData).effectiveDate ?? ''),
-    id: String((entry as DocumentData).id ?? crypto.randomUUID()),
+    id: String((entry as DocumentData).id ?? createClientId('entry')),
     label: String((entry as DocumentData).label ?? 'Miete'),
     netOperatingCosts: String((entry as DocumentData).netOperatingCosts ?? ''),
   };
@@ -457,7 +458,7 @@ const mapAdditionalPerson = (person: unknown): AdditionalPerson | null => {
   return {
     email: String((person as DocumentData).email ?? ''),
     firstName: String((person as DocumentData).firstName ?? ''),
-    id: String((person as DocumentData).id ?? crypto.randomUUID()),
+    id: String((person as DocumentData).id ?? createClientId('person')),
     lastName: String((person as DocumentData).lastName ?? ''),
     phone: String((person as DocumentData).phone ?? ''),
     relation: String((person as DocumentData).relation ?? 'other'),
@@ -470,7 +471,7 @@ const mapRentIncreaseRow = (row: unknown): RentIncreaseRow | null => {
     coldRent: String((row as DocumentData).coldRent ?? ''),
     euroIncrease: String((row as DocumentData).euroIncrease ?? ''),
     fromDate: String((row as DocumentData).fromDate ?? ''),
-    id: String((row as DocumentData).id ?? crypto.randomUUID()),
+    id: String((row as DocumentData).id ?? createClientId('row')),
     percentIncrease: String((row as DocumentData).percentIncrease ?? ''),
     reminderDate: String((row as DocumentData).reminderDate ?? ''),
     toDate: String((row as DocumentData).toDate ?? ''),
@@ -833,7 +834,7 @@ export default function TenantAdminManager({
         {
           coldRent: '',
           effectiveDate: current.rentIncreaseReferenceDate || current.moveInDate || '',
-          id: crypto.randomUUID(),
+          id: createClientId('entry'),
           label: 'Historie',
           netOperatingCosts: current.netOperatingCosts,
         },
@@ -1232,7 +1233,7 @@ export default function TenantAdminManager({
         {
           email: '',
           firstName: '',
-          id: crypto.randomUUID(),
+          id: createClientId('person'),
           lastName: '',
           phone: '',
           relation: current.additionalPersonsDraftRelation || 'other',
@@ -1281,7 +1282,7 @@ export default function TenantAdminManager({
 
     for (const file of pendingDocumentFiles) {
       const safeName = sanitizeStorageFileName(file.name);
-      const storagePath = `tenant-documents/${tenantDocumentId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const storagePath = `tenant-documents/${tenantDocumentId}/${Date.now()}-${createClientId('file')}-${safeName}`;
       const storageRef = ref(storage, storagePath);
       await uploadBytes(storageRef, file, {
         contentType: file.type || 'application/octet-stream',
@@ -1473,7 +1474,7 @@ export default function TenantAdminManager({
               {
                 coldRent: nextColdRent,
                 effectiveDate: form.rentIncreaseReferenceDate,
-                id: crypto.randomUUID(),
+                id: createClientId('rent'),
                 label: 'Mieterhoehung',
                 netOperatingCosts: formatMoneyInput(form.netOperatingCosts),
               }

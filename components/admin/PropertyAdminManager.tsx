@@ -20,6 +20,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
 import {
   cleanStoredDocuments,
+  createClientId,
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
@@ -293,7 +294,7 @@ const createUnit = (): UnitForm => ({
   floor: '',
   heatingDraftType: '',
   heatingEntries: [],
-  id: crypto.randomUUID(),
+  id: createClientId('unit'),
   keys: [],
   meterDraftType: '',
   meters: [],
@@ -315,7 +316,7 @@ const mapMeterEntry = (meter: unknown): MeterEntry | null => {
     exchanges: Array.isArray((meter as DocumentData).exchanges)
       ? ((meter as DocumentData).exchanges as Array<Record<string, string>>)
       : [],
-    id: String((meter as DocumentData).id ?? crypto.randomUUID()),
+    id: String((meter as DocumentData).id ?? createClientId('meter')),
     initialReading: String((meter as DocumentData).initialReading ?? ''),
     initialReadingDate: String((meter as DocumentData).initialReadingDate ?? ''),
     label: String((meter as DocumentData).label ?? ''),
@@ -334,7 +335,7 @@ const mapHeatingEntry = (entry: unknown): HeatingEntry | null => {
   if (!entry || typeof entry !== 'object') return null;
   return {
     buildYear: String((entry as DocumentData).buildYear ?? ''),
-    id: String((entry as DocumentData).id ?? crypto.randomUUID()),
+    id: String((entry as DocumentData).id ?? createClientId('entry')),
     lastMaintenance: String((entry as DocumentData).lastMaintenance ?? ''),
     maintenanceReminderMonths: String((entry as DocumentData).maintenanceReminderMonths ?? '11'),
     type: String((entry as DocumentData).type ?? ''),
@@ -345,7 +346,7 @@ const mapKeyEntry = (entry: unknown): KeyEntry | null => {
   if (!entry || typeof entry !== 'object') return null;
   return {
     count: String((entry as DocumentData).count ?? ''),
-    id: String((entry as DocumentData).id ?? crypto.randomUUID()),
+    id: String((entry as DocumentData).id ?? createClientId('entry')),
     label: String((entry as DocumentData).label ?? ''),
   };
 };
@@ -363,7 +364,7 @@ const mapUnit = (unit: unknown): UnitForm | null => {
           .map(mapHeatingEntry)
           .filter((entry): entry is HeatingEntry => Boolean(entry))
       : [],
-    id: String((unit as DocumentData).id ?? crypto.randomUUID()),
+    id: String((unit as DocumentData).id ?? createClientId('unit')),
     keys: Array.isArray((unit as DocumentData).keys)
       ? ((unit as DocumentData).keys as unknown[])
           .map(mapKeyEntry)
@@ -497,7 +498,7 @@ const buildMeterEntry = (meterType: string, options: { label: string; value: str
     ? {
         calibrationDate: '',
         exchanges: [],
-        id: crypto.randomUUID(),
+        id: createClientId('meter'),
         initialReading: '',
         initialReadingDate: '',
         label: selected.label,
@@ -515,7 +516,7 @@ const buildHeatingEntry = (heatingType: string) =>
   heatingType
     ? {
         buildYear: '',
-        id: crypto.randomUUID(),
+        id: createClientId('heating'),
         lastMaintenance: '',
         maintenanceReminderMonths: '11',
         type: heatingType,
@@ -754,7 +755,7 @@ export default function PropertyAdminManager({
       ...files.map((file) => ({
         category,
         file,
-        id: `${Date.now()}-${crypto.randomUUID()}-${file.name}`,
+        id: `${Date.now()}-${createClientId('file')}-${file.name}`,
       })),
     ]);
   }
@@ -767,7 +768,7 @@ export default function PropertyAdminManager({
         ...files.map((file) => ({
           category,
           file,
-          id: `${unitId}-${Date.now()}-${crypto.randomUUID()}-${file.name}`,
+          id: `${unitId}-${Date.now()}-${createClientId('file')}-${file.name}`,
         })),
       ],
     }));
@@ -792,7 +793,7 @@ export default function PropertyAdminManager({
     for (const pendingFile of files) {
       const file = pendingFile.file;
       const safeName = sanitizeStorageFileName(file.name);
-      const storagePath = `${storageBasePath}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const storagePath = `${storageBasePath}/${Date.now()}-${createClientId('file')}-${safeName}`;
       const storageRef = ref(storage, storagePath);
       await uploadBytes(storageRef, file, {
         contentType: file.type || 'application/octet-stream',
@@ -1090,7 +1091,7 @@ export default function PropertyAdminManager({
     setUnits((current) =>
       current.map((unit) =>
         unit.id === unitId
-          ? { ...unit, keys: [...unit.keys, { count: '', id: crypto.randomUUID(), label: '' }] }
+          ? { ...unit, keys: [...unit.keys, { count: '', id: createClientId('key'), label: '' }] }
           : unit
       )
     );

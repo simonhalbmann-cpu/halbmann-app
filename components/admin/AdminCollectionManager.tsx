@@ -20,6 +20,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { db, storage } from '../../lib/firebase';
 import {
   cleanStoredDocuments,
+  createClientId,
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
@@ -476,7 +477,7 @@ export default function AdminCollectionManager({
     for (const entry of files) {
       const file = entry.file;
       const safeName = sanitizeStorageFileName(file.name);
-      const storagePath = `${documentStoragePrefix}/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const storagePath = `${documentStoragePrefix}/${recordId}/${Date.now()}-${createClientId('file')}-${safeName}`;
       const storageRef = ref(storage, storagePath);
       await uploadBytes(storageRef, file, {
         contentType: file.type || 'application/octet-stream',
@@ -798,7 +799,7 @@ export default function AdminCollectionManager({
                   const nextEntries = Array.from(files).map((file) => ({
                     category,
                     file,
-                    id: crypto.randomUUID(),
+                    id: createClientId('file'),
                   }));
                   setPendingCompanyDocumentFiles((currentFiles) => [...currentFiles, ...nextEntries]);
                   setMessage(

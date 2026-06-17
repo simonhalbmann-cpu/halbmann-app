@@ -4,7 +4,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_DOCUMENT_CATEGORY } from '../../lib/documentCategories';
 import { db } from '../../lib/firebase';
-import { cleanStoredDocuments, type StoredDocumentEntry } from '../../lib/tenantDocuments';
+import { cleanStoredDocuments, createClientId, type StoredDocumentEntry } from '../../lib/tenantDocuments';
 
 export type ExistingOutgoingAttachment = {
   contentType: string;
@@ -201,7 +201,7 @@ export default function OutgoingAttachmentPicker({
       ...attachments,
       ...files.map((file) => ({
         file,
-        id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+        id: `${file.name}-${file.size}-${file.lastModified}-${createClientId('file')}`,
       })),
     ]);
   }
@@ -220,7 +220,7 @@ export default function OutgoingAttachmentPicker({
           uploadedAt: option.document.uploadedAt,
           url: option.document.url,
         },
-        id: `existing-${option.id}-${crypto.randomUUID()}`,
+        id: `existing-${option.id}-${createClientId('document')}`,
       },
     ]);
   }
