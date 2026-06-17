@@ -2106,3 +2106,15 @@ pm run build (gruen).
 - Der Body der Uebergabe-Mail enthaelt keine manuell angehaengte Halbmann-Signatur mehr; Signatur, Logo und Adresse kommen aus der Vorlage.
 - lib/signatures.ts rendert den `{{LOGO}}`-Token in E-Mail-Signaturen kleiner (`width`/`max-width` 180px), damit das Logo ueber der Adresse nicht mehr ueberdimensioniert erscheint.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-17 - Cleanup-Sicherung vor Online-Aufraeumen
+- Vor dem Aufraeumen wurde der aktuelle stabile Stand mit dem Git-Tag `pre-cleanup-online-release` gesichert.
+- Fuer die Aufraeumarbeiten wurde der Branch `cleanup/remove-unused-portal` erstellt und ausgecheckt.
+- Ausgangspunkt ist Commit `b35c4cd` (`Use mail signature for handover protocol emails`); `git status` war vor Beginn sauber.
+## 2026-06-17 - Cleanup Schritt 1: Oeffentliches Mieterportal entfernt
+- Auf Branch `cleanup/remove-unused-portal` wurden die oeffentlichen Mieterportal-Seiten unter `app/mieterportal` entfernt.
+- Entfernt wurden auch die zugehoerigen Portal-Client-API-Routen: `app/api/portal`, `app/api/portal-auth` und `app/api/portal-local`.
+- `components/LoginForm.tsx` wurde auf reinen Admin-Login reduziert; Portal-Benutzername, lokale Portal-Anmeldung und Portal-Auth-Aufloesung sind raus.
+- `lib/auth.ts` kennt nur noch die Rolle `admin`; Portal-Routing und Portal-Profilfelder wurden entfernt.
+- `components/ProtectedAreaLayout.tsx` laedt keinen Portal-Kontext mehr und enthaelt keine mobile Portalnavigation/Portal-Logoutlogik mehr.
+- Verifiziert mit `npm run build` und `npx tsc --noEmit`; die Next-Route-Liste ist von 47 auf 35 Eintraege geschrumpft.
