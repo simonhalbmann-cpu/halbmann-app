@@ -1,7 +1,7 @@
-import { ImapFlow } from 'imapflow';
+﻿import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { ingestInboundEmail, type InboundEmailAttachmentPayload } from './inboundEmailIngest';
-import { PORTAL_INBOX_EMAIL } from './mailbox';
+import { DEFAULT_INBOX_EMAIL } from './mailbox';
 import { getMailboxSettingsServer } from './mailboxConfigServer';
 import { hasFirebaseAdminConfig } from './firebaseAdmin';
 
@@ -37,10 +37,10 @@ export async function syncInboxFromImap(authToken?: string) {
   const settings = await getMailboxSettingsServer();
   const useClientImportFallback = !hasFirebaseAdminConfig();
   if (settings.active === false) {
-    return { count: 0, imported: [], receiver: settings.inboxEmail || PORTAL_INBOX_EMAIL };
+    return { count: 0, imported: [], receiver: settings.inboxEmail || DEFAULT_INBOX_EMAIL };
   }
   if (!settings.imapHost || !settings.imapPort || !settings.imapUser || !settings.imapPassword) {
-    throw new Error('Mailbox-Einstellungen für IMAP sind unvollständig.');
+    throw new Error('Mailbox-Einstellungen fÃ¼r IMAP sind unvollstÃ¤ndig.');
   }
 
   const client = new ImapFlow({
@@ -96,7 +96,7 @@ export async function syncInboxFromImap(authToken?: string) {
         receivedAt: parsed.date ? parsed.date.toISOString() : undefined,
         subject: parsed.subject ?? '',
         text: parsed.text ?? '',
-        to: addressText(parsed.to) || settings.inboxEmail || PORTAL_INBOX_EMAIL,
+        to: addressText(parsed.to) || settings.inboxEmail || DEFAULT_INBOX_EMAIL,
       };
 
       if (!hasFirebaseAdminConfig()) {
@@ -124,6 +124,6 @@ export async function syncInboxFromImap(authToken?: string) {
     count: imported.length,
     emails,
     imported,
-    receiver: settings.inboxEmail || PORTAL_INBOX_EMAIL,
+    receiver: settings.inboxEmail || DEFAULT_INBOX_EMAIL,
   };
 }

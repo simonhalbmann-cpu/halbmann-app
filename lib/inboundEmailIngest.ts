@@ -1,7 +1,7 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+﻿import { FieldValue, Timestamp, type DocumentData, type QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { getDownloadURL } from 'firebase-admin/storage';
 import { getAdminDb, getAdminStorageBucket, hasFirebaseAdminConfig } from './firebaseAdmin';
-import { extractFirstEmail, normalizeEmail, PORTAL_INBOX_EMAIL } from './mailbox';
+import { extractFirstEmail, normalizeEmail, DEFAULT_INBOX_EMAIL } from './mailbox';
 import { ensureWorkflowForMessage } from './workflowAutomation';
 import { addFirestoreDocument, queryFirestoreEquals } from './firestoreRest';
 import { buildExternalMessageKey } from './mailIdentity';
@@ -127,8 +127,8 @@ async function uploadInboundEmailAttachments(
 
 export async function ingestInboundEmail(payload: InboundEmailPayload, authToken?: string) {
   const toEmail = extractFirstEmail(payload.to);
-  if (toEmail !== PORTAL_INBOX_EMAIL) {
-    throw new Error(`Empfänger muss ${PORTAL_INBOX_EMAIL} sein.`);
+  if (toEmail !== DEFAULT_INBOX_EMAIL) {
+    throw new Error(`EmpfÃ¤nger muss ${DEFAULT_INBOX_EMAIL} sein.`);
   }
 
   const fromEmail = normalizeEmail(payload.fromEmail) || extractFirstEmail(payload.from);
@@ -163,7 +163,7 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
           duplicated: true,
           matchedTenantId: null,
           messageId: normalizedMessageId || externalMessageKey,
-          receiver: PORTAL_INBOX_EMAIL,
+          receiver: DEFAULT_INBOX_EMAIL,
           status: 'deleted',
         };
       }
@@ -179,7 +179,7 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
           duplicated: true,
           matchedTenantId: cleanText(existing[0]?.data.tenantId),
           messageId: existing[0]!.id,
-          receiver: PORTAL_INBOX_EMAIL,
+          receiver: DEFAULT_INBOX_EMAIL,
           status: cleanText(existing[0]?.data.status) || 'new',
         };
       }
@@ -200,7 +200,7 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
           duplicated: true,
           matchedTenantId: null,
           messageId: normalizedMessageId || externalMessageKey,
-          receiver: PORTAL_INBOX_EMAIL,
+          receiver: DEFAULT_INBOX_EMAIL,
           status: 'deleted',
         };
       }
@@ -243,15 +243,15 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
           duplicated: true,
           matchedTenantId: cleanText(existingMessage.data().tenantId),
           messageId: existingMessage.id,
-          receiver: PORTAL_INBOX_EMAIL,
+          receiver: DEFAULT_INBOX_EMAIL,
           status: cleanText(existingMessage.data().status) || 'new',
         };
       }
     }
   }
 
-  let tenantDoc: { id: string; data: () => any } | null = null;
-  let tenantData: any = null;
+  let tenantDoc: Pick<QueryDocumentSnapshot<DocumentData>, 'data' | 'id'> | null = null;
+  let tenantData: Record<string, unknown> | null = null;
 
   if (!hasFirebaseAdminConfig()) {
     if (!authToken) {
@@ -298,13 +298,13 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
     messageId: normalizedMessageId,
     priority: 'normal',
     propertyId: cleanText(tenantData?.propertyId),
-    rawRecipient: PORTAL_INBOX_EMAIL,
+    rawRecipient: DEFAULT_INBOX_EMAIL,
     receivedAt: hasFirebaseAdminConfig() ? toReceivedAt(payload.receivedAt) : new Date(payload.receivedAt ?? Date.now()).toISOString(),
     status: tenantDoc ? 'new' : 'needs_review',
     subject: cleanText(payload.subject) || 'Eingehende E-Mail',
     tenantId: tenantDoc?.id ?? '',
     ticketId: '',
-    toEmail: PORTAL_INBOX_EMAIL,
+    toEmail: DEFAULT_INBOX_EMAIL,
     unitId: cleanText(tenantData?.unitId),
     updatedAt: hasFirebaseAdminConfig() ? FieldValue.serverTimestamp() : new Date().toISOString(),
   };
@@ -335,7 +335,7 @@ export async function ingestInboundEmail(payload: InboundEmailPayload, authToken
     duplicated: false,
     matchedTenantId: tenantDoc?.id ?? null,
     messageId: createdId,
-    receiver: PORTAL_INBOX_EMAIL,
+    receiver: DEFAULT_INBOX_EMAIL,
     status: messagePayload.status,
   };
 }

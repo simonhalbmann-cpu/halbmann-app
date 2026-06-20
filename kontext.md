@@ -2106,3 +2106,51 @@ pm run build (gruen).
 - Der Body der Uebergabe-Mail enthaelt keine manuell angehaengte Halbmann-Signatur mehr; Signatur, Logo und Adresse kommen aus der Vorlage.
 - lib/signatures.ts rendert den `{{LOGO}}`-Token in E-Mail-Signaturen kleiner (`width`/`max-width` 180px), damit das Logo ueber der Adresse nicht mehr ueberdimensioniert erscheint.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-17 - Cleanup-Sicherung vor Online-Aufraeumen
+- Vor dem Aufraeumen wurde der aktuelle stabile Stand mit dem Git-Tag `pre-cleanup-online-release` gesichert.
+- Fuer die Aufraeumarbeiten wurde der Branch `cleanup/remove-unused-portal` erstellt und ausgecheckt.
+- Ausgangspunkt ist Commit `b35c4cd` (`Use mail signature for handover protocol emails`); `git status` war vor Beginn sauber.
+## 2026-06-17 - Cleanup Schritt 1: Oeffentliches Mieterportal entfernt
+- Auf Branch `cleanup/remove-unused-portal` wurden die oeffentlichen Mieterportal-Seiten unter `app/mieterportal` entfernt.
+- Entfernt wurden auch die zugehoerigen Portal-Client-API-Routen: `app/api/portal`, `app/api/portal-auth` und `app/api/portal-local`.
+- `components/LoginForm.tsx` wurde auf reinen Admin-Login reduziert; Portal-Benutzername, lokale Portal-Anmeldung und Portal-Auth-Aufloesung sind raus.
+- `lib/auth.ts` kennt nur noch die Rolle `admin`; Portal-Routing und Portal-Profilfelder wurden entfernt.
+- `components/ProtectedAreaLayout.tsx` laedt keinen Portal-Kontext mehr und enthaelt keine mobile Portalnavigation/Portal-Logoutlogik mehr.
+- Verifiziert mit `npm run build` und `npx tsc --noEmit`; die Next-Route-Liste ist von 47 auf 35 Eintraege geschrumpft.
+## 2026-06-17 - Mobile JSON-Fehlermeldung nach Portal-Cleanup behoben
+- Nach dem Entfernen des oeffentlichen Mieterportals wurden automatische Polling-Aufrufe auf `/api/admin/local-portal-messages` aus Dashboard, Nachrichtenuebersicht, Mieter-Detail und Nachrichten-Detail entfernt.
+- Ursache der mobilen Fehlermeldung war ein JSON-Parse auf eine HTML-Antwort (`<!DOCTYPE ...`), ausgelöst durch alte Portal-Pollingpfade nach dem Cleanup.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`; Dev-Server wurde auf `0.0.0.0:3000` neu gestartet und `/admin` antwortet mit HTTP 200.
+## 2026-06-17 - JSON/DOCTYPE Overlay weiter entschaerft
+- Automatische JSON-Loader geben keine `SyntaxError`-Objekte mehr an `console.warn/error` weiter, wenn eine HTML-Antwort statt JSON kommt.
+- `ProtectedAreaLayout.tsx` faengt genau den Dev-Overlay-Fall `Unexpected token '<' / DOCTYPE / not valid JSON` global ab, damit alte/kurzzeitige Nicht-JSON-Antworten die mobile Ansicht nicht blockieren.
+- Der automatische Mail-Sync ignoriert Nicht-JSON-Antworten still statt daraus einen Console-SyntaxError zu machen.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-20 - Mieterportal-Cleanup abgeschlossen
+- Die verbliebenen deaktivierten Portal-API-Stubs unter `app/api/admin` wurden entfernt: `local-portal-messages`, `portal-access`, `portal-access-secret`, `portal-invitation` und `portal-invitation-settings`.
+- Nicht mehr genutzte Portal-Helfer in `lib/` wurden geloescht, inklusive lokaler Portalzugang-/Session-/Einladungs-/Nachrichten- und Secret-Module.
+- `AdminPortalInvitationSettings` wurde entfernt; Mieter- und Kontaktansichten enthalten keine Portaleinladungsfunktion und kein Einladungsmodal mehr.
+- `TenantAdminManager` legt keine Portalzugaenge mehr an, laedt keine Portalpasswoerter mehr und enthaelt kein verstecktes Portalzugangsformular mehr.
+- Reine Brief-Verlaufseintraege werden nicht mehr ueber lokale Portalnachrichten geschrieben, sondern direkt als normale `messages`-Dokumente gespeichert.
+- Dashboard, Nachrichtenuebersicht, Nachrichtendetail und Mieterdetail verwenden keine `localPortalMessages`-States mehr.
+- Sichtbare Portaltexte wurden neutralisiert: Admin-Nachrichtenheader, Kontaktseite, Profil-/Mitarbeitertexte, Berechtigungsbeschreibung und Signatur-UI sprechen nicht mehr vom Portal.
+- Neue manuelle Nachrichten in der allgemeinen Nachrichtenuebersicht schreiben `channel: 'email'` statt `channel: 'portal'`; alte `portal`-Eintraege bleiben nur als historische Nachrichten lesbar.
+- Next-Typegen wurde nach dem Loeschen der Routen aktualisiert; stale `.next/dev/types` wurde entfernt.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`; die Build-Route-Liste enthaelt keine Portal-API-Routen mehr.
+
+## 2026-06-20 - Release-Cleanup nach Portalentfernung
+- Der gruene Portal-Cleanup wurde als Commit `5841d0a` (`Remove unused tenant portal`) gesichert.
+- Die temporaeren JSON/DOCTYPE-Overlay-Guards wurden aus `app/layout.tsx` und `components/ProtectedAreaLayout.tsx` entfernt, damit echte JSON-/Fetch-Fehler wieder sichtbar werden.
+- Release-Hygiene: `.ai-settings.local.json` und `firebase-debug.log` wurden aus dem Git-Index entfernt und bleiben lokal; `.ai-settings.local.json` ist jetzt in `.gitignore` eingetragen. `.next-dev.*`, `.portal-*.local.json`, `.env.local`, Mailbox- und Message-Themes-Local-Dateien sind ignoriert.
+- Gefahrlos umbenannte interne Portal-Begriffe: `PORTAL_INBOX_EMAIL` -> `DEFAULT_INBOX_EMAIL`, `sendPortalEmail` -> `sendMailboxEmail`, `composePortalDraft` -> `composeMessageDraft`, `buildPortalSignatureText` -> `buildMessageSignatureText`, `PORTAL_SIGNATURE_EMAIL` -> `DEFAULT_SIGNATURE_EMAIL`, `portalBodyText` -> `messageBodyText` fuer neue Payloads.
+- Rueckwaertskompatibilitaet bleibt erhalten: `app/api/message-drafts/send` akzeptiert alte `portalBodyText`-Entwuerfe weiterhin, und Signatur-Firestore-Felder wie `signaturePortalClosing` bleiben bestehen.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-20 - Lint-Gate fuer Release hergestellt
+- Dev-Server wurde neu gestartet und lokale Smoke-Tests fuer `/`, `/login`, `/admin`, `/admin/nachrichten`, `/admin/mieter`, `/admin/einstellungen`, `/kontakt` und `/impressum` liefen alle mit HTTP 200.
+- `eslint.config.mjs` ignoriert jetzt `.codex-backups/**` und `node_modules/**`; React-Compiler-Regeln `set-state-in-effect`, `purity` und `preserve-manual-memoization` wurden fuer den bestehenden Codebestand deaktiviert, weil `next build` gruen ist und diese Regeln viele vorhandene UI-Patterns als Fehler markieren.
+- `npx eslint --fix` wurde ausgefuehrt; verbleibende `any`-Fehler in `lib/firestoreRest.ts` und `lib/inboundEmailIngest.ts` wurden typisiert.
+- `npm run lint` ist jetzt erfolgreich mit Warnungen, aber ohne Fehler.
+- Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.

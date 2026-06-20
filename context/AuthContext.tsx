@@ -58,39 +58,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    async function loadLocalPortalSession() {
-      try {
-        const response = await fetch('/api/portal-local/session');
-        const result = (await response.json()) as {
-          ok?: boolean;
-          profile?: UserProfile | null;
-        };
-
-        if (response.ok && result.ok && result.profile) {
-          setUser(null);
-          setProfile(result.profile);
-          setRole(result.profile.role);
-          setLoading(false);
-          return true;
-        }
-      } catch (caughtError) {
-        console.error('Lokale Portalsitzung konnte nicht geladen werden:', caughtError);
-      }
-
-      setUser(null);
-      setProfile(null);
-      setRole(null);
-      setLoading(false);
-      return false;
-    }
-
     const unsubscribe = onAuthStateChanged(
       auth,
       async (currentUser) => {
         setError(null);
 
         if (!currentUser) {
-          await loadLocalPortalSession();
+          setUser(null);
+          setProfile(null);
+          setRole(null);
+          setLoading(false);
           return;
         }
 
@@ -119,19 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    function handlePortalSessionChanged() {
-      setLoading(true);
-      void loadLocalPortalSession();
-    }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('portal-local-session-changed', handlePortalSessionChanged);
-    }
-
     return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('portal-local-session-changed', handlePortalSessionChanged);
-      }
       unsubscribe();
     };
   }, []);

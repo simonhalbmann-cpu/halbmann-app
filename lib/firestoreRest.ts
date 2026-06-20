@@ -1,5 +1,15 @@
 const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
+type FirestoreValue = Record<string, unknown>;
+type FirestoreFields = Record<string, FirestoreValue>;
+type FirestoreDocument = {
+  fields?: FirestoreFields;
+  name?: string;
+};
+type FirestoreRunQueryEntry = {
+  document?: FirestoreDocument;
+};
+
 function getBaseUrl() {
   if (!projectId) {
     throw new Error('NEXT_PUBLIC_FIREBASE_PROJECT_ID fehlt.');
@@ -51,7 +61,7 @@ function encodeFields(data: Record<string, unknown>) {
   );
 }
 
-function decodeValue(value: Record<string, any> | undefined): unknown {
+function decodeValue(value: FirestoreValue | undefined): unknown {
   if (!value) return null;
   if ('nullValue' in value) return null;
   if ('stringValue' in value) return value.stringValue;
@@ -59,18 +69,22 @@ function decodeValue(value: Record<string, any> | undefined): unknown {
   if ('integerValue' in value) return value.integerValue;
   if ('doubleValue' in value) return value.doubleValue;
   if ('timestampValue' in value) return value.timestampValue;
-  if ('mapValue' in value) return decodeFields(value.mapValue?.fields);
+  if ('mapValue' in value) {
+    const mapValue = value.mapValue as { fields?: FirestoreFields } | undefined;
+    return decodeFields(mapValue?.fields);
+  }
   if ('arrayValue' in value) {
-    const values = Array.isArray(value.arrayValue?.values) ? value.arrayValue.values : [];
-    return values.map((entry: Record<string, any>) => decodeValue(entry));
+    const arrayValue = value.arrayValue as { values?: FirestoreValue[] } | undefined;
+    const values = Array.isArray(arrayValue?.values) ? arrayValue.values : [];
+    return values.map((entry) => decodeValue(entry));
   }
   return null;
 }
 
-function decodeFields(fields: Record<string, any> | undefined) {
+function decodeFields(fields: FirestoreFields | undefined) {
   if (!fields) return {};
   return Object.fromEntries(
-    Object.entries(fields).map(([key, value]) => [key, decodeValue(value as Record<string, any>)])
+    Object.entries(fields).map(([key, value]) => [key, decodeValue(value)])
   );
 }
 
@@ -149,7 +163,7 @@ export async function getFirestoreDocument(
   documentId: string,
   token: string
 ) {
-  const result = await fireRequest<{ fields?: Record<string, any>; name?: string }>(
+  const result = await fireRequest<FirestoreDocument>(
     `${getBaseUrl()}/${collectionName}/${documentId}`,
     token
   );
@@ -167,7 +181,7 @@ export async function queryFirestoreEquals(
   token: string,
   limit = 1
 ) {
-  const result = await fireRequest<any[]>(
+  const result = await fireRequest<FirestoreRunQueryEntry[]>(
     `${getBaseUrl()}:runQuery`,
     token,
     {
@@ -189,15 +203,17 @@ export async function queryFirestoreEquals(
   );
 
   return result
-    .filter((entry) => entry.document)
-    .map((entry) => ({
-      data: decodeFields(entry.document.fields),
-      id: extractDocId(entry.document.name),
-    }));
+    .flatMap((entry) => {
+      if (!entry.document) return [];
+      return [{
+        data: decodeFields(entry.document.fields),
+        id: extractDocId(entry.document.name),
+      }];
+    });
 }
 
 export async function listFirestoreCollection(collectionName: string, token: string) {
-  const result = await fireRequest<{ documents?: Array<{ fields?: Record<string, any>; name?: string }> }>(
+  const result = await fireRequest<{ documents?: FirestoreDocument[] }>(
     `${getBaseUrl()}/${collectionName}`,
     token
   );

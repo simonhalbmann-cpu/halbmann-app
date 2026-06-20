@@ -15,9 +15,9 @@ import {
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
-import { composePortalDraft } from '../../lib/draftComposer';
+import { composeMessageDraft } from '../../lib/draftComposer';
 import { personDocumentFields } from './personConfig';
-import { buildLetterHtml, buildPortalSignatureText, createSignatureRecord, mergeBodyWithSignature } from '../../lib/signatures';
+import { buildLetterHtml, buildMessageSignatureText, createSignatureRecord, mergeBodyWithSignature } from '../../lib/signatures';
 import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import DocumentUploadControl from './DocumentUploadControl';
 import DocumentLibrarySection from './DocumentLibrarySection';
@@ -65,7 +65,7 @@ const preferredContactMethodLabels: Record<string, string> = {
   email: 'E-Mail',
   phone: 'Telefon',
   mobile: 'Mobil',
-  portal: 'Portal',
+  portal: 'Online',
   mail: 'Post',
 };
 
@@ -144,7 +144,6 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   const [message, setMessage] = useState('');
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [deletingDocumentPath, setDeletingDocumentPath] = useState('');
-  const [showInvitationSentModal, setShowInvitationSentModal] = useState(false);
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
   const [isPending, startTransition] = useTransition();
   const contactThemeTenantId = `contact:${personId}`;
@@ -210,16 +209,16 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     async function loadMessageThemes() {
       try {
         const response = await authorizedFetch('/api/admin/message-themes');
-        const result = (await response.json()) as {
+        const result = (await response.json().catch(() => null)) as {
           ok?: boolean;
           themes?: LocalMessageTheme[];
-        };
+        } | null;
 
-        if (!cancelled && response.ok && result.ok) {
+        if (!cancelled && response.ok && result?.ok) {
           setMessageThemes(Array.isArray(result.themes) ? result.themes : []);
         }
-      } catch (caughtError) {
-        console.error('Fehler beim Laden der Themen im Dienstleisterbereich:', caughtError);
+      } catch {
+        console.warn('Fehler beim Laden der Themen im Dienstleisterbereich.');
       }
     }
 
@@ -420,7 +419,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     companies.find((entry) => cleanText(entry.id) === cleanText(selectedProperty?.data.ownerId)) ??
     companies.find((entry) => cleanText(entry.data.name) === cleanText(person?.partnerCompanyName || person?.companyName)) ??
     null;
-  const portalSignature = buildPortalSignatureText(
+  const messageSignature = buildMessageSignatureText(
     applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
       resolveAdminSenderContact(profile, user)
@@ -867,7 +866,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
               subject: entry.subject,
             })),
           }),
-          currentBody: stripTrailingSignature(cleanText(replyText), portalSignature),
+          currentBody: stripTrailingSignature(cleanText(replyText), messageSignature),
           instruction:
             contextMode === 'new'
               ? [aiInstruction, 'Es handelt sich um eine neue Nachricht. FrÃ¼here Themen nur erwÃ¤hnen, wenn ich das ausdrÃ¼cklich sage.']
@@ -888,10 +887,10 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         throw new Error(result.error || 'Der KI-Entwurf konnte nicht erzeugt werden.');
       }
       setReplyText(
-        composePortalDraft({
+        composeMessageDraft({
           aiText: result.draftText,
           contextText: cleanText(latestInbound?.data.bodyText),
-          portalSignature,
+          messageSignature,
           recipientName: [cleanText(person.firstName), cleanText(person.lastName)].filter(Boolean).join(' '),
           recipientSalutation: cleanText(person.salutation),
         })
@@ -957,8 +956,8 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
           resolveAdminSenderContact(profile, user)
         );
-        const baseBody = cleanText(replyText).endsWith(portalSignature)
-          ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+        const baseBody = cleanText(replyText).endsWith(messageSignature)
+          ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
           : cleanText(replyText);
         const uploadedAttachments =
           personDeliveryMode === 'email' || personDeliveryMode === 'both'
@@ -976,7 +975,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
             createdAt: serverTimestamp(),
             kind: 'service_request',
             messageId: activeThemeId,
-            portalBodyText: [baseBody, portalSignature].filter(Boolean).join('\n\n'),
+            messageBodyText: [baseBody, messageSignature].filter(Boolean).join('\n\n'),
             propertyId: cleanText(selectedProperty?.id),
             recipientEmail: cleanText(person.email),
             recipientId: personId,
@@ -1098,35 +1097,6 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     });
   }
 
-  function sendPortalInvitation() {
-    startTransition(async () => {
-      setMessage('');
-      setError('');
-      try {
-        const response = await authorizedFetch('/api/admin/portal-invitation', {
-          body: JSON.stringify({
-            targetId: personId,
-            targetType: 'contact',
-          }),
-          method: 'POST',
-        });
-        const result = (await response.json()) as { error?: string; ok?: boolean };
-        if (!response.ok || !result.ok) {
-          throw new Error(result.error || 'Die Einladung konnte nicht versendet werden.');
-        }
-        setMessage('Einladung mit Zugangsdaten wurde per E-Mail versendet.');
-        setShowInvitationSentModal(true);
-      } catch (caughtError) {
-        console.error('Fehler beim Versand der Portaleinladung:', caughtError);
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'Die Einladung konnte nicht versendet werden.'
-        );
-      }
-    });
-  }
-
   const personMessageActionBar = (
     <div className="border-b border-stone-200 py-3">
       <div className="grid gap-2 lg:grid-cols-[150px_minmax(180px,280px)_minmax(180px,1fr)_34px] lg:items-center">
@@ -1219,23 +1189,6 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
 
   return (
     <div className="admin-page space-y-4">
-      {showInvitationSentModal ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
-          <div className="w-full max-w-sm rounded-[20px] border border-stone-200 bg-white px-5 py-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
-            <p className="text-lg font-medium text-slate-950">Einladung wurde verschickt.</p>
-            <div className="mt-5 flex justify-end">
-              <button
-                className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
-                onClick={() => setShowInvitationSentModal(false)}
-                type="button"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
           <span>Ansicht</span>

@@ -21,7 +21,6 @@ import {
   type UserRole,
 } from '../lib/auth';
 import { db } from '../lib/firebase';
-import { buildPortalDisplayName } from '../lib/portalAccess';
 import { hasAdminPermission, type AdminPermissionKey } from '../lib/adminPermissions';
 
 type NavLink = {
@@ -137,9 +136,9 @@ function getHeaderContent(pathname: string, fallbackTitle: string) {
   }> = [
     {
       path: '/admin/nachrichten',
-      title: 'Eingang für Portal, E-Mail und Folgeaktionen',
+      title: 'Eingang für E-Mail und Folgeaktionen',
       description:
-        'Hier laufen Nachrichten aus dem Portal und von portal@halbmann-holding.de zusammen. Sie werden zugeordnet, bewertet und direkt in bearbeitbare Vorgänge überführt.',
+        'Hier laufen Nachrichten aus dem Postfach zusammen. Sie werden zugeordnet, bewertet und direkt in bearbeitbare Vorgänge überführt.',
     },
     {
       path: '/admin',
@@ -278,7 +277,6 @@ export default function ProtectedAreaLayout({
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [mobileAdminMenuOpen, setMobileAdminMenuOpen] = useState(false);
   const [mobileInventoryOpen, setMobileInventoryOpen] = useState(false);
-  const [portalSidebarName, setPortalSidebarName] = useState('');
   const settingsMenuCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleNavSections = useMemo(
     () =>
@@ -358,11 +356,6 @@ export default function ProtectedAreaLayout({
     ? resolveAdminSidebarTitle(pathname, settingsTab, mailboxViewLabel, tenantMailboxMode)
     : propertyDetailId
       ? resolveAdminSidebarTitle(pathname, settingsTab, mailboxViewLabel, tenantMailboxMode)
-    : requiredRole === 'portal'
-      ? cleanText(portalSidebarName) ||
-        cleanText(profile?.displayName) ||
-        cleanText(profile?.username) ||
-        title
     : resolveAdminSidebarTitle(pathname, settingsTab, mailboxViewLabel, tenantMailboxMode);
   const resolvedHeaderContent = isTenantOverviewRoute
     ? {
@@ -438,37 +431,6 @@ export default function ProtectedAreaLayout({
   useEffect(() => {
     setSettingsMenuOpen(false);
   }, [pathname, settingsTab]);
-
-  useEffect(() => {
-    if (requiredRole !== 'portal') {
-      setPortalSidebarName('');
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadPortalSidebarName() {
-      try {
-        const response = await fetch('/api/portal/context', { cache: 'no-store' });
-        const result = (await response.json()) as {
-          ok?: boolean;
-          targetData?: Record<string, unknown> | null;
-        };
-
-        if (!cancelled && response.ok && result.ok && result.targetData) {
-          const fallbackType = profile?.targetType === 'contact' ? 'contact' : 'tenant';
-          setPortalSidebarName(buildPortalDisplayName(fallbackType, result.targetData));
-        }
-      } catch (caughtError) {
-        console.error('Fehler beim Laden des Portalnamens:', caughtError);
-      }
-    }
-
-    void loadPortalSidebarName();
-    return () => {
-      cancelled = true;
-    };
-  }, [profile?.targetType, requiredRole]);
 
   useEffect(() => {
     return () => {
@@ -575,12 +537,15 @@ export default function ProtectedAreaLayout({
           },
           method: 'POST',
         });
-        const result = (await response.json()) as {
+        const result = (await response.json().catch(() => null)) as {
           count?: number;
           emails?: SyncedInboundEmail[];
           error?: string;
           ok?: boolean;
-        };
+        } | null;
+        if (!result) {
+          return;
+        }
         if (!response.ok || !result.ok) {
           throw new Error(result.error || 'Mail-Sync fehlgeschlagen.');
         }
@@ -594,8 +559,7 @@ export default function ProtectedAreaLayout({
             count > 0 ? `${count} neue E-Mails wurden beim Einstieg übernommen.` : 'Postfach beim Einstieg synchronisiert.'
           );
         }
-      } catch (error) {
-        console.warn('Fehler beim automatischen Mail-Sync:', error);
+      } catch {
         if (!isCancelled) {
           setMailSyncNote('');
         }
@@ -632,8 +596,6 @@ export default function ProtectedAreaLayout({
         void signOut(auth);
       }, 250);
       return;
-    } else if (requiredRole === 'portal') {
-      await fetch('/api/portal-local/logout', { method: 'POST' });
     }
     router.replace(loginRoute);
   }
@@ -1205,53 +1167,6 @@ export default function ProtectedAreaLayout({
     );
   }
 
-  function renderMobilePortalNavigation() {
-    if (requiredRole !== 'portal') return null;
-
-    return (
-      <div className="border-b border-stone-200 bg-white px-4 pb-3 pt-4 shadow-sm lg:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <Link className="min-w-0" href="/mieterportal">
-            <Image
-              alt="Halbmann Holding"
-              className="h-10 w-auto object-contain"
-              height={120}
-              src="/halbmann-logo.png"
-              width={340}
-            />
-          </Link>
-          <button
-            className="shrink-0 rounded-full border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-medium text-slate-700"
-            onClick={handleLogout}
-            type="button"
-          >
-            Abmelden
-          </button>
-        </div>
-
-        <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          {visibleNavSections.flatMap((section) => section.links).map((link) => {
-            const isActive = activeNavHref === link.href;
-
-            return (
-              <Link
-                className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium ${
-                  isActive
-                    ? 'border-slate-900 bg-slate-950 text-white'
-                    : 'border-stone-300 bg-white text-slate-700'
-                }`}
-                href={link.href}
-                key={link.href}
-              >
-                {link.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.18),_transparent_30%),linear-gradient(180deg,_#f6f1ea_0%,_#f3ede4_100%)] px-6">
@@ -1272,7 +1187,6 @@ export default function ProtectedAreaLayout({
   return (
     <div className="admin-shell min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,_rgba(201,165,107,0.10),_transparent_30%),linear-gradient(180deg,_#111820_0%,_#16212b_42%,_#eef2f2_42%,_#f6f7f5_100%)] text-slate-900">
       {renderMobileAdminNavigation()}
-      {renderMobilePortalNavigation()}
       <div className="grid min-h-screen min-w-0 lg:grid-cols-[calc(320px-2cm)_minmax(0,1fr)]">
         <aside className="hidden border-r border-white/10 bg-[linear-gradient(180deg,rgba(17,24,32,0.98)_0%,rgba(26,34,43,0.96)_54%,rgba(31,24,20,0.96)_100%)] px-6 py-8 lg:block">
           <div className="flex h-full flex-col justify-between">

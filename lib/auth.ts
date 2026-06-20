@@ -12,9 +12,8 @@ import {
   type AdminPermissions,
 } from './adminPermissions';
 import { db } from './firebase';
-import type { PortalTargetType } from './portalAccess';
 
-export type UserRole = 'admin' | 'portal';
+export type UserRole = 'admin';
 
 export type UserProfile = {
   adminLevel?: AdminLevel | null;
@@ -26,8 +25,6 @@ export type UserProfile = {
   mobilePhone?: string | null;
   phone?: string | null;
   role: UserRole;
-  targetId?: string | null;
-  targetType?: PortalTargetType | null;
   username?: string | null;
 };
 
@@ -38,18 +35,15 @@ function parseUserProfile(data: DocumentData | undefined): UserProfile | null {
     return null;
   }
 
-  if (data.role !== 'admin' && data.role !== 'portal') {
+  if (data.role !== 'admin') {
     return null;
   }
 
-  const adminLevel = data.role === 'admin' ? getDefaultAdminLevel(data.adminLevel, 'super_admin') : null;
+  const adminLevel = getDefaultAdminLevel(data.adminLevel, 'super_admin');
 
   return {
     adminLevel,
-    adminPermissions:
-      data.role === 'admin'
-        ? normalizeAdminPermissions(data.adminPermissions, adminLevel === 'super_admin')
-        : null,
+    adminPermissions: normalizeAdminPermissions(data.adminPermissions, adminLevel === 'super_admin'),
     authEmail: typeof data.authEmail === 'string' ? data.authEmail : null,
     contactEmail: typeof data.contactEmail === 'string' ? data.contactEmail : null,
     displayName: typeof data.displayName === 'string' ? data.displayName : null,
@@ -57,11 +51,6 @@ function parseUserProfile(data: DocumentData | undefined): UserProfile | null {
     mobilePhone: typeof data.mobilePhone === 'string' ? data.mobilePhone : null,
     phone: typeof data.phone === 'string' ? data.phone : null,
     role: data.role,
-    targetId: typeof data.targetId === 'string' ? data.targetId : null,
-    targetType:
-      data.targetType === 'tenant' || data.targetType === 'contact'
-        ? data.targetType
-        : null,
     username: typeof data.username === 'string' ? data.username : null,
   };
 }
@@ -105,13 +94,13 @@ export async function ensureUserProfile({
 }
 
 export function getDefaultRouteForRole(role: UserRole) {
-  return role === 'admin' ? '/admin' : '/login';
+  return '/admin';
 }
 
 export function getLoginRouteForRole(role: UserRole) {
-  return role === 'admin' ? '/login' : '/';
+  return '/login';
 }
 
 export function getRoleLabel(role: UserRole) {
-  return role === 'admin' ? 'Verwalter' : 'Portal';
+  return 'Verwalter';
 }

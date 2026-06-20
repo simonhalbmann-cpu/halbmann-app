@@ -114,8 +114,6 @@ type TenantFormState = {
   netOperatingCosts: string;
   notes: string;
   phone: string;
-  portalPassword: string;
-  portalUsername: string;
   rentIncreaseNextReview: string;
   rentIncreaseReferenceDate: string;
   rentHistory: RentHistoryEntry[];
@@ -124,7 +122,6 @@ type TenantFormState = {
   salaryProofsFile: string;
   schufaFile: string;
   selectedUnitKey: string;
-  storedPortalPassword: string;
   status: string;
   taxNumber: string;
   tenantInfoFile: string;
@@ -211,8 +208,6 @@ const defaultFormState = (): TenantFormState => ({
   netOperatingCosts: '',
   notes: '',
   phone: '',
-  portalPassword: '',
-  portalUsername: '',
   pendingColdRent: '',
   rentIncreaseNextReview: '',
   rentIncreaseReferenceDate: '',
@@ -222,7 +217,6 @@ const defaultFormState = (): TenantFormState => ({
   salaryProofsFile: '',
   schufaFile: '',
   selectedUnitKey: '',
-  storedPortalPassword: '',
   status: 'active',
   taxNumber: '',
   tenantInfoFile: '',
@@ -531,8 +525,6 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     notes: String(data.notes ?? ''),
     pendingColdRent: '',
     phone: String(data.phone ?? ''),
-    portalPassword: '',
-    portalUsername: '',
     rentIncreaseNextReview: calculateRentReminder(
       rentIncreaseType,
       effectiveReferenceDate,
@@ -551,7 +543,6 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     schufaFile: String(data.schufaFile ?? ''),
     selectedUnitKey:
       data.propertyId && data.unitId ? `${String(data.propertyId)}::${String(data.unitId)}` : '',
-    storedPortalPassword: '',
     status: String(data.status ?? 'active'),
     taxNumber: String(data.taxNumber ?? ''),
     tenantInfoFile: String(data.tenantInfoFile ?? ''),
@@ -587,7 +578,6 @@ export default function TenantAdminManager({
   const [form, setForm] = useState<TenantFormState>(() => defaultFormState());
   const [lastName, setLastName] = useState('');
   const [pendingDocumentFiles, setPendingDocumentFiles] = useState<File[]>([]);
-  const [showPortalPassword, setShowPortalPassword] = useState(false);
   const [originalAssignment, setOriginalAssignment] = useState<{
     propertyId: string;
     unitId: string;
@@ -663,19 +653,6 @@ export default function TenantAdminManager({
         unitId: String(data.unitId ?? ''),
       });
       setOriginalStatus(String(data.status ?? 'active'));
-      if (nextForm.portalUsername) {
-        try {
-          const secret = await loadStoredPortalPassword(currentDocumentId, nextForm.portalUsername);
-          if (!isMounted) return;
-          setForm((current) => ({
-            ...current,
-            portalPassword: secret.password ?? current.portalPassword,
-            portalUsername: secret.portalUsername ?? current.portalUsername,
-          }));
-        } catch (caughtError) {
-          console.error(`Portal-Passwort fuer Mieter ${currentDocumentId} konnte nicht geladen werden:`, caughtError);
-        }
-      }
       setError('');
       setIsLoadingInitialValues(false);
     }
@@ -1085,144 +1062,6 @@ export default function TenantAdminManager({
     setLastName('');
     setOriginalAssignment(null);
     setOriginalStatus('');
-    setShowPortalPassword(false);
-  }
-
-  async function provisionTenantPortalAccess(
-    targetId: string,
-    username: string,
-    password: string
-    ) {
-      const isLocalDevelopment =
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-      const token = !isLocalDevelopment && user ? await user.getIdToken() : '';
-      const selectedUnitInfo = getSelectedUnitOption(unitOptions, form.selectedUnitKey);
-      const selectedUnitIds = parseSelectedUnitKey(form.selectedUnitKey);
-      const selectedProperty =
-        properties.find((property) => property.id === selectedUnitIds.propertyId) ?? null;
-      const selectedPropertyUnits = Array.isArray(selectedProperty?.data.units)
-        ? selectedProperty.data.units
-        : [];
-      const selectedUnitData =
-        selectedPropertyUnits.find(
-          (unit: DocumentData) => String(unit?.id ?? '').trim() === selectedUnitIds.unitId
-        ) ?? null;
-      const response = await fetch('/api/admin/portal-access', {
-        body: JSON.stringify({
-          contactEmail: form.email,
-          existingPasswordCipher: form.storedPortalPassword,
-          password,
-          propertySnapshot: selectedProperty
-            ? {
-                city: String(selectedProperty.data.city ?? ''),
-                houseNumber: String(selectedProperty.data.houseNumber ?? ''),
-                id: selectedProperty.id,
-                meters: Array.isArray(selectedProperty.data.meters)
-                  ? selectedProperty.data.meters
-                  : [],
-                name: String(selectedProperty.data.name ?? ''),
-                postalCode: String(selectedProperty.data.postalCode ?? ''),
-                street: String(selectedProperty.data.street ?? ''),
-                units: selectedUnitData
-                  ? [
-                      {
-                        ...selectedUnitData,
-                        meters: Array.isArray(selectedUnitData.meters)
-                          ? selectedUnitData.meters
-                          : [],
-                      },
-                    ]
-                  : [],
-              }
-            : null,
-          targetId,
-          targetSnapshot: {
-            coldRent: form.coldRent,
-            email: form.email,
-            firstName: form.firstName,
-            houseNumber: String(selectedProperty?.data.houseNumber ?? ''),
-            lastName,
-            phone: form.phone,
-            city: String(selectedProperty?.data.city ?? ''),
-            postalCode: String(selectedProperty?.data.postalCode ?? ''),
-            propertyId: selectedUnitIds.propertyId,
-            propertyName: getSelectedPropertyName(properties, form.selectedUnitKey),
-            street: String(selectedProperty?.data.street ?? ''),
-            unitId: selectedUnitIds.unitId,
-            unitLabel: selectedUnitInfo?.unitLabel ?? '',
-            unitMeters:
-              selectedUnitData && Array.isArray(selectedUnitData.meters)
-                ? selectedUnitData.meters
-                : [],
-          },
-          targetType: 'tenant',
-          username,
-      }),
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-    });
-    const result = (await response.json()) as {
-      authEmail?: string;
-      error?: string;
-      ok?: boolean;
-      portalAuthUid?: string;
-      portalPasswordCipher?: string;
-    };
-
-    if (!response.ok || !result.ok) {
-      throw new Error(result.error || 'portal_access_save_failed');
-    }
-
-    await updateDoc(doc(db, 'tenants', targetId), {
-      authEmail: result.authEmail ?? '',
-      portalAccessEnabled: true,
-      portalAuthUid: result.portalAuthUid ?? '',
-      portalPasswordCipher: result.portalPasswordCipher ?? '',
-      portalUsername: username,
-      updatedAt: serverTimestamp(),
-    });
-
-    setForm((current) => ({
-      ...current,
-      portalPassword: password || current.portalPassword,
-      portalUsername: username,
-      storedPortalPassword: result.portalPasswordCipher ?? current.storedPortalPassword,
-    }));
-  }
-
-  async function loadStoredPortalPassword(targetId: string, username: string) {
-    const isLocalDevelopment =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    const token = !isLocalDevelopment && user ? await user.getIdToken() : '';
-    const response = await fetch('/api/admin/portal-access-secret', {
-      body: JSON.stringify({
-        targetId,
-        targetType: 'tenant',
-        username,
-      }),
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-    });
-    const result = (await response.json()) as {
-      error?: string;
-      ok?: boolean;
-      password?: string;
-      portalUsername?: string;
-    };
-
-    if (!response.ok || !result.ok) {
-      throw new Error(result.error || 'portal_secret_load_failed');
-    }
-
-    return result;
   }
 
   function addAdditionalPerson() {
@@ -1431,21 +1270,6 @@ export default function TenantAdminManager({
       return;
     }
 
-    if (form.portalUsername && !form.email) {
-      setError('Bitte eine E-Mail-Adresse hinterlegen, bevor du einen Portalzugang anlegst.');
-      return;
-    }
-
-    if (!editMode && form.portalUsername && !form.portalPassword) {
-      setError('Bitte ein Passwort hinterlegen, wenn du für den Mieter einen Portalzugang anlegst.');
-      return;
-    }
-
-    if (editMode && form.portalUsername && !form.portalPassword && !form.storedPortalPassword) {
-      setError('Bitte ein Passwort hinterlegen, damit der Portalzugang erstmals eingerichtet werden kann.');
-      return;
-    }
-
     const selectedProperty = properties.find((property) => property.id === selectedUnit.propertyId);
     const propertyUnits = Array.isArray(selectedProperty?.data.units)
       ? selectedProperty.data.units
@@ -1520,7 +1344,6 @@ export default function TenantAdminManager({
           notes: cleanSpaces(form.notes),
           ownerName: selectedUnit.ownerName,
           phone: cleanSpaces(form.phone),
-          portalUsername: cleanSpaces(form.portalUsername).toLowerCase(),
           propertyId: selectedUnit.propertyId,
           propertyName: selectedUnit.propertyName,
           propertyUnit: selectedUnit.label,
@@ -1587,9 +1410,6 @@ export default function TenantAdminManager({
             router.push(redirectPathAfterSave);
           }
 
-          if (payload.portalUsername && payload.email) {
-            await provisionTenantPortalAccess(currentDocumentId, payload.portalUsername, form.portalPassword);
-          }
         } else {
           const tenantRef = await addDoc(collection(db, 'tenants'), {
             ...payload,
@@ -1622,10 +1442,6 @@ export default function TenantAdminManager({
               units: nextUnits,
               updatedAt: serverTimestamp(),
             });
-          }
-
-          if (payload.portalUsername && payload.email) {
-            await provisionTenantPortalAccess(tenantRef.id, payload.portalUsername, form.portalPassword);
           }
 
           setPendingDocumentFiles([]);
@@ -1866,47 +1682,6 @@ export default function TenantAdminManager({
               <span className="text-sm font-medium text-slate-700">Einzugsdatum</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateMoveInDate(event.target.value)} type="date" value={form.moveInDate} />
             </label>
-          </div>
-
-          <div className="hidden">
-            <div>
-              <p className="text-sm font-medium text-slate-900">Portalzugang</p>
-              <p className="mt-1 text-xs leading-6 text-slate-500">
-                Optional. Hier legst du Benutzername und Passwort für den späteren Login im Portal fest.
-              </p>
-            </div>
-            <div className="mt-4 grid gap-5 md:grid-cols-2">
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-700">Benutzername</span>
-                <input
-                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-                  onChange={(event) => updateField('portalUsername', cleanSpaces(event.target.value).toLowerCase())}
-                  placeholder="z. B. gross.hentschel"
-                  value={form.portalUsername}
-                />
-              </label>
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-700">Passwort</span>
-                <div className="relative">
-                  <input
-                    autoComplete="new-password"
-                    className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 pr-20 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-                    name="tenant-portal-password"
-                    onChange={(event) => updateField('portalPassword', event.target.value)}
-                    placeholder={form.storedPortalPassword ? 'Neues Passwort setzen oder leer lassen' : 'Passwort festlegen'}
-                    type={showPortalPassword ? 'text' : 'password'}
-                    value={form.portalPassword}
-                  />
-                  <button
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-xs font-medium text-slate-500 transition hover:text-slate-900"
-                    onClick={() => setShowPortalPassword((current) => !current)}
-                    type="button"
-                  >
-                    {showPortalPassword ? 'Verbergen' : 'Anzeigen'}
-                  </button>
-                </div>
-              </label>
-            </div>
           </div>
 
           <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">

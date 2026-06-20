@@ -1,10 +1,10 @@
-'use client';
+﻿'use client';
 
 import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { db } from '../../lib/firebase';
-import { PORTAL_INBOX_EMAIL } from '../../lib/mailbox';
+import { DEFAULT_INBOX_EMAIL } from '../../lib/mailbox';
 import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID } from '../../lib/mailboxSettings';
 
 type TextAlign = 'center' | 'left';
@@ -57,8 +57,8 @@ const defaultValues: FormState = {
   imapHost: 'imap.ionos.de',
   imapPassword: '',
   imapPort: '993',
-  imapUser: PORTAL_INBOX_EMAIL,
-  inboxEmail: PORTAL_INBOX_EMAIL,
+  imapUser: DEFAULT_INBOX_EMAIL,
+  inboxEmail: DEFAULT_INBOX_EMAIL,
   mailFooterBold: false,
   mailFooterDivider: true,
   mailFooterFontFamily: fontOptions[0],
@@ -78,7 +78,7 @@ const defaultValues: FormState = {
   smtpHost: 'smtp.ionos.de',
   smtpPassword: '',
   smtpPort: '587',
-  smtpUser: PORTAL_INBOX_EMAIL,
+  smtpUser: DEFAULT_INBOX_EMAIL,
 };
 
 type MailboxSettingsDocument = Partial<FormState> & {
@@ -250,7 +250,7 @@ export default function AdminMailboxSettings({ mode = 'full' }: { mode?: 'creden
   const isLayoutOnly = mode === 'layout';
   const sectionTitle = isLayoutOnly ? 'Header und Footer' : 'E-Mail-Eingang und Versand';
   const sectionDescription = isLayoutOnly
-    ? 'Hier pflegst du ausschließlich Mail-Header und Mail-Footer für ausgehende Nachrichten.'
+    ? 'Hier pflegst du ausschlieÃŸlich Mail-Header und Mail-Footer fÃ¼r ausgehende Nachrichten.'
     : 'Hier pflegst du Postfach, Header, Footer und die grundlegende Darstellung ausgehender E-Mails separat.';
 
   return (

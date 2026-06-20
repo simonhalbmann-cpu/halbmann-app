@@ -22,11 +22,11 @@ import {
   type WorkflowRecord,
 } from '../../lib/adminWorkflow';
 import { db, storage } from '../../lib/firebase';
-import { composePortalDraft, stripAiEnvelope } from '../../lib/draftComposer';
+import { composeMessageDraft, stripAiEnvelope } from '../../lib/draftComposer';
 import {
   buildLetterHtml,
   buildLetterText,
-  buildPortalSignatureText,
+  buildMessageSignatureText,
   createSignatureRecord,
   mergeBodyWithSignature,
 } from '../../lib/signatures';
@@ -127,7 +127,6 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const router = useRouter();
   const { profile, user } = useAuth();
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
-  const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
   const [tickets, setTickets] = useState<WorkflowRecord[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
@@ -159,45 +158,13 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
-    async function loadLocalPortalMessages() {
-      try {
-        const response = await authorizedFetch('/api/admin/local-portal-messages');
-        const result = (await response.json()) as {
-          messages?: WorkflowRecord[];
-          ok?: boolean;
-        };
-
-        if (!cancelled && response.ok && result.ok) {
-          setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
-        }
-      } catch (caughtError) {
-        console.error('Fehler beim Laden der lokalen Portalnachrichten:', caughtError);
-      }
-    }
-
-    void loadLocalPortalMessages();
-    const intervalId = window.setInterval(() => {
-      void loadLocalPortalMessages();
-    }, 15000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [user]);
-
   const messages = useMemo(() => {
-    const combined = [...firestoreMessages, ...localPortalMessages];
     const unique = new Map<string, WorkflowRecord>();
-    combined.forEach((record) => {
+    firestoreMessages.forEach((record) => {
       unique.set(record.id, record);
     });
     return Array.from(unique.values());
-  }, [firestoreMessages, localPortalMessages]);
+  }, [firestoreMessages]);
 
   const selectedMessage = messages.find((record) => record.id === messageId) ?? null;
   const analysis =
@@ -248,7 +215,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     return [...new Set(ids)];
   }, [selectedMessage?.data.linkedTicketIds, selectedMessage?.data.ticketId]);
   const selectedTicket = tickets.find((record) => linkedTicketIds.includes(record.id)) ?? null;
-  const portalSignature = buildPortalSignatureText(
+  const messageSignature = buildMessageSignatureText(
     applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
       resolveAdminSenderContact(profile, user)
@@ -407,8 +374,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         body: JSON.stringify({
           companyName: cleanText(selectedCompany?.data.name),
           contextMode: replyContextMode,
-          currentBody: cleanText(replyText).endsWith(portalSignature)
-            ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+          currentBody: cleanText(replyText).endsWith(messageSignature)
+            ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
             : cleanText(replyText),
           deliveryMode: replyDeliveryMode,
           historyText: thread
@@ -442,13 +409,13 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         throw new Error(result.error || 'Der KI-Entwurf konnte nicht erzeugt werden.');
       }
 
-      let nextReplyText =
+      const nextReplyText =
         replyDeliveryMode === 'letter'
           ? stripAiEnvelope(result.draftText)
-          : composePortalDraft({
+          : composeMessageDraft({
           aiText: result.draftText,
           contextText: cleanText(selectedMessage.data.bodyText),
-          portalSignature,
+          messageSignature,
           recipientName: cleanText(analysis.tenantLabel),
           recipientSalutation:
             cleanText(selectedTenant?.data.salutation) ||
@@ -508,8 +475,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
         resolveAdminSenderContact(profile, user)
       );
-      const baseBody = cleanText(replyText).endsWith(portalSignature)
-        ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+      const baseBody = cleanText(replyText).endsWith(messageSignature)
+        ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
         : cleanText(replyText);
       const subject = cleanText(selectedMessage.data.subject) || 'Antwort von Halbmann Holding';
       const uploadedAttachments =
@@ -525,7 +492,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           createdAt: serverTimestamp(),
           kind: 'reply_to_sender',
           messageId,
-          portalBodyText: cleanText(replyText),
+          messageBodyText: cleanText(replyText),
           propertyId: cleanText(selectedProperty?.id),
           recipientEmail,
           recipientId: cleanText(selectedTenant?.id) || null,
@@ -590,7 +557,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         await addDoc(collection(db, 'messages'), {
           attachments: [],
           bodyHtml: letterHtml,
-          bodyText: [baseBody, buildPortalSignatureText(signature)].filter(Boolean).join('\n\n'),
+          bodyText: [baseBody, buildMessageSignatureText(signature)].filter(Boolean).join('\n\n'),
           channel: 'letter',
           createdAt: serverTimestamp(),
           deliveryMode: replyDeliveryMode,
@@ -832,7 +799,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           {thread.map((entry) => {
             const isOutbound = cleanText(entry.data.direction) === 'outbound';
             const isLetter = cleanText(entry.data.channel) === 'letter';
-            const isPortalChat = cleanText(entry.data.channel) === 'portal';
+            const isLegacyPortalChat = cleanText(entry.data.channel) === 'portal';
             const letterHtml = cleanText(entry.data.bodyHtml);
             return (
               <article
@@ -849,8 +816,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
                       {appendDeliveryLabel(isOutbound
                         ? isLetter
                           ? 'Ausgehender Brief'
-                          : isPortalChat
-                            ? 'Ausgehende Chatnachricht'
+                          : isLegacyPortalChat
+                            ? 'Ausgehende Nachricht'
                           : 'Ausgehende Nachricht'
                         : cleanText(entry.data.fromName || entry.data.fromEmail) || 'Eingang', entry.data as Record<string, unknown>)}
                     </p>

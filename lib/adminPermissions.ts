@@ -79,7 +79,7 @@ export const adminPermissionGroups: AdminPermissionGroup[] = [
       {
         key: 'settings.signatures',
         label: 'Signaturen',
-        description: 'E-Mail-, Portal- und Briefsignaturen der Firmen bearbeiten.',
+        description: 'E-Mail- und Briefsignaturen der Firmen bearbeiten.',
       },
     ],
   },

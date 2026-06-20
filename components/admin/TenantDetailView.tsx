@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, type DocumentData } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -15,13 +15,13 @@ import {
 } from '../../lib/adminWorkflow';
 import { db, storage } from '../../lib/firebase';
 import { sanitizeAiContext } from '../../lib/aiContext';
-import { composePortalDraft, stripAiEnvelope } from '../../lib/draftComposer';
+import { composeMessageDraft, stripAiEnvelope } from '../../lib/draftComposer';
 import type { LocalMessageTheme } from '../../lib/localMessageThemes';
 import { buildMessageThemes, type MessageTheme } from '../../lib/messageThemes';
 import {
   buildLetterHtml,
   buildLetterText,
-  buildPortalSignatureText,
+  buildMessageSignatureText,
   createSignatureRecord,
   mergeBodyWithSignature,
 } from '../../lib/signatures';
@@ -50,7 +50,6 @@ type TenantDetailViewProps = {
   messageHrefBuilder?: (tenantId: string, messageId: string) => string;
   selectedMessageId?: string;
   showEditButton?: boolean;
-  showInvitationButton?: boolean;
   showOverviewButton?: boolean;
   showSecondaryDetails?: boolean;
   sectionTitle?: string;
@@ -75,7 +74,7 @@ const rentIncreaseLabelMap: Record<string, string> = {
 
 const depositTypeLabelMap: Record<string, string> = {
   cash_deposit: 'Barkaution',
-  bank_guarantee: 'Bankbürgschaft',
+  bank_guarantee: 'BankbÃ¼rgschaft',
 };
 
 const vatRuleLabelMap: Record<string, string> = {
@@ -97,7 +96,7 @@ const propertyServiceLabelMap = {
   cleaningServiceId: 'Reinigung',
   electricianId: 'Elektrik',
   heatingServiceId: 'Heizung',
-  plumbingServiceId: 'Sanitär',
+  plumbingServiceId: 'SanitÃ¤r',
   roofMaintenanceId: 'Dachwartung',
 } as const;
 
@@ -136,11 +135,11 @@ function buildLetterSubjectLine2(property: WorkflowRecord | null | undefined, un
     buildAddressLine([property?.data.street, property?.data.houseNumber]),
     buildAddressLine([property?.data.postalCode, property?.data.city]),
   ]).replace(/\n/g, ', ');
-  return [address, cleanText(unitLabel)].filter(Boolean).join(' · ');
+  return [address, cleanText(unitLabel)].filter(Boolean).join(' Â· ');
 }
 
 function dedupeLabelParts(parts: Array<unknown>) {
-  return Array.from(new Set(parts.map((entry) => cleanText(entry)).filter(Boolean))).join(' · ');
+  return Array.from(new Set(parts.map((entry) => cleanText(entry)).filter(Boolean))).join(' Â· ');
 }
 
 function buildPersonLabel(record: WorkflowRecord) {
@@ -171,7 +170,7 @@ function shiftMonths(dateValue: string, months: number) {
 
 function formatValue(value?: unknown) {
   const text = cleanText(value);
-  if (!text || ['-', '–', '—', 'â€“'].includes(text)) return '–';
+  if (!text || ['-', 'â€“', 'â€”', 'Ã¢â‚¬â€œ'].includes(text)) return 'â€“';
   return text;
 }
 
@@ -324,7 +323,6 @@ export default function TenantDetailView({
   messageHrefBuilder = buildTenantMessageHref,
   selectedMessageId = '',
   showEditButton = true,
-  showInvitationButton = true,
   showOverviewButton = true,
   showSecondaryDetails = true,
   sectionTitle = 'Kommunikation',
@@ -335,7 +333,6 @@ export default function TenantDetailView({
   const [tenant, setTenant] = useState<DocumentData | null>(null);
   const [allTenants, setAllTenants] = useState<WorkflowRecord[]>([]);
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
-  const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
   const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
   const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
@@ -361,7 +358,6 @@ export default function TenantDetailView({
   const [themeSearch, setThemeSearch] = useState('');
   const [vendorContactId, setVendorContactId] = useState('');
   const [themePendingDeleteId, setThemePendingDeleteId] = useState('');
-  const [showInvitationSentModal, setShowInvitationSentModal] = useState(false);
   const [isUploadingTenantDocument, setIsUploadingTenantDocument] = useState(false);
   const [deletingTenantDocumentPath, setDeletingTenantDocumentPath] = useState('');
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
@@ -423,7 +419,7 @@ export default function TenantDetailView({
         setFirestoreMessages(snapshot.docs.map((entry) => ({ data: entry.data(), id: entry.id })));
       },
       (caughtError) => {
-      console.error(`Fehler beim Laden des Nachrichtenverlaufs für ${tenantId}:`, caughtError);
+      console.error(`Fehler beim Laden des Nachrichtenverlaufs fÃ¼r ${tenantId}:`, caughtError);
       }
     );
 
@@ -441,50 +437,19 @@ export default function TenantDetailView({
     if (!user) return;
     let cancelled = false;
 
-    async function loadLocalPortalMessages() {
-      try {
-        const response = await authorizedFetch('/api/admin/local-portal-messages');
-        const result = (await response.json()) as {
-          messages?: WorkflowRecord[];
-          ok?: boolean;
-        };
-
-        if (!cancelled && response.ok && result.ok) {
-          setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
-        }
-      } catch (caughtError) {
-        console.warn('Fehler beim Laden der lokalen Portalnachrichten im Mieterbereich:', caughtError);
-      }
-    }
-
-    void loadLocalPortalMessages();
-    const intervalId = window.setInterval(() => {
-      void loadLocalPortalMessages();
-    }, 15000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
     async function loadMessageThemes() {
       try {
         const response = await authorizedFetch('/api/admin/message-themes');
-        const result = (await response.json()) as {
+        const result = (await response.json().catch(() => null)) as {
           ok?: boolean;
           themes?: LocalMessageTheme[];
-        };
+        } | null;
 
-        if (!cancelled && response.ok && result.ok) {
+        if (!cancelled && response.ok && result?.ok) {
           setMessageThemes(Array.isArray(result.themes) ? result.themes : []);
         }
-      } catch (caughtError) {
-        console.warn('Fehler beim Laden der Themen im Mieterbereich:', caughtError);
+      } catch {
+        console.warn('Fehler beim Laden der Themen im Mieterbereich.');
       }
     }
 
@@ -628,13 +593,12 @@ export default function TenantDetailView({
   }, [tenant?.depositAmount, tenant?.depositType]);
 
   const messages = useMemo(() => {
-    const combined = [...firestoreMessages, ...localPortalMessages];
     const unique = new Map<string, WorkflowRecord>();
-    combined.forEach((record) => {
+    firestoreMessages.forEach((record) => {
       unique.set(record.id, record);
     });
     return Array.from(unique.values());
-  }, [firestoreMessages, localPortalMessages]);
+  }, [firestoreMessages]);
 
   const tenantMessages = useMemo(
     () =>
@@ -865,9 +829,9 @@ export default function TenantDetailView({
     [companies, selectedProperty?.data.ownerId, tenant?.companyId]
   );
   const tenantContact = useMemo(() => buildTenantContact({ data: tenant ?? {}, id: tenantId }), [tenant, tenantId]);
-  const portalSignature = useMemo(
+  const messageSignature = useMemo(
     () =>
-      buildPortalSignatureText(
+      buildMessageSignatureText(
         applyAdminSenderToSignature(
           createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
           resolveAdminSenderContact(profile, user)
@@ -896,7 +860,7 @@ export default function TenantDetailView({
         selectedUnit.section,
       ]);
     }
-    return dedupeLabelParts(String(tenant?.unitLabel ?? '').split('·'));
+    return dedupeLabelParts(String(tenant?.unitLabel ?? '').split('Â·'));
   }, [selectedUnit, tenant?.unitLabel]);
   const propertyInfoName = useMemo(
     () => cleanText(selectedProperty?.data.name) || cleanText(tenant?.propertyName),
@@ -966,7 +930,7 @@ export default function TenantDetailView({
     const unitMeters = Array.isArray(selectedUnit?.meters) ? (selectedUnit.meters as DocumentData[]) : [];
     return [...propertyMeters, ...unitMeters]
       .map((meter) =>
-        [cleanText(meter.label || meter.type), cleanText(meter.meterNumber)].filter(Boolean).join(' â€“ ')
+        [cleanText(meter.label || meter.type), cleanText(meter.meterNumber)].filter(Boolean).join(' Ã¢â‚¬â€œ ')
       )
       .filter(Boolean);
   }, [selectedProperty?.data.meters, selectedUnit?.meters]);
@@ -1002,7 +966,7 @@ export default function TenantDetailView({
         entry.id;
       const detail = [cleanText(entry.data.propertyName), cleanText(entry.data.unitLabel)]
         .filter(Boolean)
-        .join(' · ');
+        .join(' Â· ');
       return {
         email: cleanText(entry.data.email),
         id: `tenant:${entry.id}`,
@@ -1060,13 +1024,13 @@ export default function TenantDetailView({
         const person = people.find((entry) => entry.id === assignment.id) ?? null;
         if (!person) return null;
         return {
-          company: cleanText(person.data.partnerCompanyName || person.data.companyName) || '–',
-          email: cleanText(person.data.email) || '–',
+          company: cleanText(person.data.partnerCompanyName || person.data.companyName) || 'â€“',
+          email: cleanText(person.data.email) || 'â€“',
           id: person.id,
           label: assignment.label,
           name:
-            [cleanText(person.data.lastName), cleanText(person.data.firstName)].filter(Boolean).join(', ') || '–',
-          phone: cleanText(person.data.phone || person.data.mobile) || '–',
+            [cleanText(person.data.lastName), cleanText(person.data.firstName)].filter(Boolean).join(', ') || 'â€“',
+          phone: cleanText(person.data.phone || person.data.mobile) || 'â€“',
         };
       })
       .filter(Boolean) as Array<{
@@ -1099,13 +1063,13 @@ export default function TenantDetailView({
         })
       )
       .then(async (response) => {
-        const result = (await response.json()) as { ok?: boolean; settings?: { inboxEmail?: string } };
-        if (!cancelled && response.ok && result.ok && cleanText(result.settings?.inboxEmail)) {
+        const result = (await response.json().catch(() => null)) as { ok?: boolean; settings?: { inboxEmail?: string } } | null;
+        if (!cancelled && response.ok && result?.ok && cleanText(result.settings?.inboxEmail)) {
           setSenderEmail(cleanText(result.settings?.inboxEmail));
         }
       })
-      .catch((caughtError) => {
-        console.error('Fehler beim Laden der Postfach-Einstellungen im Mieterbereich:', caughtError);
+      .catch(() => {
+        console.warn('Fehler beim Laden der Postfach-Einstellungen im Mieterbereich.');
       });
 
     return () => {
@@ -1175,7 +1139,7 @@ export default function TenantDetailView({
   }
 
   async function deleteTenantDocument(targetDocument: TenantDocumentEntry) {
-    const confirmed = window.confirm(`Dokument "${targetDocument.name}" wirklich löschen?`);
+    const confirmed = window.confirm(`Dokument "${targetDocument.name}" wirklich lÃ¶schen?`);
     if (!confirmed) return;
 
     setError('');
@@ -1198,17 +1162,17 @@ export default function TenantDetailView({
         updatedByUid: user?.uid ?? null,
       });
 
-      setMessage('Dokument wurde gelöscht.');
+      setMessage('Dokument wurde gelÃ¶scht.');
     } catch (caughtError) {
       console.error(`Fehler beim Loeschen eines Dokuments fuer Mieter ${tenantId}:`, caughtError);
-      setError('Dokument konnte nicht gelöscht werden.');
+      setError('Dokument konnte nicht gelÃ¶scht werden.');
     } finally {
       setDeletingTenantDocumentPath('');
     }
   }
 
   async function deleteLegacyTenantDocument(fieldName: string, documentName: string) {
-    const confirmed = window.confirm(`Alten Dateieintrag "${documentName}" wirklich löschen?`);
+    const confirmed = window.confirm(`Alten Dateieintrag "${documentName}" wirklich lÃ¶schen?`);
     if (!confirmed) return;
 
     setError('');
@@ -1221,10 +1185,10 @@ export default function TenantDetailView({
         updatedByEmail: user?.email ?? null,
         updatedByUid: user?.uid ?? null,
       });
-      setMessage('Alter Dateieintrag wurde gelöscht.');
+      setMessage('Alter Dateieintrag wurde gelÃ¶scht.');
     } catch (caughtError) {
-      console.error(`Fehler beim Löschen des alten Dateieintrags ${documentName}:`, caughtError);
-      setError('Alter Dateieintrag konnte nicht gelöscht werden.');
+      console.error(`Fehler beim LÃ¶schen des alten Dateieintrags ${documentName}:`, caughtError);
+      setError('Alter Dateieintrag konnte nicht gelÃ¶scht werden.');
     }
   }
 
@@ -1304,7 +1268,7 @@ export default function TenantDetailView({
   }
 
   async function deleteMessageAttachment(messageId: string, attachments: unknown, targetAttachment: MessageAttachmentEntry) {
-    const confirmed = window.confirm(`Anhang "${targetAttachment.name}" wirklich löschen?`);
+    const confirmed = window.confirm(`Anhang "${targetAttachment.name}" wirklich lÃ¶schen?`);
     if (!confirmed) return;
 
     const currentAttachments = Array.isArray(attachments) ? attachments : [];
@@ -1335,10 +1299,10 @@ export default function TenantDetailView({
         updatedByEmail: user?.email ?? null,
         updatedByUid: user?.uid ?? null,
       });
-      setMessage('Anhang wurde gelöscht.');
+      setMessage('Anhang wurde gelÃ¶scht.');
     } catch (caughtError) {
-      console.error(`Fehler beim Löschen des Anhangs ${targetAttachment.name}:`, caughtError);
-      setError('Anhang konnte nicht gelöscht werden.');
+      console.error(`Fehler beim LÃ¶schen des Anhangs ${targetAttachment.name}:`, caughtError);
+      setError('Anhang konnte nicht gelÃ¶scht werden.');
     }
   }
 
@@ -1394,7 +1358,7 @@ export default function TenantDetailView({
     if (!tenant) return;
     const hasContent = Object.values(handoverForm).some((value) => cleanText(value));
     if (!hasContent) {
-      setError('Bitte mindestens eine Angabe für das Übergabeprotokoll eintragen.');
+      setError('Bitte mindestens eine Angabe fÃ¼r das Ãœbergabeprotokoll eintragen.');
       return;
     }
 
@@ -1430,10 +1394,10 @@ export default function TenantDetailView({
         place: '',
         tenantSignatureName: '',
       });
-      setMessage('Übergabeprotokoll wurde gespeichert.');
+      setMessage('Ãœbergabeprotokoll wurde gespeichert.');
     } catch (caughtError) {
-      console.error('Fehler beim Speichern des Übergabeprotokolls:', caughtError);
-      setError('Das Übergabeprotokoll konnte nicht gespeichert werden.');
+      console.error('Fehler beim Speichern des Ãœbergabeprotokolls:', caughtError);
+      setError('Das Ãœbergabeprotokoll konnte nicht gespeichert werden.');
     }
   }
 
@@ -1539,7 +1503,7 @@ export default function TenantDetailView({
         const key = path || url;
         if (!key || attachmentByKey.has(key)) return;
         attachmentByKey.set(key, {
-          category: 'Anhänge',
+          category: 'AnhÃ¤nge',
           contentType: cleanText(raw.contentType) || 'application/octet-stream',
           name: cleanText(raw.name ?? raw.fileName) || 'Anhang',
           path,
@@ -1721,57 +1685,29 @@ export default function TenantDetailView({
     const currentThemeId = cleanText(payload.themeId) || cleanText(selectedTheme?.id);
     if (!currentThemeId) return;
     const createdAt = new Date().toISOString();
-    await authorizedFetch('/api/admin/local-portal-messages', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'append',
-        bodyText: payload.bodyText,
-        createdAt,
-        entryType: payload.entryType,
-        messageId: entryId,
-        propertyId: cleanText(tenant?.propertyId),
-        recipientEmail: cleanText(payload.recipientEmail),
-        recipientId: cleanText(payload.recipientId) || tenantId,
-        recipientName: cleanText(payload.recipientName),
-        recipientType: payload.recipientType,
-        relatedMessageId: currentThemeId,
-        deliveryMode: payload.deliveryMode,
-        status: payload.visibleToTenant ? 'sent' : 'in_progress',
-        subject: payload.subject,
-        tenantId,
-        unitId: cleanText(tenant?.unitId),
-        visibleToTenant: payload.visibleToTenant,
-      }),
+    await addDoc(collection(db, 'messages'), {
+      bodyText: payload.bodyText,
+      channel: payload.deliveryMode === 'letter' ? 'letter' : 'admin',
+      createdAt: serverTimestamp(),
+      deliveryMode: payload.deliveryMode,
+      direction: 'outbound',
+      entryType: payload.entryType,
+      fromEmail: senderEmail,
+      fromName: 'Halbmann Holding',
+      priority: 'normal',
+      propertyId: cleanText(tenant?.propertyId),
+      receivedAt: serverTimestamp(),
+      recipientEmail: cleanText(payload.recipientEmail),
+      recipientId: cleanText(payload.recipientId) || tenantId,
+      recipientName: cleanText(payload.recipientName),
+      recipientType: payload.recipientType,
+      relatedMessageId: currentThemeId,
+      status: payload.visibleToTenant ? 'sent' : 'in_progress',
+      subject: payload.subject,
+      tenantId,
+      unitId: cleanText(tenant?.unitId),
+      visibleToTenant: payload.visibleToTenant,
     });
-    setLocalPortalMessages((current) => [
-      {
-        data: {
-          bodyText: payload.bodyText,
-          channel: 'portal',
-          createdAt,
-          direction: 'outbound',
-          entryType: payload.entryType,
-          fromEmail: senderEmail,
-          fromName: 'Halbmann Holding',
-          priority: 'normal',
-          propertyId: cleanText(tenant?.propertyId),
-          receivedAt: createdAt,
-          recipientEmail: cleanText(payload.recipientEmail),
-          recipientId: cleanText(payload.recipientId) || tenantId,
-          recipientName: cleanText(payload.recipientName),
-          recipientType: payload.recipientType,
-          relatedMessageId: currentThemeId,
-          deliveryMode: payload.deliveryMode,
-          status: payload.visibleToTenant ? 'sent' : 'in_progress',
-          subject: payload.subject,
-          tenantId,
-          unitId: cleanText(tenant?.unitId),
-          visibleToTenant: payload.visibleToTenant,
-        },
-        id: entryId,
-      },
-      ...current,
-    ]);
     setMessageThemes((current) => {
       const nextTitle =
         cleanText(payload.subject) ||
@@ -1940,7 +1876,7 @@ export default function TenantDetailView({
   ) {
     if (uploadedAttachments.length === 0) return;
     const attachmentDocuments: TenantDocumentEntry[] = uploadedAttachments.map((attachment) => ({
-      category: 'Anhänge',
+      category: 'AnhÃ¤nge',
       contentType: attachment.contentType,
       name: attachment.name,
       path: attachment.path,
@@ -1964,18 +1900,18 @@ export default function TenantDetailView({
     }
     const recipient = serviceContacts.find((entry) => entry.id === vendorContactId) ?? null;
     if (!recipient) {
-      throw new Error('Bitte ein Gewerk auswählen.');
+      throw new Error('Bitte ein Gewerk auswÃ¤hlen.');
     }
     const recipientEmail = cleanText(recipient.data.email);
     if (!recipientEmail) {
-      throw new Error('Beim ausgewählten Gewerk ist keine E-Mail hinterlegt.');
+      throw new Error('Beim ausgewÃ¤hlten Gewerk ist keine E-Mail hinterlegt.');
     }
 
     const signatureRecord = applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
       resolveAdminSenderContact(profile, user)
     );
-    const subject = cleanText(selectedTheme.subject) || 'Rückfrage zu einem Thema';
+    const subject = cleanText(selectedTheme.subject) || 'RÃ¼ckfrage zu einem Thema';
     const uploadedAttachments = await uploadOutgoingMessageAttachments(
       replyAttachments,
       `tenant-vendor-${tenantId}-${selectedTheme.id}`
@@ -1986,7 +1922,7 @@ export default function TenantDetailView({
       createdAt: serverTimestamp(),
       kind: 'reply_to_service',
       messageId: selectedTheme!.id,
-      portalBodyText: cleanText(replyText),
+      messageBodyText: cleanText(replyText),
       propertyId: cleanText(tenant?.propertyId),
       recipientEmail,
       recipientId: recipient.id,
@@ -2141,8 +2077,8 @@ export default function TenantDetailView({
             tenantMessages.find((entry) => cleanText(entry.data.direction) !== 'outbound') ??
             null
           : null;
-      const currentBody = cleanText(replyText).endsWith(portalSignature)
-        ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+      const currentBody = cleanText(replyText).endsWith(messageSignature)
+        ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
         : cleanText(replyText);
       const response = await authorizedFetch('/api/ai/message-reply-draft', {
               method: 'POST',
@@ -2209,13 +2145,13 @@ export default function TenantDetailView({
       if (!response.ok || !result.ok || !result.draftText) {
         throw new Error(result.error || 'Der KI-Entwurf konnte nicht erzeugt werden.');
       }
-      let nextReplyText =
+      const nextReplyText =
         deliveryMode === 'letter'
           ? stripAiEnvelope(result.draftText)
-          : composePortalDraft({
+          : composeMessageDraft({
         aiText: result.draftText,
         contextText: contextMode === 'reply' ? cleanText(latestInbound?.data.bodyText) : '',
-        portalSignature,
+        messageSignature,
         recipientName: cleanText(tenantContact?.name),
         recipientSalutation: cleanText(tenantContact?.salutation || tenant.salutation || inferredTenantSalutation),
       });
@@ -2229,43 +2165,14 @@ export default function TenantDetailView({
     }
   }
 
-  function sendPortalInvitation() {
-    startTransition(async () => {
-      setMessage('');
-      setError('');
-      try {
-        const response = await authorizedFetch('/api/admin/portal-invitation', {
-          body: JSON.stringify({
-            targetId: tenantId,
-            targetType: 'tenant',
-          }),
-          method: 'POST',
-        });
-        const result = (await response.json()) as { error?: string; ok?: boolean };
-        if (!response.ok || !result.ok) {
-          throw new Error(result.error || 'Die Einladung konnte nicht versendet werden.');
-        }
-        setMessage('Einladung mit Zugangsdaten wurde per E-Mail versendet.');
-        setShowInvitationSentModal(true);
-      } catch (caughtError) {
-        console.error('Fehler beim Versand der Portaleinladung:', caughtError);
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'Die Einladung konnte nicht versendet werden.'
-        );
-      }
-    });
-  }
-
   function sendReply() {
     if (!tenant || !cleanText(replyText)) return;
     startTransition(async () => {
       setMessage('');
       setError('');
       try {
-        const baseBody = cleanText(replyText).endsWith(portalSignature)
-          ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+        const baseBody = cleanText(replyText).endsWith(messageSignature)
+          ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
           : cleanText(replyText);
         const nextFollowUpDate = cleanText(followUpDate);
         const signatureRecord = applyAdminSenderToSignature(
@@ -2279,7 +2186,7 @@ export default function TenantDetailView({
           : cleanText(selectedTheme?.subject) ||
             cleanText(selectedRequest?.data.subject) ||
             'Nachricht von Halbmann Holding';
-        const portalBodyText = [baseBody, portalSignature].filter(Boolean).join('\n\n');
+        const messageBodyText = [baseBody, messageSignature].filter(Boolean).join('\n\n');
         const uploadedAttachments =
           deliveryMode === 'email' || deliveryMode === 'both'
             ? await uploadOutgoingMessageAttachments(replyAttachments, `tenant-${tenantId}-${threadMessageId || Date.now()}`)
@@ -2296,7 +2203,7 @@ export default function TenantDetailView({
                 htmlBody: '',
                 kind: 'reply_to_tenant',
                 messageId: threadMessageId,
-                portalBodyText,
+                messageBodyText,
                 propertyId: cleanText(tenant.propertyId),
                 recipientEmail: cleanText(tenant.email),
                 recipientId: tenantId,
@@ -2400,7 +2307,7 @@ export default function TenantDetailView({
         }
         if (themeId && (deliveryMode === 'letter' || deliveryMode === 'both')) {
           await appendLocalThemeEntry({
-            bodyText: portalBodyText,
+            bodyText: messageBodyText,
             deliveryMode,
             entryType: 'admin_message',
             recipientEmail: cleanText(tenant.email),
@@ -2569,7 +2476,7 @@ export default function TenantDetailView({
               className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
               href="/admin/mieter"
             >
-              Mieterübersicht
+              MieterÃ¼bersicht
             </Link>
             ) : null}
           </div>
@@ -2592,7 +2499,7 @@ export default function TenantDetailView({
               onClick={() => void downloadHandoverProtocol(handoverProtocolKind)}
               type="button"
             >
-              ✓
+              âœ“
             </button>
           </div>
         </div>
@@ -2620,7 +2527,7 @@ export default function TenantDetailView({
                   deletingTenantDocumentPath === (tenantDocument.path || tenantDocument.url);
                 const meta = [formatFileSize(tenantDocument.size), formatUploadDate(tenantDocument.uploadedAt)]
                   .filter(Boolean)
-                  .join(' · ');
+                  .join(' Â· ');
 
                 return (
                   <div
@@ -2646,7 +2553,7 @@ export default function TenantDetailView({
                         onClick={() => void deleteTenantDocument(tenantDocument)}
                         type="button"
                       >
-                        {isDeleting ? 'Löscht...' : 'Löschen'}
+                        {isDeleting ? 'LÃ¶scht...' : 'LÃ¶schen'}
                       </button>
                     </div>
                   </div>
@@ -2665,11 +2572,11 @@ export default function TenantDetailView({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
-              Übergabe vor Ort
+              Ãœbergabe vor Ort
             </p>
             <h3 className="mt-1 text-xl text-slate-950">Protokoll als Formular</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Für schnelle Erfassung mit dem Handy. Fotos können unten bei den Dokumenten direkt per Kamera ergänzt werden.
+              FÃ¼r schnelle Erfassung mit dem Handy. Fotos kÃ¶nnen unten bei den Dokumenten direkt per Kamera ergÃ¤nzt werden.
             </p>
           </div>
           <select
@@ -2698,19 +2605,19 @@ export default function TenantDetailView({
           <textarea
             className="min-h-24 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
             onChange={(event) => setHandoverForm((current) => ({ ...current, defects: event.target.value }))}
-            placeholder="Mängel / offene Punkte"
+            placeholder="MÃ¤ngel / offene Punkte"
             value={handoverForm.defects}
           />
           <textarea
             className="min-h-20 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
             onChange={(event) => setHandoverForm((current) => ({ ...current, meterReadings: event.target.value }))}
-            placeholder="Zählerstände"
+            placeholder="ZÃ¤hlerstÃ¤nde"
             value={handoverForm.meterReadings}
           />
           <input
             className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
             onChange={(event) => setHandoverForm((current) => ({ ...current, handedOverKeys: event.target.value }))}
-            placeholder="Übergebene Schlüssel"
+            placeholder="Ãœbergebene SchlÃ¼ssel"
             value={handoverForm.handedOverKeys}
           />
           <textarea
@@ -2722,7 +2629,7 @@ export default function TenantDetailView({
           <input
             className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
             onChange={(event) => setHandoverForm((current) => ({ ...current, tenantSignatureName: event.target.value }))}
-            placeholder="Name Mieter / Übergabepartner"
+            placeholder="Name Mieter / Ãœbergabepartner"
             value={handoverForm.tenantSignatureName}
           />
           <button
@@ -2925,7 +2832,7 @@ export default function TenantDetailView({
                     <option value="save">Betreff</option>
                     <option value="done">Erledigt</option>
                     <option value="split">Splitten</option>
-                    <option value="merge">Zusammenführen</option>
+                    <option value="merge">ZusammenfÃ¼hren</option>
                     <option value="reassign">Neu zuordnen</option>
                   </select>
                   <select
@@ -2936,7 +2843,7 @@ export default function TenantDetailView({
                   >
                     {themeAction === 'merge' ? (
                       <>
-                        <option value="">Nachricht auswählen</option>
+                        <option value="">Nachricht auswÃ¤hlen</option>
                         {themeActionMergeOptions.map((theme) => (
                           <option key={`${theme.tenantId || tenantId}-${theme.id}-${theme.latestEntry.id}`} value={theme.id}>
                             {cleanText(theme.subject) || 'Thema ohne Betreff'}
@@ -2945,19 +2852,19 @@ export default function TenantDetailView({
                       </>
                     ) : themeAction === 'reassign' ? (
                       <>
-                        <option value="">Kontakt auswählen</option>
+                        <option value="">Kontakt auswÃ¤hlen</option>
                         {reassignContactOptions.map((entry) => (
                           <option key={entry.id} value={entry.id}>
-                            {entry.label}{entry.targetType === 'tenant' ? ' · Mieter' : ' · Dienstleister'}
+                            {entry.label}{entry.targetType === 'tenant' ? ' Â· Mieter' : ' Â· Dienstleister'}
                           </option>
                         ))}
                       </>
                     ) : (
-                      <option value="">Keine Auswahl nötig</option>
+                      <option value="">Keine Auswahl nÃ¶tig</option>
                     )}
                   </select>
                   <button
-                    aria-label="Aktion ausführen"
+                    aria-label="Aktion ausfÃ¼hren"
                     className="flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-white text-slate-700 transition hover:border-amber-700/50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={
                       !selectedTheme ||
@@ -3170,7 +3077,7 @@ export default function TenantDetailView({
                       key={`${theme.tenantId || tenantId}-${theme.id}-${theme.latestEntry.id}`}
                     >
                       <button
-                        aria-label="Thema löschen"
+                        aria-label="Thema lÃ¶schen"
                         className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-xs font-medium text-stone-500 transition hover:border-red-300 hover:text-red-600"
                         onClick={(event) => {
                           event.preventDefault();
@@ -3199,7 +3106,7 @@ export default function TenantDetailView({
                           </span>
                         </div>
                         <p className="mt-2 truncate text-[11px] !text-slate-800">
-                          {cleanText(theme.latestInbound?.data.fromEmail) || 'Mieterportal'}
+                          {cleanText(theme.latestInbound?.data.fromEmail) || 'Nachricht'}
                         </p>
                         <p className="mt-1 truncate text-[11px] !text-slate-900">
                           {cleanText(theme.latestEntry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
@@ -3233,9 +3140,9 @@ export default function TenantDetailView({
       {themePendingDelete ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
           <div className="w-full max-w-md rounded-[20px] border border-stone-200 bg-white px-5 py-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
-            <p className="text-lg font-medium text-slate-950">Thema endgültig löschen?</p>
+            <p className="text-lg font-medium text-slate-950">Thema endgÃ¼ltig lÃ¶schen?</p>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Dieses Thema wird aus der Themenliste entfernt. Der Schritt ist für den normalen Arbeitsfluss nicht rückgängig zu machen.
+              Dieses Thema wird aus der Themenliste entfernt. Der Schritt ist fÃ¼r den normalen Arbeitsfluss nicht rÃ¼ckgÃ¤ngig zu machen.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -3254,32 +3161,15 @@ export default function TenantDetailView({
                     try {
                       await deleteTheme(themePendingDelete.id);
                       setThemePendingDeleteId('');
-                      setMessage('Thema wurde endgültig gelöscht.');
+                      setMessage('Thema wurde endgÃ¼ltig gelÃ¶scht.');
                     } catch (caughtError) {
-                      setError(caughtError instanceof Error ? caughtError.message : 'Thema konnte nicht gelöscht werden.');
+                      setError(caughtError instanceof Error ? caughtError.message : 'Thema konnte nicht gelÃ¶scht werden.');
                     }
                   })
                 }
                 type="button"
               >
                 Ja
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {showInvitationSentModal ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
-          <div className="w-full max-w-sm rounded-[20px] border border-stone-200 bg-white px-5 py-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
-            <p className="text-lg font-medium text-slate-950">Einladung wurde verschickt.</p>
-            <div className="mt-5 flex justify-end">
-              <button
-                className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
-                onClick={() => setShowInvitationSentModal(false)}
-                type="button"
-              >
-                OK
               </button>
             </div>
           </div>
@@ -3311,17 +3201,17 @@ export default function TenantDetailView({
               <DetailRow label="Nebenkosten" value={tenant.netOperatingCosts} />
               <DetailRow label="Umsatzsteuer" value={vatAmountDisplay} />
               <DetailRow label="Gesamtmiete" value={totalRentDisplay} />
-              <DetailRow label="Mieterhöhung" value={translateRentIncreaseType(tenant.rentIncreaseType)} />
-              <DetailRow label="Nächste Prüfung" value={tenant.rentIncreaseNextReview} />
+              <DetailRow label="MieterhÃ¶hung" value={translateRentIncreaseType(tenant.rentIncreaseType)} />
+              <DetailRow label="NÃ¤chste PrÃ¼fung" value={tenant.rentIncreaseNextReview} />
             </>
           ) : null}
         </DetailCard>
 
         {showSecondaryDetails && !isMessagesLayout ? (
-          <DetailCard title="Status und Prüfung">
-            <DetailRow label="Mieterhöhungsart" value={translateRentIncreaseType(tenant.rentIncreaseType)} />
-            <DetailRow label="Nächste Erinnerung" value={tenant.rentIncreaseNextReview} />
-            <DetailRow label="Bürge" value={tenant.guarantorLabel} />
+          <DetailCard title="Status und PrÃ¼fung">
+            <DetailRow label="MieterhÃ¶hungsart" value={translateRentIncreaseType(tenant.rentIncreaseType)} />
+            <DetailRow label="NÃ¤chste Erinnerung" value={tenant.rentIncreaseNextReview} />
+            <DetailRow label="BÃ¼rge" value={tenant.guarantorLabel} />
             <DetailRow label="Kautionsart" value={translateDepositType(tenant.depositType)} />
           </DetailCard>
         ) : null}
@@ -3397,7 +3287,7 @@ export default function TenantDetailView({
                   deletingTenantDocumentPath === (tenantDocument.path || tenantDocument.url);
                 const meta = [formatFileSize(tenantDocument.size), formatUploadDate(tenantDocument.uploadedAt)]
                   .filter(Boolean)
-                  .join(' · ');
+                  .join(' Â· ');
 
                 return (
                   <div
@@ -3423,7 +3313,7 @@ export default function TenantDetailView({
                         onClick={() => void deleteTenantDocument(tenantDocument)}
                         type="button"
                       >
-                        {isDeleting ? 'Löscht...' : 'Löschen'}
+                        {isDeleting ? 'LÃ¶scht...' : 'LÃ¶schen'}
                       </button>
                     </div>
                   </div>
@@ -3455,7 +3345,7 @@ export default function TenantDetailView({
                       onClick={() => void deleteLegacyTenantDocument(legacyDocument.fieldName, legacyDocument.name)}
                       type="button"
                     >
-                      Löschen
+                      LÃ¶schen
                     </button>
                   </div>
                 ))}

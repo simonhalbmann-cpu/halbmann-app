@@ -37,6 +37,7 @@ firebase-debug.log*
 
 # local app state and agent backups
 .codex-backups/
+.ai-settings.local.json
 .mailbox-settings.local.json
 .message-themes.local.json
 .portal-*.local.json

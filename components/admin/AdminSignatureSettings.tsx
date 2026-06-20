@@ -11,7 +11,7 @@ import {
   cleanSignatureText,
   createSignatureRecord,
   EMAIL_SIGNATURE_TOKENS,
-  PORTAL_SIGNATURE_EMAIL,
+  DEFAULT_SIGNATURE_EMAIL,
   type SignatureRecord,
 } from '../../lib/signatures';
 import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
@@ -218,7 +218,7 @@ export default function AdminSignatureSettings() {
       signatureCompanyName: cleanSignatureText(nextForm.companyName),
       signatureCountry: cleanSignatureText(nextForm.country),
       signatureDepartment: cleanSignatureText(nextForm.department),
-      signatureEmail: PORTAL_SIGNATURE_EMAIL,
+      signatureEmail: DEFAULT_SIGNATURE_EMAIL,
       signatureEmailTemplateHtml: cleanSignatureText(nextForm.emailTemplateHtml),
       signatureFontBold: nextForm.fontBold,
       signatureFontFamily: cleanSignatureText(nextForm.fontFamily),
@@ -364,7 +364,7 @@ export default function AdminSignatureSettings() {
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Signaturen</p>
           <h2 className="mt-2 text-3xl text-slate-950">Firmensignaturen</h2>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-            FÃ¼r jede Firma kann hier eine professionelle E-Mail- und Portal-Signatur gepflegt werden.
+            FÃ¼r jede Firma kann hier eine professionelle E-Mail- und Nachrichtensignatur gepflegt werden.
           </p>
         </div>
       </div>
@@ -453,16 +453,16 @@ export default function AdminSignatureSettings() {
                   label="E-Mail"
                   onChange={() => undefined}
                   readOnly
-                  value={PORTAL_SIGNATURE_EMAIL}
+                  value={DEFAULT_SIGNATURE_EMAIL}
                 />
                 <Field label="Website" onChange={(value) => updateField('website', value)} value={form.website} />
                 <Field label="Registergericht" onChange={(value) => updateField('registerCourt', value)} value={form.registerCourt} />
                 <Field label="Handelsregister / Nummer" onChange={(value) => updateField('commercialRegisterNumber', value)} value={form.commercialRegisterNumber} />
                 <Field label="Steuernummer" onChange={(value) => updateField('taxNumber', value)} value={form.taxNumber} />
                 <Field label="USt-IdNr." onChange={(value) => updateField('vatId', value)} value={form.vatId} />
-                <Field label="Portal-Abschluss" onChange={(value) => updateField('portalClosing', value)} value={form.portalClosing} />
-                <Field label="Portal-Name" onChange={(value) => updateField('portalName', value)} value={form.portalName} />
-                <Field label="Portal-Firmenname" onChange={(value) => updateField('portalCompanyName', value)} value={form.portalCompanyName} />
+                <Field label="Nachrichten-Abschluss" onChange={(value) => updateField('portalClosing', value)} value={form.portalClosing} />
+                <Field label="Nachrichten-Name" onChange={(value) => updateField('portalName', value)} value={form.portalName} />
+                <Field label="Nachrichten-Firmenname" onChange={(value) => updateField('portalCompanyName', value)} value={form.portalCompanyName} />
                 <Field label="Logo-Alternativtext" onChange={(value) => updateField('logoAlt', value)} value={form.logoAlt} />
               </div>
 
@@ -578,7 +578,7 @@ export default function AdminSignatureSettings() {
                 </div>
 
                 <div className="mt-5 rounded-[20px] border border-stone-200 bg-white px-6 py-5 text-slate-700">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Portal-Signatur</p>
+                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Nachrichten-Signatur</p>
                   <div className="mt-4 text-[13px] leading-5 text-slate-700">
                     <p>{previewSignature.portalClosing || 'Mit freundlichen GrÃ¼ÃŸen'}</p>
                     {previewSignature.portalName ? <p className="mt-3 font-medium text-slate-950">{previewSignature.portalName}</p> : null}
