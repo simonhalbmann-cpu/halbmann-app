@@ -1410,8 +1410,8 @@ export default function AdminLetterSettings({
               ) as HTMLElement | null;
               if (!element) return;
 
-              let leftOffset = snapshot.left - previous.left;
-              let topOffset = snapshot.top - previous.top;
+              const leftOffset = snapshot.left - previous.left;
+              const topOffset = snapshot.top - previous.top;
               let nextWidth = snapshot.width;
               let nextLeft = next.letterMarginLeft + leftOffset;
               let nextTop = next.letterMarginTop + topOffset;

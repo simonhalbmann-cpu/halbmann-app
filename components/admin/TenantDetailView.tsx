@@ -2145,7 +2145,7 @@ export default function TenantDetailView({
       if (!response.ok || !result.ok || !result.draftText) {
         throw new Error(result.error || 'Der KI-Entwurf konnte nicht erzeugt werden.');
       }
-      let nextReplyText =
+      const nextReplyText =
         deliveryMode === 'letter'
           ? stripAiEnvelope(result.draftText)
           : composeMessageDraft({

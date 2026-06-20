@@ -1998,7 +1998,7 @@ export function buildLetterBodyPageFragments({
     }
 
     const fragments: LetterBodyPageFragment[] = [];
-    let remainingBlocks = [...htmlBlocks];
+    const remainingBlocks = [...htmlBlocks];
     let currentPage = createWorkingPage(startOnFirstPage);
     if (!currentPage) return null;
 

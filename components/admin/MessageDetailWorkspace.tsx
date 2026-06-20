@@ -409,7 +409,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         throw new Error(result.error || 'Der KI-Entwurf konnte nicht erzeugt werden.');
       }
 
-      let nextReplyText =
+      const nextReplyText =
         replyDeliveryMode === 'letter'
           ? stripAiEnvelope(result.draftText)
           : composeMessageDraft({
