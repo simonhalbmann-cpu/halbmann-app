@@ -1,4 +1,4 @@
-export const PORTAL_INBOX_EMAIL = 'portal@halbmann-holding.de';
+﻿export const DEFAULT_INBOX_EMAIL = 'portal@halbmann-holding.de';
 
 export function normalizeEmail(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';

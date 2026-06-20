@@ -14,7 +14,7 @@ import { buildRecipientGreeting, stripAiEnvelope } from '../../lib/draftComposer
 import {
   buildLetterHtml,
   buildLetterText,
-  buildPortalSignatureText,
+  buildMessageSignatureText,
   createSignatureRecord,
   mergeBodyWithSignature,
   type SignatureRecord,
@@ -1122,7 +1122,7 @@ export default function MessagesWorkspace() {
     deliveryMode?: DeliveryMode;
   }) {
     const baseBody = cleanText(composeBody);
-    const portalBody = [baseBody, buildPortalSignatureText(signature)].filter(Boolean).join('\n\n');
+    const messageBody = [baseBody, buildMessageSignatureText(signature)].filter(Boolean).join('\n\n');
     const tenantRecord = recipient.tenantId
       ? tenants.find((entry) => entry.id === recipient.tenantId) ?? null
       : null;
@@ -1203,7 +1203,7 @@ export default function MessagesWorkspace() {
     await addDoc(collection(db, 'messages'), {
       attachments: [],
       bodyHtml: letterHtml,
-      bodyText: portalBody,
+      bodyText: messageBody,
       category: '',
       channel: 'letter',
       contactId: recipient.contactId || '',
@@ -1261,11 +1261,11 @@ export default function MessagesWorkspace() {
     unitId?: string;
   }) {
     const baseBody = cleanText(composeBody);
-    const portalBody = [baseBody, buildPortalSignatureText(signature)].filter(Boolean).join('\n\n');
+    const messageBody = [baseBody, buildMessageSignatureText(signature)].filter(Boolean).join('\n\n');
 
     await addDoc(collection(db, 'messages'), {
       attachments: [],
-      bodyText: portalBody,
+      bodyText: messageBody,
       category: '',
       channel: 'email',
       createdAt: serverTimestamp(),
@@ -1483,7 +1483,7 @@ export default function MessagesWorkspace() {
             messageId: null,
             propertyId: messagePropertyId,
             signature: recipientSignature,
-            portalBodyText: bodyWithoutManualSignature,
+            messageBodyText: bodyWithoutManualSignature,
             recipientEmail: recipient.email,
             recipientId: recipient.tenantId || recipient.contactId || null,
             recipientType: recipient.recipientType,

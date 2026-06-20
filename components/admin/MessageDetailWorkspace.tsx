@@ -22,11 +22,11 @@ import {
   type WorkflowRecord,
 } from '../../lib/adminWorkflow';
 import { db, storage } from '../../lib/firebase';
-import { composePortalDraft, stripAiEnvelope } from '../../lib/draftComposer';
+import { composeMessageDraft, stripAiEnvelope } from '../../lib/draftComposer';
 import {
   buildLetterHtml,
   buildLetterText,
-  buildPortalSignatureText,
+  buildMessageSignatureText,
   createSignatureRecord,
   mergeBodyWithSignature,
 } from '../../lib/signatures';
@@ -215,7 +215,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     return [...new Set(ids)];
   }, [selectedMessage?.data.linkedTicketIds, selectedMessage?.data.ticketId]);
   const selectedTicket = tickets.find((record) => linkedTicketIds.includes(record.id)) ?? null;
-  const portalSignature = buildPortalSignatureText(
+  const messageSignature = buildMessageSignatureText(
     applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
       resolveAdminSenderContact(profile, user)
@@ -374,8 +374,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         body: JSON.stringify({
           companyName: cleanText(selectedCompany?.data.name),
           contextMode: replyContextMode,
-          currentBody: cleanText(replyText).endsWith(portalSignature)
-            ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+          currentBody: cleanText(replyText).endsWith(messageSignature)
+            ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
             : cleanText(replyText),
           deliveryMode: replyDeliveryMode,
           historyText: thread
@@ -412,10 +412,10 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       let nextReplyText =
         replyDeliveryMode === 'letter'
           ? stripAiEnvelope(result.draftText)
-          : composePortalDraft({
+          : composeMessageDraft({
           aiText: result.draftText,
           contextText: cleanText(selectedMessage.data.bodyText),
-          portalSignature,
+          messageSignature,
           recipientName: cleanText(analysis.tenantLabel),
           recipientSalutation:
             cleanText(selectedTenant?.data.salutation) ||
@@ -475,8 +475,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
         resolveAdminSenderContact(profile, user)
       );
-      const baseBody = cleanText(replyText).endsWith(portalSignature)
-        ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+      const baseBody = cleanText(replyText).endsWith(messageSignature)
+        ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
         : cleanText(replyText);
       const subject = cleanText(selectedMessage.data.subject) || 'Antwort von Halbmann Holding';
       const uploadedAttachments =
@@ -492,7 +492,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           createdAt: serverTimestamp(),
           kind: 'reply_to_sender',
           messageId,
-          portalBodyText: cleanText(replyText),
+          messageBodyText: cleanText(replyText),
           propertyId: cleanText(selectedProperty?.id),
           recipientEmail,
           recipientId: cleanText(selectedTenant?.id) || null,
@@ -557,7 +557,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
         await addDoc(collection(db, 'messages'), {
           attachments: [],
           bodyHtml: letterHtml,
-          bodyText: [baseBody, buildPortalSignatureText(signature)].filter(Boolean).join('\n\n'),
+          bodyText: [baseBody, buildMessageSignatureText(signature)].filter(Boolean).join('\n\n'),
           channel: 'letter',
           createdAt: serverTimestamp(),
           deliveryMode: replyDeliveryMode,

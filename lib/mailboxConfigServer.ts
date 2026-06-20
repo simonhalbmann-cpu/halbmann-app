@@ -1,6 +1,6 @@
-import { getAdminDb } from './firebaseAdmin';
+﻿import { getAdminDb } from './firebaseAdmin';
 import { readLocalMailboxSettings } from './localMailboxConfig';
-import { PORTAL_INBOX_EMAIL } from './mailbox';
+import { DEFAULT_INBOX_EMAIL } from './mailbox';
 import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID, type MailboxSettings } from './mailboxSettings';
 
 function cleanText(value: unknown) {
@@ -15,7 +15,7 @@ function cleanMailboxHeaderText(value: unknown) {
 }
 
 function normalizeMailboxSettings(data: Partial<MailboxSettings>): MailboxSettings {
-  const inboxEmail = cleanText(data.inboxEmail) || PORTAL_INBOX_EMAIL;
+  const inboxEmail = cleanText(data.inboxEmail) || DEFAULT_INBOX_EMAIL;
   const imapUser = cleanText(data.imapUser) || inboxEmail;
   const smtpUser = cleanText(data.smtpUser) || imapUser || inboxEmail;
   const imapPassword = cleanText(data.imapPassword) || cleanText(data.smtpPassword);
@@ -74,8 +74,8 @@ function blankMailboxSettings(): MailboxSettings {
     imapHost: 'imap.ionos.de',
     imapPassword: '',
     imapPort: '993',
-    imapUser: PORTAL_INBOX_EMAIL,
-    inboxEmail: PORTAL_INBOX_EMAIL,
+    imapUser: DEFAULT_INBOX_EMAIL,
+    inboxEmail: DEFAULT_INBOX_EMAIL,
     mailFooterDivider: true,
     mailFooterFontFamily: 'Segoe UI, Arial, sans-serif',
     mailFooterFontSize: '12',
@@ -89,7 +89,7 @@ function blankMailboxSettings(): MailboxSettings {
     smtpHost: 'smtp.ionos.de',
     smtpPassword: '',
     smtpPort: '587',
-    smtpUser: PORTAL_INBOX_EMAIL,
+    smtpUser: DEFAULT_INBOX_EMAIL,
   });
 }
 

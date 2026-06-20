@@ -72,60 +72,6 @@ const cleanText = (value: unknown) =>
   typeof value === 'string' ? value.trim() : '';
 
 const LOGOUT_IN_PROGRESS_KEY = 'halbmann-logout-in-progress';
-const JSON_HTML_ERROR_PATTERN = /Unexpected token '<'|DOCTYPE|not valid JSON/i;
-
-declare global {
-  interface Window {
-    __halbmannJsonOverlayGuardInstalled?: boolean;
-  }
-}
-
-function isHtmlJsonSyntaxError(value: unknown) {
-  return (
-    value instanceof SyntaxError &&
-    JSON_HTML_ERROR_PATTERN.test(value.message)
-  );
-}
-
-function containsHtmlJsonSyntaxError(values: unknown[]) {
-  return values.some((value) => {
-    if (isHtmlJsonSyntaxError(value)) return true;
-    if (typeof value === 'string') return JSON_HTML_ERROR_PATTERN.test(value);
-    return false;
-  });
-}
-
-function installJsonOverlayGuard() {
-  if (typeof window === 'undefined' || window.__halbmannJsonOverlayGuardInstalled) return;
-  window.__halbmannJsonOverlayGuardInstalled = true;
-
-  const originalError = console.error.bind(console);
-  const originalWarn = console.warn.bind(console);
-
-  console.error = (...args: unknown[]) => {
-    if (containsHtmlJsonSyntaxError(args)) return;
-    originalError(...args);
-  };
-
-  console.warn = (...args: unknown[]) => {
-    if (containsHtmlJsonSyntaxError(args)) return;
-    originalWarn(...args);
-  };
-
-  window.addEventListener('unhandledrejection', (event) => {
-    if (isHtmlJsonSyntaxError(event.reason)) {
-      event.preventDefault();
-    }
-  });
-
-  window.addEventListener('error', (event) => {
-    if (isHtmlJsonSyntaxError(event.error)) {
-      event.preventDefault();
-    }
-  });
-}
-
-installJsonOverlayGuard();
 
 function isPermissionDenied(caughtError: unknown) {
   return (

@@ -1,4 +1,4 @@
-function cleanText(value: unknown) {
+﻿function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
@@ -32,7 +32,7 @@ function removeLeadingGreetingClause(text: string) {
 function inferSalutationFromContext(contextText: string) {
   const source = cleanText(contextText);
   if (!source) return '';
-  const match = source.match(/\b(Frau|Herr)\s+([A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ-]+)/u);
+  const match = source.match(/\b(Frau|Herr)\s+([A-ZÃ„Ã–Ãœ][a-zÃ¤Ã¶Ã¼ÃŸA-ZÃ„Ã–Ãœ-]+)/u);
   if (!match) return '';
   return cleanText(match[1]);
 }
@@ -40,7 +40,7 @@ function inferSalutationFromContext(contextText: string) {
 function normalizeSalutation(value: string) {
   const normalized = cleanText(value).toLocaleLowerCase('de-DE');
   if (['frau', 'ms', 'mrs', 'w', 'weiblich'].includes(normalized)) return 'Frau';
-  if (['herr', 'mr', 'm', 'männlich', 'maennlich'].includes(normalized)) return 'Herr';
+  if (['herr', 'mr', 'm', 'mÃ¤nnlich', 'maennlich'].includes(normalized)) return 'Herr';
   return cleanText(value);
 }
 
@@ -94,7 +94,7 @@ export function stripAiEnvelope(text: string) {
   }
 
   const closingIndex = lines.findIndex((line) =>
-    /^(mit freundlichen grüßen|mit freundlichem gruß|freundliche grüße|viele grüße|beste grüße|besten dank)\b/i.test(
+    /^(mit freundlichen grÃ¼ÃŸen|mit freundlichem gruÃŸ|freundliche grÃ¼ÃŸe|viele grÃ¼ÃŸe|beste grÃ¼ÃŸe|besten dank)\b/i.test(
       cleanText(line)
     )
   );
@@ -109,16 +109,16 @@ export function stripAiEnvelope(text: string) {
   return removeLeadingGreetingClause(content);
 }
 
-export function composePortalDraft({
+export function composeMessageDraft({
   aiText,
   contextText,
-  portalSignature,
+  messageSignature,
   recipientName,
   recipientSalutation,
 }: {
   aiText: string;
   contextText?: string;
-  portalSignature?: string;
+  messageSignature?: string;
   recipientName?: string;
   recipientSalutation?: string;
 }) {
@@ -129,5 +129,5 @@ export function composePortalDraft({
   });
   const body = stripAiEnvelope(aiText);
 
-  return [greeting, body, cleanText(portalSignature)].filter(Boolean).join('\n\n').trim();
+  return [greeting, body, cleanText(messageSignature)].filter(Boolean).join('\n\n').trim();
 }

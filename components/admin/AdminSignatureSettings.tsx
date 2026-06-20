@@ -11,7 +11,7 @@ import {
   cleanSignatureText,
   createSignatureRecord,
   EMAIL_SIGNATURE_TOKENS,
-  PORTAL_SIGNATURE_EMAIL,
+  DEFAULT_SIGNATURE_EMAIL,
   type SignatureRecord,
 } from '../../lib/signatures';
 import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
@@ -218,7 +218,7 @@ export default function AdminSignatureSettings() {
       signatureCompanyName: cleanSignatureText(nextForm.companyName),
       signatureCountry: cleanSignatureText(nextForm.country),
       signatureDepartment: cleanSignatureText(nextForm.department),
-      signatureEmail: PORTAL_SIGNATURE_EMAIL,
+      signatureEmail: DEFAULT_SIGNATURE_EMAIL,
       signatureEmailTemplateHtml: cleanSignatureText(nextForm.emailTemplateHtml),
       signatureFontBold: nextForm.fontBold,
       signatureFontFamily: cleanSignatureText(nextForm.fontFamily),
@@ -453,7 +453,7 @@ export default function AdminSignatureSettings() {
                   label="E-Mail"
                   onChange={() => undefined}
                   readOnly
-                  value={PORTAL_SIGNATURE_EMAIL}
+                  value={DEFAULT_SIGNATURE_EMAIL}
                 />
                 <Field label="Website" onChange={(value) => updateField('website', value)} value={form.website} />
                 <Field label="Registergericht" onChange={(value) => updateField('registerCourt', value)} value={form.registerCourt} />

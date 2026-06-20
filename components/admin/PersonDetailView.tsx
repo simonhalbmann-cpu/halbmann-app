@@ -15,9 +15,9 @@ import {
   sanitizeStorageFileName,
   type StoredDocumentEntry,
 } from '../../lib/tenantDocuments';
-import { composePortalDraft } from '../../lib/draftComposer';
+import { composeMessageDraft } from '../../lib/draftComposer';
 import { personDocumentFields } from './personConfig';
-import { buildLetterHtml, buildPortalSignatureText, createSignatureRecord, mergeBodyWithSignature } from '../../lib/signatures';
+import { buildLetterHtml, buildMessageSignatureText, createSignatureRecord, mergeBodyWithSignature } from '../../lib/signatures';
 import { applyAdminSenderToSignature, resolveAdminSenderContact } from './adminSenderSignature';
 import DocumentUploadControl from './DocumentUploadControl';
 import DocumentLibrarySection from './DocumentLibrarySection';
@@ -419,7 +419,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     companies.find((entry) => cleanText(entry.id) === cleanText(selectedProperty?.data.ownerId)) ??
     companies.find((entry) => cleanText(entry.data.name) === cleanText(person?.partnerCompanyName || person?.companyName)) ??
     null;
-  const portalSignature = buildPortalSignatureText(
+  const messageSignature = buildMessageSignatureText(
     applyAdminSenderToSignature(
       createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
       resolveAdminSenderContact(profile, user)
@@ -866,7 +866,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
               subject: entry.subject,
             })),
           }),
-          currentBody: stripTrailingSignature(cleanText(replyText), portalSignature),
+          currentBody: stripTrailingSignature(cleanText(replyText), messageSignature),
           instruction:
             contextMode === 'new'
               ? [aiInstruction, 'Es handelt sich um eine neue Nachricht. FrÃ¼here Themen nur erwÃ¤hnen, wenn ich das ausdrÃ¼cklich sage.']
@@ -887,10 +887,10 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         throw new Error(result.error || 'Der KI-Entwurf konnte nicht erzeugt werden.');
       }
       setReplyText(
-        composePortalDraft({
+        composeMessageDraft({
           aiText: result.draftText,
           contextText: cleanText(latestInbound?.data.bodyText),
-          portalSignature,
+          messageSignature,
           recipientName: [cleanText(person.firstName), cleanText(person.lastName)].filter(Boolean).join(' '),
           recipientSalutation: cleanText(person.salutation),
         })
@@ -956,8 +956,8 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           createSignatureRecord((selectedCompany?.data as Record<string, unknown>) ?? null),
           resolveAdminSenderContact(profile, user)
         );
-        const baseBody = cleanText(replyText).endsWith(portalSignature)
-          ? cleanText(replyText).slice(0, cleanText(replyText).length - portalSignature.length).trimEnd()
+        const baseBody = cleanText(replyText).endsWith(messageSignature)
+          ? cleanText(replyText).slice(0, cleanText(replyText).length - messageSignature.length).trimEnd()
           : cleanText(replyText);
         const uploadedAttachments =
           personDeliveryMode === 'email' || personDeliveryMode === 'both'
@@ -975,7 +975,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
             createdAt: serverTimestamp(),
             kind: 'service_request',
             messageId: activeThemeId,
-            portalBodyText: [baseBody, portalSignature].filter(Boolean).join('\n\n'),
+            messageBodyText: [baseBody, messageSignature].filter(Boolean).join('\n\n'),
             propertyId: cleanText(selectedProperty?.id),
             recipientEmail: cleanText(person.email),
             recipientId: personId,

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+﻿import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { FieldValue } from 'firebase-admin/firestore';
 import { NextResponse } from 'next/server';
@@ -15,7 +15,7 @@ import {
   createSignatureRecord,
   type SignatureRecord,
 } from '../../../../lib/signatures';
-import { sendPortalEmail } from '../../../../lib/smtp';
+import { sendMailboxEmail } from '../../../../lib/smtp';
 
 export const runtime = 'nodejs';
 
@@ -293,7 +293,7 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join('');
     const draftAttachments = readDraftAttachments(draft.attachments);
-    const sendInfo = await sendPortalEmail({
+    const sendInfo = await sendMailboxEmail({
       attachments: [...(inlineLogo ? [inlineLogo.attachment] : []), ...draftAttachments],
       html: wrapEmailHtmlDocument(finalHtmlBody) || undefined,
       subject,
@@ -323,7 +323,7 @@ export async function POST(request: Request) {
     const outboundMessagePayload = {
       attachments: Array.isArray(draft.attachments) ? draft.attachments : [],
       bodyHtml: '',
-      bodyText: cleanText(draft.portalBodyText) || body,
+      bodyText: cleanText(draft.messageBodyText) || cleanText(draft.portalBodyText) || body,
       category: '',
       channel: 'email',
       createdAt: nowValue,
@@ -368,7 +368,7 @@ export async function POST(request: Request) {
         await db!.collection('ticketEvents').add(eventPayload);
         await db!.collection('tickets').doc(ticketId).set(
           {
-            nextStep: 'Auf Rückmeldung warten',
+            nextStep: 'Auf RÃ¼ckmeldung warten',
             updatedAt: nowValue,
           },
           { merge: true }
@@ -381,7 +381,7 @@ export async function POST(request: Request) {
           ticketId,
           {
             ...ticketRecord.data,
-            nextStep: 'Auf Rückmeldung warten',
+            nextStep: 'Auf RÃ¼ckmeldung warten',
             updatedAt: nowValue,
           },
           authToken

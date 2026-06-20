@@ -2139,3 +2139,11 @@ pm run build (gruen).
 - Neue manuelle Nachrichten in der allgemeinen Nachrichtenuebersicht schreiben `channel: 'email'` statt `channel: 'portal'`; alte `portal`-Eintraege bleiben nur als historische Nachrichten lesbar.
 - Next-Typegen wurde nach dem Loeschen der Routen aktualisiert; stale `.next/dev/types` wurde entfernt.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`; die Build-Route-Liste enthaelt keine Portal-API-Routen mehr.
+
+## 2026-06-20 - Release-Cleanup nach Portalentfernung
+- Der gruene Portal-Cleanup wurde als Commit `5841d0a` (`Remove unused tenant portal`) gesichert.
+- Die temporaeren JSON/DOCTYPE-Overlay-Guards wurden aus `app/layout.tsx` und `components/ProtectedAreaLayout.tsx` entfernt, damit echte JSON-/Fetch-Fehler wieder sichtbar werden.
+- Release-Hygiene: `.ai-settings.local.json` und `firebase-debug.log` wurden aus dem Git-Index entfernt und bleiben lokal; `.ai-settings.local.json` ist jetzt in `.gitignore` eingetragen. `.next-dev.*`, `.portal-*.local.json`, `.env.local`, Mailbox- und Message-Themes-Local-Dateien sind ignoriert.
+- Gefahrlos umbenannte interne Portal-Begriffe: `PORTAL_INBOX_EMAIL` -> `DEFAULT_INBOX_EMAIL`, `sendPortalEmail` -> `sendMailboxEmail`, `composePortalDraft` -> `composeMessageDraft`, `buildPortalSignatureText` -> `buildMessageSignatureText`, `PORTAL_SIGNATURE_EMAIL` -> `DEFAULT_SIGNATURE_EMAIL`, `portalBodyText` -> `messageBodyText` fuer neue Payloads.
+- Rueckwaertskompatibilitaet bleibt erhalten: `app/api/message-drafts/send` akzeptiert alte `portalBodyText`-Entwuerfe weiterhin, und Signatur-Firestore-Felder wie `signaturePortalClosing` bleiben bestehen.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.

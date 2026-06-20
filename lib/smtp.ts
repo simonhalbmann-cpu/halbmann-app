@@ -1,5 +1,5 @@
-import nodemailer from 'nodemailer';
-import { PORTAL_INBOX_EMAIL } from './mailbox';
+﻿import nodemailer from 'nodemailer';
+import { DEFAULT_INBOX_EMAIL } from './mailbox';
 import { getMailboxSettingsServer } from './mailboxConfigServer';
 
 export async function getSmtpTransport() {
@@ -8,7 +8,7 @@ export async function getSmtpTransport() {
     throw new Error('Das E-Mail-Postfach ist deaktiviert.');
   }
   if (!settings.smtpHost || !settings.smtpPort || !settings.smtpUser || !settings.smtpPassword) {
-    throw new Error('Mailbox-Einstellungen für SMTP sind unvollständig.');
+    throw new Error('Mailbox-Einstellungen fÃ¼r SMTP sind unvollstÃ¤ndig.');
   }
   return nodemailer.createTransport({
     auth: { pass: settings.smtpPassword, user: settings.smtpUser },
@@ -18,7 +18,7 @@ export async function getSmtpTransport() {
   });
 }
 
-export async function sendPortalEmail(args: {
+export async function sendMailboxEmail(args: {
   attachments?: Array<{
     cid?: string;
     content?: Buffer | string;
@@ -35,7 +35,7 @@ export async function sendPortalEmail(args: {
   const settings = await getMailboxSettingsServer();
   return transporter.sendMail({
     attachments: args.attachments,
-    from: `"Halbmann Holding" <${settings.inboxEmail || PORTAL_INBOX_EMAIL}>`,
+    from: `"Halbmann Holding" <${settings.inboxEmail || DEFAULT_INBOX_EMAIL}>`,
     html: args.html,
     subject: args.subject,
     text: args.text,
