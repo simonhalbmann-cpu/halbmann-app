@@ -371,7 +371,7 @@ export default function AdminEmployeeSettings({
           </p>
           <h2 className="mt-2 text-3xl text-slate-950">Verwalterzugänge</h2>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-            Hier werden Verwalter angelegt und deren Absenderdaten für E-Mails, Portal-Antworten und Briefe gepflegt.
+            Hier werden Verwalter angelegt und deren Absenderdaten für E-Mails und Briefe gepflegt.
           </p>
         </div>
         <button

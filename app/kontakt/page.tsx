@@ -20,9 +20,9 @@ export default function KontaktPage() {
               Kontakt zur Halbmann Holding
             </h1>
             <p className="mt-6 text-lg leading-8 text-slate-600">
-              Für allgemeine Anfragen erreichen Sie uns direkt in Berlin. Für
-              portalbezogene Themen nutzen Mieter und Verwaltung bitte ihren
-              jeweiligen Login-Bereich auf der Startseite.
+              Für allgemeine Anfragen erreichen Sie uns direkt in Berlin.
+              Mieter und Verwaltung nutzen für laufende Anliegen bitte die
+              bekannten direkten Kontaktwege.
             </p>
           </div>
 

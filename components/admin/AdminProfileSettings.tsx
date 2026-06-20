@@ -93,7 +93,7 @@ export default function AdminProfileSettings() {
         </p>
         <h2 className="mt-2 text-3xl text-slate-950">Mein Profil</h2>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-          Diese Daten werden bei ausgehenden E-Mails, Portal-Antworten und Briefen als Absenderdaten des angemeldeten Verwalters genutzt.
+          Diese Daten werden bei ausgehenden E-Mails und Briefen als Absenderdaten des angemeldeten Verwalters genutzt.
         </p>
       </div>
 

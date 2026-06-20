@@ -2118,3 +2118,24 @@ pm run build (gruen).
 - `lib/auth.ts` kennt nur noch die Rolle `admin`; Portal-Routing und Portal-Profilfelder wurden entfernt.
 - `components/ProtectedAreaLayout.tsx` laedt keinen Portal-Kontext mehr und enthaelt keine mobile Portalnavigation/Portal-Logoutlogik mehr.
 - Verifiziert mit `npm run build` und `npx tsc --noEmit`; die Next-Route-Liste ist von 47 auf 35 Eintraege geschrumpft.
+## 2026-06-17 - Mobile JSON-Fehlermeldung nach Portal-Cleanup behoben
+- Nach dem Entfernen des oeffentlichen Mieterportals wurden automatische Polling-Aufrufe auf `/api/admin/local-portal-messages` aus Dashboard, Nachrichtenuebersicht, Mieter-Detail und Nachrichten-Detail entfernt.
+- Ursache der mobilen Fehlermeldung war ein JSON-Parse auf eine HTML-Antwort (`<!DOCTYPE ...`), ausgelöst durch alte Portal-Pollingpfade nach dem Cleanup.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`; Dev-Server wurde auf `0.0.0.0:3000` neu gestartet und `/admin` antwortet mit HTTP 200.
+## 2026-06-17 - JSON/DOCTYPE Overlay weiter entschaerft
+- Automatische JSON-Loader geben keine `SyntaxError`-Objekte mehr an `console.warn/error` weiter, wenn eine HTML-Antwort statt JSON kommt.
+- `ProtectedAreaLayout.tsx` faengt genau den Dev-Overlay-Fall `Unexpected token '<' / DOCTYPE / not valid JSON` global ab, damit alte/kurzzeitige Nicht-JSON-Antworten die mobile Ansicht nicht blockieren.
+- Der automatische Mail-Sync ignoriert Nicht-JSON-Antworten still statt daraus einen Console-SyntaxError zu machen.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-20 - Mieterportal-Cleanup abgeschlossen
+- Die verbliebenen deaktivierten Portal-API-Stubs unter `app/api/admin` wurden entfernt: `local-portal-messages`, `portal-access`, `portal-access-secret`, `portal-invitation` und `portal-invitation-settings`.
+- Nicht mehr genutzte Portal-Helfer in `lib/` wurden geloescht, inklusive lokaler Portalzugang-/Session-/Einladungs-/Nachrichten- und Secret-Module.
+- `AdminPortalInvitationSettings` wurde entfernt; Mieter- und Kontaktansichten enthalten keine Portaleinladungsfunktion und kein Einladungsmodal mehr.
+- `TenantAdminManager` legt keine Portalzugaenge mehr an, laedt keine Portalpasswoerter mehr und enthaelt kein verstecktes Portalzugangsformular mehr.
+- Reine Brief-Verlaufseintraege werden nicht mehr ueber lokale Portalnachrichten geschrieben, sondern direkt als normale `messages`-Dokumente gespeichert.
+- Dashboard, Nachrichtenuebersicht, Nachrichtendetail und Mieterdetail verwenden keine `localPortalMessages`-States mehr.
+- Sichtbare Portaltexte wurden neutralisiert: Admin-Nachrichtenheader, Kontaktseite, Profil-/Mitarbeitertexte, Berechtigungsbeschreibung und Signatur-UI sprechen nicht mehr vom Portal.
+- Neue manuelle Nachrichten in der allgemeinen Nachrichtenuebersicht schreiben `channel: 'email'` statt `channel: 'portal'`; alte `portal`-Eintraege bleiben nur als historische Nachrichten lesbar.
+- Next-Typegen wurde nach dem Loeschen der Routen aktualisiert; stale `.next/dev/types` wurde entfernt.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`; die Build-Route-Liste enthaelt keine Portal-API-Routen mehr.

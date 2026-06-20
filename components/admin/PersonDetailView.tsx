@@ -65,7 +65,7 @@ const preferredContactMethodLabels: Record<string, string> = {
   email: 'E-Mail',
   phone: 'Telefon',
   mobile: 'Mobil',
-  portal: 'Portal',
+  portal: 'Online',
   mail: 'Post',
 };
 
@@ -144,7 +144,6 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   const [message, setMessage] = useState('');
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [deletingDocumentPath, setDeletingDocumentPath] = useState('');
-  const [showInvitationSentModal, setShowInvitationSentModal] = useState(false);
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
   const [isPending, startTransition] = useTransition();
   const contactThemeTenantId = `contact:${personId}`;
@@ -210,16 +209,16 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     async function loadMessageThemes() {
       try {
         const response = await authorizedFetch('/api/admin/message-themes');
-        const result = (await response.json()) as {
+        const result = (await response.json().catch(() => null)) as {
           ok?: boolean;
           themes?: LocalMessageTheme[];
-        };
+        } | null;
 
-        if (!cancelled && response.ok && result.ok) {
+        if (!cancelled && response.ok && result?.ok) {
           setMessageThemes(Array.isArray(result.themes) ? result.themes : []);
         }
-      } catch (caughtError) {
-        console.error('Fehler beim Laden der Themen im Dienstleisterbereich:', caughtError);
+      } catch {
+        console.warn('Fehler beim Laden der Themen im Dienstleisterbereich.');
       }
     }
 
@@ -1098,35 +1097,6 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
     });
   }
 
-  function sendPortalInvitation() {
-    startTransition(async () => {
-      setMessage('');
-      setError('');
-      try {
-        const response = await authorizedFetch('/api/admin/portal-invitation', {
-          body: JSON.stringify({
-            targetId: personId,
-            targetType: 'contact',
-          }),
-          method: 'POST',
-        });
-        const result = (await response.json()) as { error?: string; ok?: boolean };
-        if (!response.ok || !result.ok) {
-          throw new Error(result.error || 'Die Einladung konnte nicht versendet werden.');
-        }
-        setMessage('Einladung mit Zugangsdaten wurde per E-Mail versendet.');
-        setShowInvitationSentModal(true);
-      } catch (caughtError) {
-        console.error('Fehler beim Versand der Portaleinladung:', caughtError);
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'Die Einladung konnte nicht versendet werden.'
-        );
-      }
-    });
-  }
-
   const personMessageActionBar = (
     <div className="border-b border-stone-200 py-3">
       <div className="grid gap-2 lg:grid-cols-[150px_minmax(180px,280px)_minmax(180px,1fr)_34px] lg:items-center">
@@ -1219,23 +1189,6 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
 
   return (
     <div className="admin-page space-y-4">
-      {showInvitationSentModal ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
-          <div className="w-full max-w-sm rounded-[20px] border border-stone-200 bg-white px-5 py-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
-            <p className="text-lg font-medium text-slate-950">Einladung wurde verschickt.</p>
-            <div className="mt-5 flex justify-end">
-              <button
-                className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
-                onClick={() => setShowInvitationSentModal(false)}
-                type="button"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-sm text-slate-700">
           <span>Ansicht</span>

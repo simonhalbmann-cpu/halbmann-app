@@ -15,7 +15,6 @@ export default async function TenantDetailPage(
       detailLayout="messages"
       selectedMessageId={selectedMessageId}
       showEditButton={false}
-      showInvitationButton={false}
       showOverviewButton={false}
       tenantId={id}
     />

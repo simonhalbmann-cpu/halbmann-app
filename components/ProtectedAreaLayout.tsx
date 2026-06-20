@@ -72,6 +72,60 @@ const cleanText = (value: unknown) =>
   typeof value === 'string' ? value.trim() : '';
 
 const LOGOUT_IN_PROGRESS_KEY = 'halbmann-logout-in-progress';
+const JSON_HTML_ERROR_PATTERN = /Unexpected token '<'|DOCTYPE|not valid JSON/i;
+
+declare global {
+  interface Window {
+    __halbmannJsonOverlayGuardInstalled?: boolean;
+  }
+}
+
+function isHtmlJsonSyntaxError(value: unknown) {
+  return (
+    value instanceof SyntaxError &&
+    JSON_HTML_ERROR_PATTERN.test(value.message)
+  );
+}
+
+function containsHtmlJsonSyntaxError(values: unknown[]) {
+  return values.some((value) => {
+    if (isHtmlJsonSyntaxError(value)) return true;
+    if (typeof value === 'string') return JSON_HTML_ERROR_PATTERN.test(value);
+    return false;
+  });
+}
+
+function installJsonOverlayGuard() {
+  if (typeof window === 'undefined' || window.__halbmannJsonOverlayGuardInstalled) return;
+  window.__halbmannJsonOverlayGuardInstalled = true;
+
+  const originalError = console.error.bind(console);
+  const originalWarn = console.warn.bind(console);
+
+  console.error = (...args: unknown[]) => {
+    if (containsHtmlJsonSyntaxError(args)) return;
+    originalError(...args);
+  };
+
+  console.warn = (...args: unknown[]) => {
+    if (containsHtmlJsonSyntaxError(args)) return;
+    originalWarn(...args);
+  };
+
+  window.addEventListener('unhandledrejection', (event) => {
+    if (isHtmlJsonSyntaxError(event.reason)) {
+      event.preventDefault();
+    }
+  });
+
+  window.addEventListener('error', (event) => {
+    if (isHtmlJsonSyntaxError(event.error)) {
+      event.preventDefault();
+    }
+  });
+}
+
+installJsonOverlayGuard();
 
 function isPermissionDenied(caughtError: unknown) {
   return (
@@ -136,9 +190,9 @@ function getHeaderContent(pathname: string, fallbackTitle: string) {
   }> = [
     {
       path: '/admin/nachrichten',
-      title: 'Eingang für Portal, E-Mail und Folgeaktionen',
+      title: 'Eingang für E-Mail und Folgeaktionen',
       description:
-        'Hier laufen Nachrichten aus dem Portal und von portal@halbmann-holding.de zusammen. Sie werden zugeordnet, bewertet und direkt in bearbeitbare Vorgänge überführt.',
+        'Hier laufen Nachrichten aus dem Postfach zusammen. Sie werden zugeordnet, bewertet und direkt in bearbeitbare Vorgänge überführt.',
     },
     {
       path: '/admin',
@@ -537,12 +591,15 @@ export default function ProtectedAreaLayout({
           },
           method: 'POST',
         });
-        const result = (await response.json()) as {
+        const result = (await response.json().catch(() => null)) as {
           count?: number;
           emails?: SyncedInboundEmail[];
           error?: string;
           ok?: boolean;
-        };
+        } | null;
+        if (!result) {
+          return;
+        }
         if (!response.ok || !result.ok) {
           throw new Error(result.error || 'Mail-Sync fehlgeschlagen.');
         }
@@ -556,8 +613,7 @@ export default function ProtectedAreaLayout({
             count > 0 ? `${count} neue E-Mails wurden beim Einstieg übernommen.` : 'Postfach beim Einstieg synchronisiert.'
           );
         }
-      } catch (error) {
-        console.warn('Fehler beim automatischen Mail-Sync:', error);
+      } catch {
         if (!isCancelled) {
           setMailSyncNote('');
         }

@@ -50,7 +50,6 @@ type TenantDetailViewProps = {
   messageHrefBuilder?: (tenantId: string, messageId: string) => string;
   selectedMessageId?: string;
   showEditButton?: boolean;
-  showInvitationButton?: boolean;
   showOverviewButton?: boolean;
   showSecondaryDetails?: boolean;
   sectionTitle?: string;
@@ -324,7 +323,6 @@ export default function TenantDetailView({
   messageHrefBuilder = buildTenantMessageHref,
   selectedMessageId = '',
   showEditButton = true,
-  showInvitationButton = true,
   showOverviewButton = true,
   showSecondaryDetails = true,
   sectionTitle = 'Kommunikation',
@@ -335,7 +333,6 @@ export default function TenantDetailView({
   const [tenant, setTenant] = useState<DocumentData | null>(null);
   const [allTenants, setAllTenants] = useState<WorkflowRecord[]>([]);
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
-  const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
   const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
   const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
@@ -361,7 +358,6 @@ export default function TenantDetailView({
   const [themeSearch, setThemeSearch] = useState('');
   const [vendorContactId, setVendorContactId] = useState('');
   const [themePendingDeleteId, setThemePendingDeleteId] = useState('');
-  const [showInvitationSentModal, setShowInvitationSentModal] = useState(false);
   const [isUploadingTenantDocument, setIsUploadingTenantDocument] = useState(false);
   const [deletingTenantDocumentPath, setDeletingTenantDocumentPath] = useState('');
   const [isGeneratingAiDraft, setIsGeneratingAiDraft] = useState(false);
@@ -441,50 +437,19 @@ export default function TenantDetailView({
     if (!user) return;
     let cancelled = false;
 
-    async function loadLocalPortalMessages() {
-      try {
-        const response = await authorizedFetch('/api/admin/local-portal-messages');
-        const result = (await response.json()) as {
-          messages?: WorkflowRecord[];
-          ok?: boolean;
-        };
-
-        if (!cancelled && response.ok && result.ok) {
-          setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
-        }
-      } catch (caughtError) {
-        console.warn('Fehler beim Laden der lokalen Portalnachrichten im Mieterbereich:', caughtError);
-      }
-    }
-
-    void loadLocalPortalMessages();
-    const intervalId = window.setInterval(() => {
-      void loadLocalPortalMessages();
-    }, 15000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
     async function loadMessageThemes() {
       try {
         const response = await authorizedFetch('/api/admin/message-themes');
-        const result = (await response.json()) as {
+        const result = (await response.json().catch(() => null)) as {
           ok?: boolean;
           themes?: LocalMessageTheme[];
-        };
+        } | null;
 
-        if (!cancelled && response.ok && result.ok) {
+        if (!cancelled && response.ok && result?.ok) {
           setMessageThemes(Array.isArray(result.themes) ? result.themes : []);
         }
-      } catch (caughtError) {
-        console.warn('Fehler beim Laden der Themen im Mieterbereich:', caughtError);
+      } catch {
+        console.warn('Fehler beim Laden der Themen im Mieterbereich.');
       }
     }
 
@@ -628,13 +593,12 @@ export default function TenantDetailView({
   }, [tenant?.depositAmount, tenant?.depositType]);
 
   const messages = useMemo(() => {
-    const combined = [...firestoreMessages, ...localPortalMessages];
     const unique = new Map<string, WorkflowRecord>();
-    combined.forEach((record) => {
+    firestoreMessages.forEach((record) => {
       unique.set(record.id, record);
     });
     return Array.from(unique.values());
-  }, [firestoreMessages, localPortalMessages]);
+  }, [firestoreMessages]);
 
   const tenantMessages = useMemo(
     () =>
@@ -1099,13 +1063,13 @@ export default function TenantDetailView({
         })
       )
       .then(async (response) => {
-        const result = (await response.json()) as { ok?: boolean; settings?: { inboxEmail?: string } };
-        if (!cancelled && response.ok && result.ok && cleanText(result.settings?.inboxEmail)) {
+        const result = (await response.json().catch(() => null)) as { ok?: boolean; settings?: { inboxEmail?: string } } | null;
+        if (!cancelled && response.ok && result?.ok && cleanText(result.settings?.inboxEmail)) {
           setSenderEmail(cleanText(result.settings?.inboxEmail));
         }
       })
-      .catch((caughtError) => {
-        console.error('Fehler beim Laden der Postfach-Einstellungen im Mieterbereich:', caughtError);
+      .catch(() => {
+        console.warn('Fehler beim Laden der Postfach-Einstellungen im Mieterbereich.');
       });
 
     return () => {
@@ -1721,57 +1685,29 @@ export default function TenantDetailView({
     const currentThemeId = cleanText(payload.themeId) || cleanText(selectedTheme?.id);
     if (!currentThemeId) return;
     const createdAt = new Date().toISOString();
-    await authorizedFetch('/api/admin/local-portal-messages', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'append',
-        bodyText: payload.bodyText,
-        createdAt,
-        entryType: payload.entryType,
-        messageId: entryId,
-        propertyId: cleanText(tenant?.propertyId),
-        recipientEmail: cleanText(payload.recipientEmail),
-        recipientId: cleanText(payload.recipientId) || tenantId,
-        recipientName: cleanText(payload.recipientName),
-        recipientType: payload.recipientType,
-        relatedMessageId: currentThemeId,
-        deliveryMode: payload.deliveryMode,
-        status: payload.visibleToTenant ? 'sent' : 'in_progress',
-        subject: payload.subject,
-        tenantId,
-        unitId: cleanText(tenant?.unitId),
-        visibleToTenant: payload.visibleToTenant,
-      }),
+    await addDoc(collection(db, 'messages'), {
+      bodyText: payload.bodyText,
+      channel: payload.deliveryMode === 'letter' ? 'letter' : 'admin',
+      createdAt: serverTimestamp(),
+      deliveryMode: payload.deliveryMode,
+      direction: 'outbound',
+      entryType: payload.entryType,
+      fromEmail: senderEmail,
+      fromName: 'Halbmann Holding',
+      priority: 'normal',
+      propertyId: cleanText(tenant?.propertyId),
+      receivedAt: serverTimestamp(),
+      recipientEmail: cleanText(payload.recipientEmail),
+      recipientId: cleanText(payload.recipientId) || tenantId,
+      recipientName: cleanText(payload.recipientName),
+      recipientType: payload.recipientType,
+      relatedMessageId: currentThemeId,
+      status: payload.visibleToTenant ? 'sent' : 'in_progress',
+      subject: payload.subject,
+      tenantId,
+      unitId: cleanText(tenant?.unitId),
+      visibleToTenant: payload.visibleToTenant,
     });
-    setLocalPortalMessages((current) => [
-      {
-        data: {
-          bodyText: payload.bodyText,
-          channel: 'portal',
-          createdAt,
-          direction: 'outbound',
-          entryType: payload.entryType,
-          fromEmail: senderEmail,
-          fromName: 'Halbmann Holding',
-          priority: 'normal',
-          propertyId: cleanText(tenant?.propertyId),
-          receivedAt: createdAt,
-          recipientEmail: cleanText(payload.recipientEmail),
-          recipientId: cleanText(payload.recipientId) || tenantId,
-          recipientName: cleanText(payload.recipientName),
-          recipientType: payload.recipientType,
-          relatedMessageId: currentThemeId,
-          deliveryMode: payload.deliveryMode,
-          status: payload.visibleToTenant ? 'sent' : 'in_progress',
-          subject: payload.subject,
-          tenantId,
-          unitId: cleanText(tenant?.unitId),
-          visibleToTenant: payload.visibleToTenant,
-        },
-        id: entryId,
-      },
-      ...current,
-    ]);
     setMessageThemes((current) => {
       const nextTitle =
         cleanText(payload.subject) ||
@@ -2227,35 +2163,6 @@ export default function TenantDetailView({
     } finally {
       setIsGeneratingAiDraft(false);
     }
-  }
-
-  function sendPortalInvitation() {
-    startTransition(async () => {
-      setMessage('');
-      setError('');
-      try {
-        const response = await authorizedFetch('/api/admin/portal-invitation', {
-          body: JSON.stringify({
-            targetId: tenantId,
-            targetType: 'tenant',
-          }),
-          method: 'POST',
-        });
-        const result = (await response.json()) as { error?: string; ok?: boolean };
-        if (!response.ok || !result.ok) {
-          throw new Error(result.error || 'Die Einladung konnte nicht versendet werden.');
-        }
-        setMessage('Einladung mit Zugangsdaten wurde per E-Mail versendet.');
-        setShowInvitationSentModal(true);
-      } catch (caughtError) {
-        console.error('Fehler beim Versand der Portaleinladung:', caughtError);
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'Die Einladung konnte nicht versendet werden.'
-        );
-      }
-    });
   }
 
   function sendReply() {
@@ -3199,7 +3106,7 @@ export default function TenantDetailView({
                           </span>
                         </div>
                         <p className="mt-2 truncate text-[11px] !text-slate-800">
-                          {cleanText(theme.latestInbound?.data.fromEmail) || 'Mieterportal'}
+                          {cleanText(theme.latestInbound?.data.fromEmail) || 'Nachricht'}
                         </p>
                         <p className="mt-1 truncate text-[11px] !text-slate-900">
                           {cleanText(theme.latestEntry.data.bodyText) || 'Kein Nachrichtentext vorhanden.'}
@@ -3263,23 +3170,6 @@ export default function TenantDetailView({
                 type="button"
               >
                 Ja
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {showInvitationSentModal ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
-          <div className="w-full max-w-sm rounded-[20px] border border-stone-200 bg-white px-5 py-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
-            <p className="text-lg font-medium text-slate-950">Einladung wurde verschickt.</p>
-            <div className="mt-5 flex justify-end">
-              <button
-                className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
-                onClick={() => setShowInvitationSentModal(false)}
-                type="button"
-              >
-                OK
               </button>
             </div>
           </div>

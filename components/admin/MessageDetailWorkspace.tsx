@@ -127,7 +127,6 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const router = useRouter();
   const { profile, user } = useAuth();
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
-  const [localPortalMessages, setLocalPortalMessages] = useState<WorkflowRecord[]>([]);
   const [tickets, setTickets] = useState<WorkflowRecord[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
@@ -159,45 +158,13 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
-    async function loadLocalPortalMessages() {
-      try {
-        const response = await authorizedFetch('/api/admin/local-portal-messages');
-        const result = (await response.json()) as {
-          messages?: WorkflowRecord[];
-          ok?: boolean;
-        };
-
-        if (!cancelled && response.ok && result.ok) {
-          setLocalPortalMessages(Array.isArray(result.messages) ? result.messages : []);
-        }
-      } catch (caughtError) {
-        console.error('Fehler beim Laden der lokalen Portalnachrichten:', caughtError);
-      }
-    }
-
-    void loadLocalPortalMessages();
-    const intervalId = window.setInterval(() => {
-      void loadLocalPortalMessages();
-    }, 15000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [user]);
-
   const messages = useMemo(() => {
-    const combined = [...firestoreMessages, ...localPortalMessages];
     const unique = new Map<string, WorkflowRecord>();
-    combined.forEach((record) => {
+    firestoreMessages.forEach((record) => {
       unique.set(record.id, record);
     });
     return Array.from(unique.values());
-  }, [firestoreMessages, localPortalMessages]);
+  }, [firestoreMessages]);
 
   const selectedMessage = messages.find((record) => record.id === messageId) ?? null;
   const analysis =
@@ -832,7 +799,7 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
           {thread.map((entry) => {
             const isOutbound = cleanText(entry.data.direction) === 'outbound';
             const isLetter = cleanText(entry.data.channel) === 'letter';
-            const isPortalChat = cleanText(entry.data.channel) === 'portal';
+            const isLegacyPortalChat = cleanText(entry.data.channel) === 'portal';
             const letterHtml = cleanText(entry.data.bodyHtml);
             return (
               <article
@@ -849,8 +816,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
                       {appendDeliveryLabel(isOutbound
                         ? isLetter
                           ? 'Ausgehender Brief'
-                          : isPortalChat
-                            ? 'Ausgehende Chatnachricht'
+                          : isLegacyPortalChat
+                            ? 'Ausgehende Nachricht'
                           : 'Ausgehende Nachricht'
                         : cleanText(entry.data.fromName || entry.data.fromEmail) || 'Eingang', entry.data as Record<string, unknown>)}
                     </p>
