@@ -1286,38 +1286,54 @@ export default function MessagesWorkspace() {
     });
   }
 
+  async function permanentlyDeleteMessageRecord(record: WorkflowRecord) {
+    const externalMessageId = cleanText(record.data.messageId);
+    const externalMessageKey =
+      cleanText(record.data.externalMessageKey) ||
+      buildExternalMessageKey({
+        fromEmail: record.data.fromEmail,
+        receivedAt: record.data.receivedAt ?? record.data.createdAt,
+        subject: record.data.subject,
+        text: record.data.bodyText,
+      });
+    if (externalMessageId) {
+      await addDoc(collection(db, 'deletedMessages'), {
+        createdAt: serverTimestamp(),
+        externalMessageKey,
+        messageId: externalMessageId,
+        originalMessageDocId: record.id,
+      });
+    } else if (externalMessageKey) {
+      await addDoc(collection(db, 'deletedMessages'), {
+        createdAt: serverTimestamp(),
+        externalMessageKey,
+        originalMessageDocId: record.id,
+      });
+    }
+    await deleteDoc(doc(db, 'messages', record.id));
+  }
+
   function permanentlyDeleteMessage(record: WorkflowRecord) {
     runAction(async () => {
-      const externalMessageId = cleanText(record.data.messageId);
-      const externalMessageKey =
-        cleanText(record.data.externalMessageKey) ||
-        buildExternalMessageKey({
-          fromEmail: record.data.fromEmail,
-          receivedAt: record.data.receivedAt ?? record.data.createdAt,
-          subject: record.data.subject,
-          text: record.data.bodyText,
-        });
-      if (externalMessageId) {
-        await addDoc(collection(db, 'deletedMessages'), {
-          createdAt: serverTimestamp(),
-          externalMessageKey,
-          messageId: externalMessageId,
-          originalMessageDocId: record.id,
-        });
-      } else if (externalMessageKey) {
-        await addDoc(collection(db, 'deletedMessages'), {
-          createdAt: serverTimestamp(),
-          externalMessageKey,
-          originalMessageDocId: record.id,
-        });
-      }
-      await deleteDoc(doc(db, 'messages', record.id));
+      await permanentlyDeleteMessageRecord(record);
       setMessage('Nachricht wurde endgültig gelöscht.');
     });
   }
 
   function permanentlyDeleteTheme(theme: MessageTheme) {
     runAction(async () => {
+      const themeTenantId = cleanText(theme.tenantId);
+      if (!themeTenantId) {
+        await Promise.all(theme.records.map((record) => permanentlyDeleteMessageRecord(record)));
+        setMessageThemes((current) => current.filter((entry) => entry.id !== theme.id));
+        setPendingDeleteThemeId('');
+        if (selectedGlobalTheme?.id === theme.id) {
+          router.push(buildTabHref(currentTab === 'archive' ? 'archive' : 'inbox'));
+        }
+        setMessage('Nachricht wurde endgültig gelöscht.');
+        return;
+      }
+
       const response = await authorizedFetch('/api/admin/message-themes', {
         method: 'POST',
         body: JSON.stringify({
@@ -1328,7 +1344,7 @@ export default function MessagesWorkspace() {
           messageIds: theme.records.map((entry) => entry.id),
           sourceType: theme.sourceType || 'manual',
           status: 'done',
-          tenantId: theme.tenantId,
+          tenantId: themeTenantId,
           title: cleanText(theme.subject) || 'Geloeschte Nachricht',
         }),
       });
@@ -1356,7 +1372,7 @@ export default function MessagesWorkspace() {
                 messageIds: theme.records.map((entry) => entry.id),
                 sourceType: (theme.sourceType as 'admin_message' | 'manual' | 'tenant_message') || 'manual',
                 status: 'done',
-                tenantId: theme.tenantId,
+                tenantId: themeTenantId,
                 title: cleanText(theme.subject) || 'Geloeschte Nachricht',
                 updatedAt: now,
               },
