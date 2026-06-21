@@ -1322,63 +1322,8 @@ export default function MessagesWorkspace() {
 
   function permanentlyDeleteTheme(theme: MessageTheme) {
     runAction(async () => {
-      const themeTenantId = cleanText(theme.tenantId);
-      if (!themeTenantId) {
-        await Promise.all(theme.records.map((record) => permanentlyDeleteMessageRecord(record)));
-        setMessageThemes((current) => current.filter((entry) => entry.id !== theme.id));
-        setPendingDeleteThemeId('');
-        if (selectedGlobalTheme?.id === theme.id) {
-          router.push(buildTabHref(currentTab === 'archive' ? 'archive' : 'inbox'));
-        }
-        setMessage('Nachricht wurde endgültig gelöscht.');
-        return;
-      }
-
-      const response = await authorizedFetch('/api/admin/message-themes', {
-        method: 'POST',
-        body: JSON.stringify({
-          archived: true,
-          deleted: true,
-          id: theme.id,
-          lastActivityAt: new Date().toISOString(),
-          messageIds: theme.records.map((entry) => entry.id),
-          sourceType: theme.sourceType || 'manual',
-          status: 'done',
-          tenantId: themeTenantId,
-          title: cleanText(theme.subject) || 'Geloeschte Nachricht',
-        }),
-      });
-      const result = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error || 'Die Nachricht konnte nicht geloescht werden.');
-      }
-
-      const now = new Date().toISOString();
-      setMessageThemes((current) =>
-        current.some((entry) => entry.id === theme.id)
-          ? current.map((entry) =>
-              entry.id === theme.id
-                ? { ...entry, archived: true, deleted: true, status: 'done', updatedAt: now }
-                : entry
-            )
-          : [
-              ...current,
-              {
-                archived: true,
-                createdAt: now,
-                deleted: true,
-                id: theme.id,
-                lastActivityAt: now,
-                messageIds: theme.records.map((entry) => entry.id),
-                sourceType: (theme.sourceType as 'admin_message' | 'manual' | 'tenant_message') || 'manual',
-                status: 'done',
-                tenantId: themeTenantId,
-                title: cleanText(theme.subject) || 'Geloeschte Nachricht',
-                updatedAt: now,
-              },
-            ]
-      );
-
+      await Promise.all(theme.records.map((record) => permanentlyDeleteMessageRecord(record)));
+      setMessageThemes((current) => current.filter((entry) => entry.id !== theme.id));
       setPendingDeleteThemeId('');
       if (selectedGlobalTheme?.id === theme.id) {
         router.push(buildTabHref(currentTab === 'archive' ? 'archive' : 'inbox'));
