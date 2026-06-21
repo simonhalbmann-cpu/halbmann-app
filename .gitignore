@@ -41,6 +41,8 @@ firebase-debug.log*
 .mailbox-settings.local.json
 .message-themes.local.json
 .portal-*.local.json
+docs/zugangsdaten-uebersicht.md
+docs/passwortmanager-vorlage.csv
 
 # vercel
 .vercel
