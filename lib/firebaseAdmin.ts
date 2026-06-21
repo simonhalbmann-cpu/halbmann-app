@@ -8,13 +8,16 @@ function readServiceAccount() {
   if (json) {
     const parsed = JSON.parse(json) as {
       clientEmail?: string;
+      client_email?: string;
       privateKey?: string;
+      private_key?: string;
       projectId?: string;
+      project_id?: string;
     };
     return {
-      clientEmail: parsed.clientEmail,
-      privateKey: parsed.privateKey,
-      projectId: parsed.projectId,
+      clientEmail: parsed.clientEmail ?? parsed.client_email,
+      privateKey: parsed.privateKey ?? parsed.private_key,
+      projectId: parsed.projectId ?? parsed.project_id,
     };
   }
 

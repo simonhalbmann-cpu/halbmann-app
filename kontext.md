@@ -2154,3 +2154,41 @@ pm run build (gruen).
 - `npx eslint --fix` wurde ausgefuehrt; verbleibende `any`-Fehler in `lib/firestoreRest.ts` und `lib/inboundEmailIngest.ts` wurden typisiert.
 - `npm run lint` ist jetzt erfolgreich mit Warnungen, aber ohne Fehler.
 - Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
+
+## 2026-06-20 - GitHub, Firebase und Vercel Deployment
+- GitHub-Remote ist `https://github.com/simonhalbmann-cpu/halbmann-app.git`.
+- Branch `cleanup/remove-unused-portal` wurde gepusht und per Pull Request in `main` gemergt.
+- Merge-Commit auf `main`: `b6c9337` (`Merge pull request #1 from simonhalbmann-cpu/cleanup/remove-unused-portal`).
+- Lokaler Stand wurde auf `main` aktualisiert; der Mieterportal-Cleanup ist damit im Hauptbranch.
+- Firebase-Regeln wurden deployed:
+  - Firestore Rules erfolgreich released.
+  - Storage Rules erfolgreich released.
+- Vercel-Projekt `halbmann-app` wurde im Team `Halbmann Holding` angelegt und mit GitHub verbunden.
+- Erstes Production Deployment ist erfolgreich und unter `https://halbmann-app.vercel.app` erreichbar.
+- Vercel Environment Variables wurden gesetzt:
+  - Firebase Public Config aus `.env.local`
+  - `OPENAI_API_KEY`
+  - `OPENAI_MODEL`
+  - `FIREBASE_SERVICE_ACCOUNT_JSON`
+  - `NEXT_PUBLIC_APP_URL=https://halbmann-app.vercel.app`
+  - `APP_URL=https://halbmann-app.vercel.app`
+- Nach dem Setzen von `NEXT_PUBLIC_APP_URL` und `APP_URL` wurde ein Production Redeploy ausgefuehrt; Status: `Ready`.
+- Hinweis: Das Vercel-Projekt wurde initial von `cleanup/remove-unused-portal` importiert. Der Code entspricht dem gemergten Stand, aber spaeter sollte in Vercel/GitHub geprueft werden, dass die Production Branch dauerhaft `main` ist.
+- Domain `halbmann-holding.de` und `www.halbmann-holding.de` wurden in Vercel hinzugefuegt.
+- Aktueller Domain-Status in Vercel: beide Domains zeigen `Invalid Configuration`, weil die DNS-Eintraege bei IONOS noch nicht auf Vercel zeigen.
+- Vercel-Konfiguration aktuell sichtbar:
+  - `halbmann-holding.de` ist als `308 Permanent Redirect` auf `www.halbmann-holding.de` eingestellt.
+  - `www.halbmann-holding.de` ist mit Production verbunden, braucht aber noch DNS-Anpassung bei IONOS.
+- Naechster Schritt: In Vercel die DNS-Anforderungen fuer beide Domains auslesen, danach bei IONOS die DNS-Records der alten WordPress-Seite durch die Vercel-Werte ersetzen.
+
+## 2026-06-21 - Domain verbunden und Firebase-Admin-Hotfix
+- IONOS-DNS wurde auf Vercel umgestellt:
+  - `A @ 216.198.79.1`
+  - `CNAME www 85197f61e231d434.vercel-dns-017.com`
+- Vercel zeigt `halbmann-holding.de`, `www.halbmann-holding.de` und `halbmann-app.vercel.app` als `Valid Configuration`.
+- `NEXT_PUBLIC_APP_URL` und `APP_URL` wurden in Vercel auf `https://www.halbmann-holding.de` gesetzt und Production wurde neu deployed.
+- Mobile Nachrichten zeigten in Production den Fehler `Firebase Admin ist nicht konfiguriert`.
+- Ursache: `FIREBASE_SERVICE_ACCOUNT_JSON` aus Firebase verwendet snake_case-Felder (`client_email`, `private_key`, `project_id`), der Code las bisher nur camelCase (`clientEmail`, `privateKey`, `projectId`).
+- `lib/firebaseAdmin.ts` akzeptiert jetzt beide Formate.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+- Noch offen: Vercel/GitHub Production Source steht sichtbar noch auf `cleanup/remove-unused-portal`; dauerhaft auf `main` umstellen.
