@@ -233,6 +233,7 @@ export default function AdminCollectionManager({
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [pendingCompanyDocumentFiles, setPendingCompanyDocumentFiles] = useState<PendingCategorizedFile[]>([]);
+  const [visiblePasswordFields, setVisiblePasswordFields] = useState<Record<string, boolean>>({});
   const [isPending, startTransition] = useTransition();
   const isCompanyCollection = collectionName === 'companies';
   const isPersonCollection = collectionName === 'people';
@@ -499,6 +500,21 @@ export default function AdminCollectionManager({
     return uploadedDocuments;
   }
 
+  async function uploadCompanyLogo(recordId: string, file: File) {
+    const safeName = sanitizeStorageFileName(file.name);
+    const storagePath = `company-logos/${recordId}/${Date.now()}-${createClientId('logo')}-${safeName}`;
+    const storageRef = ref(storage, storagePath);
+    await uploadBytes(storageRef, file, {
+      contentType: file.type || 'application/octet-stream',
+    });
+
+    return {
+      fileName: file.name,
+      path: storagePath,
+      url: await getDownloadURL(storageRef),
+    };
+  }
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (role !== 'admin' || !user) {
@@ -508,8 +524,13 @@ export default function AdminCollectionManager({
     const form = event.currentTarget;
     const formData = new FormData(form);
     const values: Record<string, unknown> = {};
+    const logoFile = formData.get('signatureLogoUrl');
     for (const [key, value] of formData.entries()) {
       if (value instanceof File) {
+        if (key === 'signatureLogoUrl') {
+          values[key] = editMode ? initialValues[key] ?? '' : '';
+          continue;
+        }
         values[key] = value.size > 0 ? value.name : editMode ? initialValues[key] ?? '' : '';
         continue;
       }
@@ -572,6 +593,23 @@ export default function AdminCollectionManager({
             updatedByEmail: user.email ?? null,
             updatedByUid: user.uid,
           });
+          if (isCompanyCollection && logoFile instanceof File && logoFile.size > 0) {
+            const uploadedLogo = await uploadCompanyLogo(documentId, logoFile);
+            await updateDoc(doc(db, collectionName, documentId), {
+              signatureLogoFileName: uploadedLogo.fileName,
+              signatureLogoPath: uploadedLogo.path,
+              signatureLogoUrl: uploadedLogo.url,
+              updatedAt: serverTimestamp(),
+              updatedByEmail: user.email ?? null,
+              updatedByUid: user.uid,
+            });
+            nextInitialValues = {
+              ...nextInitialValues,
+              signatureLogoFileName: uploadedLogo.fileName,
+              signatureLogoPath: uploadedLogo.path,
+              signatureLogoUrl: uploadedLogo.url,
+            };
+          }
           if (isDocumentUploadCollection && pendingCompanyDocumentFiles.length > 0) {
             const uploadedDocuments = await uploadCategorizedDocuments(documentId, pendingCompanyDocumentFiles);
             const nextCompanyDocuments = [
@@ -600,6 +638,17 @@ export default function AdminCollectionManager({
             updatedAt: serverTimestamp(),
           });
           savedRecordId = createdRecord.id;
+          if (isCompanyCollection && logoFile instanceof File && logoFile.size > 0) {
+            const uploadedLogo = await uploadCompanyLogo(savedRecordId, logoFile);
+            await updateDoc(doc(db, collectionName, savedRecordId), {
+              signatureLogoFileName: uploadedLogo.fileName,
+              signatureLogoPath: uploadedLogo.path,
+              signatureLogoUrl: uploadedLogo.url,
+              updatedAt: serverTimestamp(),
+              updatedByEmail: user.email ?? null,
+              updatedByUid: user.uid,
+            });
+          }
           if (isDocumentUploadCollection && pendingCompanyDocumentFiles.length > 0) {
             const uploadedDocuments = await uploadCategorizedDocuments(savedRecordId, pendingCompanyDocumentFiles);
             await updateDoc(doc(db, collectionName, savedRecordId), {
@@ -710,11 +759,41 @@ export default function AdminCollectionManager({
               <option value="">{field.relation.emptyLabel ?? 'Bitte aus bestehendem Datensatz wählen'}</option>
               {(relatedCollections[field.relation.collectionName] ?? []).map((record) => <option key={record.id} value={record.id}>{buildRelationLabel(record, field.relation?.labelFields ?? [])}</option>)}
             </select>
-          ) : fieldType === 'file' ? (
+          ) : fieldType === 'file' || fieldType === 'image' ? (
             <>
+              {fieldType === 'image' && stringValue ? (
+                <div className="mb-3 rounded-[18px] border border-stone-200 bg-white p-3">
+                  <img
+                    alt={`${field.label} Vorschau`}
+                    className="max-h-24 max-w-full object-contain"
+                    src={stringValue}
+                  />
+                </div>
+              ) : null}
               <input accept={field.accept} autoComplete="off" className="w-full rounded-2xl border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-700 outline-none transition file:mr-4 file:rounded-full file:border-0 file:bg-white file:px-4 file:py-2 file:text-sm file:font-medium file:text-slate-700 focus:border-amber-700/60" name={field.name} required={field.required && !editMode} type="file" />
               {editMode && stringValue ? <p className="text-xs leading-6 text-slate-500">Hinterlegt: {stringValue}</p> : null}
             </>
+          ) : field.kind === 'credential_password' ? (
+            <div className="relative">
+              <input
+                {...common}
+                className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 pr-24 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                type={visiblePasswordFields[field.name] ? 'text' : 'password'}
+              />
+              <button
+                aria-label={visiblePasswordFields[field.name] ? 'Passwort verbergen' : 'Passwort anzeigen'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400"
+                onClick={() =>
+                  setVisiblePasswordFields((current) => ({
+                    ...current,
+                    [field.name]: !current[field.name],
+                  }))
+                }
+                type="button"
+              >
+                {visiblePasswordFields[field.name] ? 'Aus' : 'Auge'}
+              </button>
+            </div>
           ) : (
             <input {...common} className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" type={fieldType} />
           )}
@@ -787,6 +866,7 @@ export default function AdminCollectionManager({
             const isWide =
               fieldType === 'textarea' ||
               fieldType === 'file' ||
+              fieldType === 'image' ||
               fieldType === 'section' ||
               fieldType === 'text-list';
             return <div className={isWide ? 'space-y-2 md:col-span-2' : 'space-y-2'} key={field.name}>{renderField(field)}</div>;

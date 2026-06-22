@@ -2192,3 +2192,64 @@ pm run build (gruen).
 - `lib/firebaseAdmin.ts` akzeptiert jetzt beide Formate.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
 - Noch offen: Vercel/GitHub Production Source steht sichtbar noch auf `cleanup/remove-unused-portal`; dauerhaft auf `main` umstellen.
+
+## 2026-06-21 - Release-Aufraeumen nach Livegang
+- Vercel wurde auf Pro belassen und eine Zahlungsmethode wurde hinterlegt, damit das Projekt nach dem Trial nicht stoppt.
+- GitHub wurde bereinigt:
+  - Default Branch ist `main`.
+  - Lokale Branches `cleanup/remove-unused-portal` und `master` wurden geloescht.
+  - Remote-Branch `cleanup/remove-unused-portal` wurde geloescht.
+  - `origin/HEAD` zeigt auf `origin/main`.
+- Release-Tag `release-online-startseite-2026-06-21` bleibt als stabiler Ruecksprungpunkt erhalten.
+- Lokale Organisationsdateien wurden angelegt und bewusst ignoriert:
+  - `docs/zugangsdaten-uebersicht.md`
+  - `docs/passwortmanager-vorlage.csv`
+- `.gitignore` schuetzt diese lokalen Notizen vor versehentlichem GitHub-Upload.
+- Die heruntergeladene Firebase-Service-Account-JSON wurde aus `C:\Users\simon\Downloads` geloescht.
+
+## 2026-06-21 - Datenreset vor echten Bestandsdaten
+- Ueber die App wurden Fake-Daten aus Mieter, Objekten, Dienstleistern und Firmen entfernt.
+- Beim Loeschen alter Nachrichten nach dem Datenreset reagierte der Bestaetigungsbutton nicht, weil verwaiste Nachrichten-Themen nicht mehr sauber ueber die Themen-API geloescht werden konnten.
+- `components/admin/MessagesWorkspace.tsx` wurde angepasst:
+  - Einzelne Nachrichten werden ueber eine gemeinsame Funktion endgueltig geloescht.
+  - Nachrichten-Themen werden fuer den Reset direkt aus Firestore geloescht, statt ueber die serverseitige Themen-Datei/API zu laufen.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+- Fixes wurden gepusht:
+  - `bda7573` (`Allow deleting orphaned message threads`)
+  - `30a5e63` (`Delete message threads directly from Firestore`)
+- Danach wurden alle sichtbaren Nachrichten ueber die App geloescht.
+- Firebase/Firestore wurde anschliessend direkt geprueft und bereinigt.
+- Geloeschte Rest-Collections:
+  - `tenants`: 1 Dokument
+  - `messages`: 3 Dokumente
+  - `tickets`: 17 Dokumente
+  - `messageDrafts`: 62 Dokumente
+  - `messageEvents`: 45 Dokumente
+  - `ticketEvents`: 96 Dokumente
+  - `deletedMessages`: 106 Dokumente
+- Geloeschte Storage-Reste:
+  - `message-attachments/`: 19 Dateien
+  - `tenant-documents/`: 6 Dateien
+- Finaler Firebase-Stand nach Reset:
+  - Firestore enthaelt nur noch `userProfiles` mit 2 Dokumenten (Admin/Mitarbeiter).
+  - Firebase Storage ist leer.
+- Nicht geloescht wurden:
+  - `userProfiles`
+  - Admin-/Mitarbeiterzugang
+  - Projekt-/Hosting-/Env-Konfiguration
+- Die App ist damit bereit, echte Bestandsdaten neu ueber die Oberflaeche einzutragen.
+
+## 2026-06-22 - Firmenanlage fuer echte Daten verbessert
+- Bei `Firma anlegen` wurde ein echtes Logo-Feld ergaenzt.
+- Firmenlogos werden nach Firebase Storage unter `company-logos/{companyId}/...` hochgeladen.
+- Die Firma speichert danach:
+  - `signatureLogoUrl`
+  - `signatureLogoPath`
+  - `signatureLogoFileName`
+- Dieses Logo kann spaeter fuer Signaturen und Briefvorlagen genutzt werden.
+- In `storage.rules` wurde der Pfad `company-logos/{allPaths=**}` fuer angemeldete Nutzer freigegeben.
+- Storage Rules wurden mit `firebase deploy --only storage --project halbmann-app` released.
+- Beim E-Mail-Passwortfeld in der Firmenmaske gibt es jetzt einen Anzeigen/Verbergen-Button.
+- Die Geschaeftsfuehrer-Auswahl in der Firmenmaske greift jetzt auf `userProfiles` zu, also Admin und Mitarbeiter aus den Einstellungen.
+- Die Auswahl speichert die IDs in `managingDirectorIds` und die sichtbaren Namen fuer Signaturen/Vorlagen in `managingDirector`.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.

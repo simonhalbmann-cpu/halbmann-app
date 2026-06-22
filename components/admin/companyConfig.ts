@@ -12,6 +12,13 @@ export const companyFields: AdminField[] = [
     required: true,
   },
   {
+    accept: '.jpg,.jpeg,.png,.svg,.webp',
+    helpText: 'Dieses Logo wird spaeter fuer Signaturen und Briefvorlagen verwendet.',
+    label: 'Firmenlogo',
+    name: 'signatureLogoUrl',
+    type: 'image',
+  },
+  {
     label: 'Rechtsform',
     name: 'legalForm',
     options: [
@@ -109,10 +116,14 @@ export const companyFields: AdminField[] = [
   },
   {
     label: 'Geschäftsführer',
-    helpText: 'Geschäftsführer einzeln erfassen. Weitere Felder können direkt hinzugefügt werden.',
-    name: 'managingDirector',
-    placeholder: 'z. B. Simon Halbmann',
-    type: 'text-list',
+    helpText: 'Aus Admin und Mitarbeitern auswählen. Mehrfachauswahl mit Strg oder Cmd.',
+    name: 'managingDirectorIds',
+    relation: {
+      collectionName: 'userProfiles',
+      labelFields: ['displayName', 'email', 'contactEmail'],
+      storeLabelAs: 'managingDirector',
+    },
+    type: 'relation-multi',
   },
   {
     label: 'Steuernummer',

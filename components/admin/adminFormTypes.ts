@@ -35,6 +35,7 @@ export type AdminField = {
     | 'date'
     | 'email'
     | 'file'
+    | 'image'
     | 'number'
     | 'password'
     | 'relation'
