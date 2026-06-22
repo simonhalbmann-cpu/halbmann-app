@@ -112,6 +112,104 @@ const parseTextListValue = (value: unknown) => {
   return parts.length > 0 ? parts : [''];
 };
 
+const parseRelationListValue = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => cleanSpaces(String(entry ?? '')))
+      .filter(Boolean);
+  }
+
+  return String(value ?? '')
+    .split(',')
+    .map((entry) => cleanSpaces(entry))
+    .filter(Boolean);
+};
+
+const getRelationDetailLines = (record: AdminRecord) =>
+  [
+    cleanSpaces(String(record.data.mobilePhone ?? '')),
+    cleanSpaces(String(record.data.phone ?? '')),
+    cleanSpaces(String(record.data.contactEmail ?? record.data.email ?? '')),
+  ].filter(Boolean);
+
+function RelationListField({
+  field,
+  onChange,
+  records,
+  value,
+}: {
+  field: AdminField;
+  onChange: (value: string[]) => void;
+  records: AdminRecord[];
+  value: string[];
+}) {
+  const selectedIds = value.filter(Boolean);
+  const availableRecords = records.filter((record) => !selectedIds.includes(record.id));
+
+  function addRecord(recordId: string) {
+    if (!recordId || selectedIds.includes(recordId)) return;
+    onChange([...selectedIds, recordId]);
+  }
+
+  function removeRecord(recordId: string) {
+    onChange(selectedIds.filter((id) => id !== recordId));
+  }
+
+  return (
+    <div className="space-y-3">
+      {selectedIds.length > 0 ? (
+        <div className="space-y-2">
+          {selectedIds.map((id) => {
+            const record = records.find((entry) => entry.id === id);
+            const label = record ? buildRelationLabel(record, field.relation?.labelFields ?? []) : id;
+            const detailLines = record ? getRelationDetailLines(record) : [];
+
+            return (
+              <div
+                className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3"
+                key={`${field.name}-${id}`}
+              >
+                <input name={field.name} type="hidden" value={id} />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{label}</p>
+                    {detailLines.length > 0 ? (
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{detailLines.join(' · ')}</p>
+                    ) : null}
+                  </div>
+                  <button
+                    className="self-start rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400"
+                    onClick={() => removeRecord(id)}
+                    type="button"
+                  >
+                    Entfernen
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      <select
+        className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+        onChange={(event) => {
+          addRecord(event.target.value);
+          event.target.value = '';
+        }}
+        required={field.required && selectedIds.length === 0}
+        value=""
+      >
+        <option value="">{field.relation?.emptyLabel ?? 'Person hinzufuegen'}</option>
+        {availableRecords.map((record) => (
+          <option key={record.id} value={record.id}>
+            {buildRelationLabel(record, field.relation?.labelFields ?? [])}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function TextListField({
   field,
   onChange,
@@ -226,6 +324,7 @@ export default function AdminCollectionManager({
   const [knownAddresses, setKnownAddresses] = useState<KnownAddress[]>([]);
   const [initialValues, setInitialValues] = useState<Record<string, unknown>>({});
   const [textListValues, setTextListValues] = useState<Record<string, string[]>>({});
+  const [relationListValues, setRelationListValues] = useState<Record<string, string[]>>({});
   const [formKey, setFormKey] = useState(() => (editMode && documentId ? documentId : 'new'));
   const [isLoadingInitialValues, setIsLoadingInitialValues] = useState(
     () => editMode && Boolean(documentId)
@@ -265,7 +364,11 @@ export default function AdminCollectionManager({
   const relationFields = useMemo(
     () =>
       fields.filter(
-        (field) => (field.type === 'relation' || field.type === 'relation-multi') && field.relation
+        (field) =>
+          (field.type === 'relation' ||
+            field.type === 'relation-list' ||
+            field.type === 'relation-multi') &&
+          field.relation
       ),
     [fields]
   );
@@ -399,6 +502,13 @@ export default function AdminCollectionManager({
             .map((field) => [field.name, parseTextListValue(nextValues[field.name])])
         )
       );
+      setRelationListValues(
+        Object.fromEntries(
+          fields
+            .filter((field) => field.type === 'relation-list')
+            .map((field) => [field.name, parseRelationListValue(nextValues[field.name])])
+        )
+      );
       setFormKey(`${currentDocumentId}-${Date.now()}`);
       setIsLoadingInitialValues(false);
     }
@@ -421,6 +531,13 @@ export default function AdminCollectionManager({
         fields
           .filter((field) => field.type === 'text-list')
           .map((field) => [field.name, ['']])
+      )
+    );
+    setRelationListValues(
+      Object.fromEntries(
+        fields
+          .filter((field) => field.type === 'relation-list')
+          .map((field) => [field.name, []])
       )
     );
   }, [editMode, fields]);
@@ -552,11 +669,14 @@ export default function AdminCollectionManager({
     relationFields.forEach((field) => {
       const relation = field.relation;
       if (!relation) return;
-      if (field.type === 'relation-multi') {
-        const selectedIds = formData
-          .getAll(field.name)
-          .map((entry) => String(entry))
-          .filter(Boolean);
+      if (field.type === 'relation-list' || field.type === 'relation-multi') {
+        const selectedIds =
+          field.type === 'relation-list'
+            ? relationListValues[field.name] ?? []
+            : formData
+                .getAll(field.name)
+                .map((entry) => String(entry))
+                .filter(Boolean);
         values[field.name] = selectedIds.join(', ');
         if (relation.storeLabelAs) {
           values[relation.storeLabelAs] = selectedIds
@@ -660,6 +780,13 @@ export default function AdminCollectionManager({
             setPendingCompanyDocumentFiles([]);
           }
           form.reset();
+          setRelationListValues(
+            Object.fromEntries(
+              fields
+                .filter((field) => field.type === 'relation-list')
+                .map((field) => [field.name, []])
+            )
+          );
           setFormKey(`new-${Date.now()}`);
           setMessage(`${submitLabel} wurde gespeichert.`);
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -736,6 +863,15 @@ export default function AdminCollectionManager({
               <option disabled value="">Bitte wählen</option>
               {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
+          ) : fieldType === 'relation-list' && field.relation ? (
+            <RelationListField
+              field={field}
+              onChange={(nextValue) =>
+                setRelationListValues((current) => ({ ...current, [field.name]: nextValue }))
+              }
+              records={relatedCollections[field.relation.collectionName] ?? []}
+              value={relationListValues[field.name] ?? parseRelationListValue(value)}
+            />
           ) : fieldType === 'relation-multi' && field.relation ? (
             <>
               <select
@@ -867,6 +1003,7 @@ export default function AdminCollectionManager({
               fieldType === 'textarea' ||
               fieldType === 'file' ||
               fieldType === 'image' ||
+              fieldType === 'relation-list' ||
               fieldType === 'section' ||
               fieldType === 'text-list';
             return <div className={isWide ? 'space-y-2 md:col-span-2' : 'space-y-2'} key={field.name}>{renderField(field)}</div>;

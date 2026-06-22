@@ -38,11 +38,11 @@ export const companyFields: AdminField[] = [
     name: 'contactPersonId',
     relation: {
       collectionName: 'userProfiles',
-      emptyLabel: 'Keine Person auswählen',
-      labelFields: ['displayName', 'email', 'contactEmail'],
+      emptyLabel: 'Ansprechpartner hinzufuegen',
+      labelFields: ['displayName'],
       storeLabelAs: 'contactPersonName',
     },
-    type: 'relation',
+    type: 'relation-list',
   },
   {
     label: 'Steuerberater',
@@ -120,10 +120,11 @@ export const companyFields: AdminField[] = [
     name: 'managingDirectorIds',
     relation: {
       collectionName: 'userProfiles',
-      labelFields: ['displayName', 'email', 'contactEmail'],
+      emptyLabel: 'Geschaeftsfuehrer hinzufuegen',
+      labelFields: ['displayName'],
       storeLabelAs: 'managingDirector',
     },
-    type: 'relation-multi',
+    type: 'relation-list',
   },
   {
     label: 'Steuernummer',

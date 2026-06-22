@@ -2254,3 +2254,12 @@ pm run build (gruen).
 - Die Auswahl speichert die IDs in `managingDirectorIds` und die sichtbaren Namen fuer Signaturen/Vorlagen in `managingDirector`.
 - Die Ansprechpartner-Auswahl in der Firmenmaske greift jetzt ebenfalls auf `userProfiles` zu, damit Admin/Mitarbeiter ausgewaehlt werden koennen.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-22 - Firmenkontakte komfortabler auswaehlen
+- In der Firmenmaske gibt es jetzt einen wiederverwendbaren Auswahltyp fuer mehrere verknuepfte Personen.
+- Ansprechpartner und Geschaeftsfuehrer werden nicht mehr ueber eine Strg-/Cmd-Mehrfachauswahl gepflegt.
+- Stattdessen wird jeweils eine Person per Dropdown hinzugefuegt; danach erscheint sie als Eintrag mit Name, Mobilnummer/Telefon und E-Mail.
+- Weitere Personen koennen nacheinander hinzugefuegt oder wieder entfernt werden.
+- Ansprechpartner speichern weiterhin in `contactPersonId` und `contactPersonName`.
+- Geschaeftsfuehrer speichern weiterhin in `managingDirectorIds` und `managingDirector`.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.

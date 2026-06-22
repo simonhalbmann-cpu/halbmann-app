@@ -39,6 +39,7 @@ export type AdminField = {
     | 'number'
     | 'password'
     | 'relation'
+    | 'relation-list'
     | 'relation-multi'
     | 'section'
     | 'select'
