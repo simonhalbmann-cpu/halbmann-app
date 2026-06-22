@@ -2283,3 +2283,18 @@ pm run build (gruen).
 - Die Firmendetailseite zeigt `Anwaelte / Kanzleien` unter den Stammdaten an.
 - Die Auswahlliste zeigt bei Dienstleistern jetzt auch `mobile` und `companyEmail`, nicht nur Mitarbeiter-Profilfelder.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-22 - Nachrichtenempfaenger, CC und BCC verbessert
+- Der Mailversand unter `/api/message-drafts/send` unterstuetzt jetzt `ccEmails` und `bccEmails`.
+- `lib/smtp.ts` gibt CC/BCC an Nodemailer weiter.
+- Ausgehende Nachrichten speichern `ccEmails` und `bccEmails` im Verlauf.
+- In der zentralen Nachrichtenmaske:
+  - Mieter- und Dienstleister-Dropdowns zeigen neben dem Namen auch die Ziel-E-Mail.
+  - Bei Dienstleistern werden E-Mail-Optionen aus Hauptkontakt, zentraler Firmenmail, Rechnungs-Mail, weiteren E-Mails und Teamkontakten gelesen.
+  - Die konkret verwendete Empfaengeradresse ist sichtbar und kann aus dem Kontakt gewaehlt oder manuell ueberschrieben werden.
+  - CC und BCC koennen als mehrere Adressen eingetragen werden, getrennt per Komma, Semikolon oder neuer Zeile.
+- In der Dienstleister-Detailseite:
+  - Empfaengeradresse kann aus der Kontaktakte gewaehlt oder manuell eingetragen werden.
+  - CC/BCC-Felder wurden ergaenzt.
+- In der einzelnen Nachrichten-Antwortansicht wurden CC/BCC-Felder ergaenzt.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.

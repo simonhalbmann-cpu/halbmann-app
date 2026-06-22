@@ -48,6 +48,10 @@ type ServiceRecipientRow = {
   contactId: string;
   email: string;
 };
+type EmailOption = {
+  label: string;
+  value: string;
+};
 
 type MailboxSettingsResponse = {
   ok?: boolean;
@@ -84,6 +88,49 @@ function getServiceEmail(record?: WorkflowRecord | null) {
     cleanText(record?.data.officeEmail) ||
     cleanText(record?.data.contactEmail)
   );
+}
+
+function splitEmailList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cleanText(entry).toLowerCase()).filter(Boolean);
+  }
+  return cleanText(value)
+    .split(/[,;\n]/)
+    .map((entry) => cleanText(entry).toLowerCase())
+    .filter(Boolean);
+}
+
+function addEmailOption(options: EmailOption[], label: string, email: unknown) {
+  const value = cleanText(email).toLowerCase();
+  if (!value || options.some((option) => option.value === value)) return;
+  options.push({ label: `${label}: ${value}`, value });
+}
+
+function getContactEmailOptions(record?: WorkflowRecord | null): EmailOption[] {
+  const options: EmailOption[] = [];
+  addEmailOption(options, 'Hauptkontakt', record?.data.email);
+  addEmailOption(options, 'Zentrale', record?.data.companyEmail);
+  addEmailOption(options, 'Buero', record?.data.officeEmail);
+  addEmailOption(options, 'Kontakt', record?.data.contactEmail);
+  addEmailOption(options, 'Rechnung', record?.data.billingEmail);
+  splitEmailList(record?.data.additionalEmails).forEach((email, index) =>
+    addEmailOption(options, `Weitere ${index + 1}`, email)
+  );
+
+  if (Array.isArray(record?.data.contacts)) {
+    record.data.contacts.forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object') return;
+      const contact = entry as Record<string, unknown>;
+      const name = cleanText(contact.name) || cleanText(contact.role) || `Team ${index + 1}`;
+      addEmailOption(options, name, contact.email);
+    });
+  }
+
+  return options;
+}
+
+function normalizeEmailListText(value: string) {
+  return splitEmailList(value).join(', ');
 }
 
 function getPersonCompanyId(record?: WorkflowRecord | null) {
@@ -226,6 +273,10 @@ function buildTenantLabel(record: WorkflowRecord) {
   );
 }
 
+function buildTenantOptionLabel(record: WorkflowRecord) {
+  return [buildTenantLabel(record), cleanText(record.data.email)].filter(Boolean).join(' · ');
+}
+
 function buildServiceLabel(record: WorkflowRecord) {
   return (
     cleanText(record.data.partnerCompanyName) ||
@@ -235,6 +286,11 @@ function buildServiceLabel(record: WorkflowRecord) {
     getServiceEmail(record) ||
     record.id
   );
+}
+
+function buildServiceOptionLabel(record: WorkflowRecord) {
+  const email = getServiceEmail(record) || getContactEmailOptions(record)[0]?.value;
+  return [buildServiceLabel(record), email].filter(Boolean).join(' · ');
 }
 
 function InlineLabelButton({
@@ -326,6 +382,8 @@ export default function MessagesWorkspace() {
   const [composeDeliveryMode, setComposeDeliveryMode] = useState<DeliveryMode>('email');
   const [composeLetterRecipientKey, setComposeLetterRecipientKey] = useState('property');
   const [composeRecipientEmail, setComposeRecipientEmail] = useState('');
+  const [composeCcEmails, setComposeCcEmails] = useState('');
+  const [composeBccEmails, setComposeBccEmails] = useState('');
   const [composeContactId, setComposeContactId] = useState('');
   const [composeTenantId, setComposeTenantId] = useState('');
   const [composeCompanyId, setComposeCompanyId] = useState('');
@@ -495,6 +553,18 @@ export default function MessagesWorkspace() {
     () => people.find((person) => person.id === composeContactId) ?? null,
     [composeContactId, people]
   );
+  const selectedContactEmailOptions = useMemo(
+    () => getContactEmailOptions(selectedContact),
+    [selectedContact]
+  );
+
+  useEffect(() => {
+    if (composeScope !== 'service_contacts') return;
+    const preferredEmail = selectedContactEmailOptions[0]?.value ?? '';
+    setComposeRecipientEmail((current) =>
+      cleanText(current) || !preferredEmail ? current : preferredEmail
+    );
+  }, [composeScope, selectedContactEmailOptions]);
   const unknownAssignTenant = useMemo(
     () => tenants.find((tenant) => tenant.id === unknownAssignTenantId) ?? null,
     [tenants, unknownAssignTenantId]
@@ -702,7 +772,7 @@ export default function MessagesWorkspace() {
           return {
             companyId: cleanText(tenantRecord?.data.companyId) || composeCompanyId,
             contactId: '',
-            email: cleanText(tenantRecord?.data.email) || cleanText(row.email),
+            email: cleanText(row.email) || cleanText(tenantRecord?.data.email),
             recipientType: tenantRecord ? ('tenant' as const) : ('email' as const),
             tenantId: tenantRecord?.id || '',
           };
@@ -717,7 +787,7 @@ export default function MessagesWorkspace() {
           return {
             companyId: cleanText(row.companyId),
             contactId: contactRecord?.id || '',
-            email: getServiceEmail(contactRecord) || cleanText(row.email),
+            email: cleanText(row.email) || getServiceEmail(contactRecord) || getContactEmailOptions(contactRecord)[0]?.value || '',
             recipientType: contactRecord ? ('contact' as const) : ('email' as const),
             tenantId: '',
           };
@@ -1006,6 +1076,8 @@ export default function MessagesWorkspace() {
     setComposeBody('');
     setComposeContactId('');
     setComposeDeliveryMode('email');
+    setComposeBccEmails('');
+    setComposeCcEmails('');
     setExtraManualRecipients([]);
     setExtraServiceRecipients([]);
     setComposeFollowUpDate('');
@@ -1441,11 +1513,15 @@ export default function MessagesWorkspace() {
           resolveAdminSenderContact(profile, user)
         );
         const subject = cleanText(composeSubject) || 'Nachricht von Halbmann Holding';
+        const ccEmails = splitEmailList(composeCcEmails);
+        const bccEmails = splitEmailList(composeBccEmails);
 
         if (composeDeliveryMode === 'email' || composeDeliveryMode === 'both') {
           const draftRef = await addDoc(collection(db, 'messageDrafts'), {
             attachments: uploadedAttachments,
+            bccEmails,
             body: bodyWithoutManualSignature,
+            ccEmails,
             companyId: messageCompanyId,
             deliveryMode: composeDeliveryMode,
             createdAt: serverTimestamp(),
@@ -1967,11 +2043,15 @@ export default function MessagesWorkspace() {
                 </label>
                 <Select
                   label="Mieter"
-                  onChange={setComposeTenantId}
+                  onChange={(value) => {
+                    const nextTenant = tenants.find((tenant) => tenant.id === value) ?? null;
+                    setComposeTenantId(value);
+                    setComposeRecipientEmail(cleanText(nextTenant?.data.email));
+                  }}
                   options={[
                     { label: 'Mieter wählen', value: '' },
                     ...availableTenantsForProperty.map((tenant) => ({
-                      label: buildTenantLabel(tenant),
+                      label: buildTenantOptionLabel(tenant),
                       value: tenant.id,
                     })),
                   ]}
@@ -2023,11 +2103,17 @@ export default function MessagesWorkspace() {
                       </label>
                       <Select
                         label="Weiterer Mieter"
-                        onChange={(value) => updateManualRecipientRow(index, { tenantId: value })}
+                        onChange={(value) => {
+                          const nextTenant = tenants.find((tenant) => tenant.id === value) ?? null;
+                          updateManualRecipientRow(index, {
+                            email: cleanText(nextTenant?.data.email),
+                            tenantId: value,
+                          });
+                        }}
                         options={[
                           { label: 'Mieter wählen', value: '' },
                           ...rowTenants.map((tenant) => ({
-                            label: buildTenantLabel(tenant),
+                            label: buildTenantOptionLabel(tenant),
                             value: tenant.id,
                           })),
                         ]}
@@ -2067,23 +2153,38 @@ export default function MessagesWorkspace() {
                 </label>
                 <Select
                   label="Dienstleister"
-                  onChange={setComposeContactId}
+                  onChange={(value) => {
+                    const nextContact = people.find((person) => person.id === value) ?? null;
+                    setComposeContactId(value);
+                    setComposeRecipientEmail(getContactEmailOptions(nextContact)[0]?.value ?? '');
+                  }}
                   options={[
                     { label: 'Dienstleister wählen', value: '' },
                     ...people
-                      .filter((person) => getServiceEmail(person))
+                      .filter((person) => getContactEmailOptions(person).length > 0)
                       .sort((left, right) =>
-                        buildServiceLabel(left).localeCompare(buildServiceLabel(right), 'de')
+                        buildServiceOptionLabel(left).localeCompare(buildServiceOptionLabel(right), 'de')
                       )
                       .map((person) => ({
-                        label: buildServiceLabel(person),
+                        label: buildServiceOptionLabel(person),
                         value: person.id,
                       })),
                   ]}
                   value={composeContactId}
                 />
+                {selectedContact ? (
+                  <Select
+                    label="E-Mail an"
+                    onChange={setComposeRecipientEmail}
+                    options={[
+                      { label: 'Adresse aus Kontakt wählen', value: '' },
+                      ...selectedContactEmailOptions,
+                    ]}
+                    value={selectedContactEmailOptions.some((option) => option.value === composeRecipientEmail) ? composeRecipientEmail : ''}
+                  />
+                ) : null}
                 <Input
-                  label="Oder E-Mail manuell"
+                  label={selectedContact ? 'Oder E-Mail manuell' : 'E-Mail manuell'}
                   onChange={setComposeRecipientEmail}
                   placeholder="name@example.de"
                   value={composeRecipientEmail}
@@ -2123,16 +2224,22 @@ export default function MessagesWorkspace() {
                     </label>
                     <Select
                       label="Weiterer Dienstleister"
-                      onChange={(value) => updateServiceRecipientRow(index, { contactId: value })}
+                      onChange={(value) => {
+                        const nextContact = people.find((person) => person.id === value) ?? null;
+                        updateServiceRecipientRow(index, {
+                          contactId: value,
+                          email: getContactEmailOptions(nextContact)[0]?.value ?? '',
+                        });
+                      }}
                       options={[
                         { label: 'Dienstleister wählen', value: '' },
                         ...people
-                          .filter((person) => getServiceEmail(person))
+                          .filter((person) => getContactEmailOptions(person).length > 0)
                           .sort((left, right) =>
-                            buildServiceLabel(left).localeCompare(buildServiceLabel(right), 'de')
+                              buildServiceOptionLabel(left).localeCompare(buildServiceOptionLabel(right), 'de')
                           )
                           .map((person) => ({
-                            label: buildServiceLabel(person),
+                            label: buildServiceOptionLabel(person),
                             value: person.id,
                           })),
                       ]}
@@ -2181,6 +2288,26 @@ export default function MessagesWorkspace() {
 
             <Input label="Betreff" onChange={setComposeSubject} value={composeSubject} />
           </div>
+
+          {composeDeliveryMode === 'email' || composeDeliveryMode === 'both' ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Input
+                label="CC"
+                onChange={setComposeCcEmails}
+                placeholder="cc@example.de, weitere@example.de"
+                value={composeCcEmails}
+              />
+              <Input
+                label="BCC"
+                onChange={setComposeBccEmails}
+                placeholder="bcc@example.de, weitere@example.de"
+                value={composeBccEmails}
+              />
+              <p className="text-xs leading-5 text-slate-500 md:col-span-2">
+                Mehrere Adressen mit Komma, Semikolon oder neuer Zeile trennen.
+              </p>
+            </div>
+          ) : null}
 
           <div className="mt-4 flex w-full items-center gap-2">
             <ActionButton disabled={isPending || isGeneratingComposeAiDraft} onClick={generateComposeAiDraft}>

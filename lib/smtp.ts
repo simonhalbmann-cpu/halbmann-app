@@ -26,6 +26,8 @@ export async function sendMailboxEmail(args: {
     filename?: string;
     path?: string;
   }>;
+  bcc?: string | string[];
+  cc?: string | string[];
   html?: string;
   subject: string;
   text: string;
@@ -35,6 +37,8 @@ export async function sendMailboxEmail(args: {
   const settings = await getMailboxSettingsServer();
   return transporter.sendMail({
     attachments: args.attachments,
+    bcc: args.bcc,
+    cc: args.cc,
     from: `"Halbmann Holding" <${settings.inboxEmail || DEFAULT_INBOX_EMAIL}>`,
     html: args.html,
     subject: args.subject,

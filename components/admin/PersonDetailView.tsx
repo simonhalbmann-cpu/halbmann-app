@@ -108,6 +108,36 @@ function parseContactEntries(value: unknown) {
     );
 }
 
+function splitEmailList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cleanText(entry).toLowerCase()).filter(Boolean);
+  }
+  return cleanText(value)
+    .split(/[,;\n]/)
+    .map((entry) => cleanText(entry).toLowerCase())
+    .filter(Boolean);
+}
+
+function addEmailOption(options: Array<{ label: string; value: string }>, label: string, email: unknown) {
+  const value = cleanText(email).toLowerCase();
+  if (!value || options.some((option) => option.value === value)) return;
+  options.push({ label: `${label}: ${value}`, value });
+}
+
+function getPersonEmailOptions(person: PersonData | null) {
+  const options: Array<{ label: string; value: string }> = [];
+  addEmailOption(options, 'Hauptkontakt', person?.email);
+  addEmailOption(options, 'Zentrale', person?.companyEmail);
+  addEmailOption(options, 'Rechnung', person?.billingEmail);
+  splitEmailList(person?.additionalEmails).forEach((email, index) =>
+    addEmailOption(options, `Weitere ${index + 1}`, email)
+  );
+  parseContactEntries(person?.contacts).forEach((entry, index) =>
+    addEmailOption(options, entry.name || entry.role || `Team ${index + 1}`, entry.email)
+  );
+  return options;
+}
+
 function translatePersonCategory(value?: unknown) {
   const text = cleanText(value);
   return personCategoryLabels[text] ?? text;
@@ -150,6 +180,9 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
   const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [ccEmails, setCcEmails] = useState('');
+  const [bccEmails, setBccEmails] = useState('');
   const [replyText, setReplyText] = useState('');
   const [replyAttachments, setReplyAttachments] = useState<PendingOutgoingAttachment[]>([]);
   const [selectedMessageId, setSelectedMessageId] = useState('');
@@ -263,6 +296,11 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
 
   const personDocuments = useMemo(() => cleanStoredDocuments(person?.personDocuments), [person]);
   const contactEntries = useMemo(() => parseContactEntries(person?.contacts), [person?.contacts]);
+  const personEmailOptions = useMemo(() => getPersonEmailOptions(person), [person]);
+
+  useEffect(() => {
+    setRecipientEmail((current) => cleanText(current) || personEmailOptions[0]?.value || '');
+  }, [personEmailOptions]);
 
   const personMessages = useMemo(
     () =>
@@ -899,7 +937,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
               : aiInstruction,
           propertyName: cleanText(person.propertyName),
           recipientCount: 1,
-          recipientEmail: cleanText(person.email),
+          recipientEmail: cleanText(recipientEmail),
           recipientName: [cleanText(person.firstName), cleanText(person.lastName)].filter(Boolean).join(' '),
           recipientSalutation: cleanText(person.salutation),
           scope: 'manual',
@@ -951,7 +989,9 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
             fromName: cleanText(profile?.displayName) || 'Halbmann Holding',
             priority: 'normal',
             propertyId: cleanText(selectedProperty?.id),
-            recipientEmail: cleanText(person.email),
+            bccEmails: splitEmailList(bccEmails),
+            ccEmails: splitEmailList(ccEmails),
+            recipientEmail: cleanText(recipientEmail),
             recipientId: personId,
             recipientName: [cleanText(person.lastName), cleanText(person.firstName)].filter(Boolean).join(', '),
             recipientType: 'contact',
@@ -992,16 +1032,22 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           contextMode === 'reply'
             ? cleanText(selectedPersonTheme?.subject) || cleanText(selectedPersonMessage?.data.subject) || `Nachricht an ${[cleanText(person.lastName), cleanText(person.firstName)].filter(Boolean).join(', ') || 'Kontakt'}`
             : `Nachricht an ${[cleanText(person.lastName), cleanText(person.firstName)].filter(Boolean).join(', ') || 'Kontakt'}`;
+        const targetEmail = cleanText(recipientEmail);
+        if ((personDeliveryMode === 'email' || personDeliveryMode === 'both') && !targetEmail) {
+          throw new Error('Bitte eine Empfaenger-E-Mail auswaehlen oder eintragen.');
+        }
         if (personDeliveryMode === 'email' || personDeliveryMode === 'both') {
           const draftRef = await addDoc(collection(db, 'messageDrafts'), {
             attachments: uploadedAttachments,
+            bccEmails: splitEmailList(bccEmails),
             body: baseBody,
+            ccEmails: splitEmailList(ccEmails),
             createdAt: serverTimestamp(),
             kind: 'service_request',
             messageId: activeThemeId,
             messageBodyText: [baseBody, messageSignature].filter(Boolean).join('\n\n'),
             propertyId: cleanText(selectedProperty?.id),
-            recipientEmail: cleanText(person.email),
+            recipientEmail: targetEmail,
             recipientId: personId,
             recipientType: 'contact',
             signature: signatureRecord,
@@ -1102,6 +1148,8 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
 
         setReplyText('');
         setReplyAttachments([]);
+        setBccEmails('');
+        setCcEmails('');
         setAiInstruction('');
         setContextMode('reply');
         setPersonComposerMode('contact');
@@ -1382,6 +1430,52 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
                   value={aiInstruction}
                 />
               </div>
+              {personComposerMode !== 'note' && (personDeliveryMode === 'email' || personDeliveryMode === 'both') ? (
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <label className="block">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">E-Mail an</p>
+                    <select
+                      className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                      onChange={(event) => setRecipientEmail(event.target.value)}
+                      value={personEmailOptions.some((option) => option.value === recipientEmail) ? recipientEmail : ''}
+                    >
+                      <option value="">Adresse aus Kontakt waehlen</option>
+                      {personEmailOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Oder E-Mail manuell</p>
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                      onChange={(event) => setRecipientEmail(event.target.value)}
+                      placeholder="name@example.de"
+                      value={recipientEmail}
+                    />
+                  </label>
+                  <label className="block">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">CC</p>
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                      onChange={(event) => setCcEmails(event.target.value)}
+                      placeholder="cc@example.de, weitere@example.de"
+                      value={ccEmails}
+                    />
+                  </label>
+                  <label className="block">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">BCC</p>
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none transition focus:border-amber-700/60"
+                      onChange={(event) => setBccEmails(event.target.value)}
+                      placeholder="bcc@example.de, weitere@example.de"
+                      value={bccEmails}
+                    />
+                  </label>
+                </div>
+              ) : null}
               <textarea
                 className="mt-3 min-h-[260px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-amber-700/60"
                 lang="de"

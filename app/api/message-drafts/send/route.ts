@@ -28,6 +28,16 @@ function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readEmailList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cleanText(entry).toLowerCase()).filter(Boolean);
+  }
+  return cleanText(value)
+    .split(/[,;\n]/)
+    .map((entry) => cleanText(entry).toLowerCase())
+    .filter(Boolean);
+}
+
 function encodeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -243,6 +253,8 @@ export async function POST(request: Request) {
       draft = (draftRecord.data as Record<string, unknown>) ?? {};
     }
     const recipientEmail = cleanText(draft.recipientEmail);
+    const ccEmails = readEmailList(draft.ccEmails);
+    const bccEmails = readEmailList(draft.bccEmails);
     const subject = cleanText(draft.subject);
     const body = cleanText(draft.body);
     const htmlBody = cleanText(draft.htmlBody);
@@ -296,6 +308,8 @@ export async function POST(request: Request) {
     const sendInfo = await sendMailboxEmail({
       attachments: [...(inlineLogo ? [inlineLogo.attachment] : []), ...draftAttachments],
       html: wrapEmailHtmlDocument(finalHtmlBody) || undefined,
+      bcc: bccEmails,
+      cc: ccEmails,
       subject,
       text: plainTextBody,
       to: recipientEmail,
@@ -326,7 +340,9 @@ export async function POST(request: Request) {
       bodyText: cleanText(draft.messageBodyText) || cleanText(draft.portalBodyText) || body,
       category: '',
       channel: 'email',
+      bccEmails,
       createdAt: nowValue,
+      ccEmails,
       draftKind: cleanText(draft.kind),
       deliveryMode: cleanText(draft.deliveryMode) || 'email',
       direction: 'outbound',

@@ -43,6 +43,16 @@ function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function splitEmailList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cleanText(entry).toLowerCase()).filter(Boolean);
+  }
+  return cleanText(value)
+    .split(/[,;\n]/)
+    .map((entry) => cleanText(entry).toLowerCase())
+    .filter(Boolean);
+}
+
 function readCollection(
   name: string,
   onError: (message: string) => void,
@@ -133,6 +143,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
   const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
   const [messageEvents, setMessageEvents] = useState<WorkflowRecord[]>([]);
   const [replyText, setReplyText] = useState('');
+  const [replyCcEmails, setReplyCcEmails] = useState('');
+  const [replyBccEmails, setReplyBccEmails] = useState('');
   const [replyAiInstruction, setReplyAiInstruction] = useState('');
   const [replyAttachments, setReplyAttachments] = useState<PendingOutgoingAttachment[]>([]);
   const [replyContextMode, setReplyContextMode] = useState<'new' | 'reply'>('reply');
@@ -487,7 +499,9 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
       if (replyDeliveryMode === 'email' || replyDeliveryMode === 'both') {
         const draftRef = await addDoc(collection(db, 'messageDrafts'), {
           attachments: uploadedAttachments,
+          bccEmails: splitEmailList(replyBccEmails),
           body: baseBody,
+          ccEmails: splitEmailList(replyCcEmails),
           deliveryMode: replyDeliveryMode,
           createdAt: serverTimestamp(),
           kind: 'reply_to_sender',
@@ -613,6 +627,8 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
 
       await addMessageEvent('reply_sent', 'Antwort wurde direkt aus dem Nachrichtenverlauf versendet.');
       setReplyText('');
+      setReplyBccEmails('');
+      setReplyCcEmails('');
       setReplyAiInstruction('');
       setReplyContextMode('reply');
       setReplyDeliveryMode('email');
@@ -885,6 +901,28 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
               <option value="both">Beides</option>
             </select>
           </label>
+          {replyDeliveryMode === 'email' || replyDeliveryMode === 'both' ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="block">
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">CC</p>
+                <input
+                  className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                  onChange={(event) => setReplyCcEmails(event.target.value)}
+                  placeholder="cc@example.de, weitere@example.de"
+                  value={replyCcEmails}
+                />
+              </label>
+              <label className="block">
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">BCC</p>
+                <input
+                  className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+                  onChange={(event) => setReplyBccEmails(event.target.value)}
+                  placeholder="bcc@example.de, weitere@example.de"
+                  value={replyBccEmails}
+                />
+              </label>
+            </div>
+          ) : null}
           <textarea
             className="mt-4 min-h-[320px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
             lang="de"
