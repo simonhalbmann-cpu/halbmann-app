@@ -2252,4 +2252,5 @@ pm run build (gruen).
 - Beim E-Mail-Passwortfeld in der Firmenmaske gibt es jetzt einen Anzeigen/Verbergen-Button.
 - Die Geschaeftsfuehrer-Auswahl in der Firmenmaske greift jetzt auf `userProfiles` zu, also Admin und Mitarbeiter aus den Einstellungen.
 - Die Auswahl speichert die IDs in `managingDirectorIds` und die sichtbaren Namen fuer Signaturen/Vorlagen in `managingDirector`.
+- Die Ansprechpartner-Auswahl in der Firmenmaske greift jetzt ebenfalls auf `userProfiles` zu, damit Admin/Mitarbeiter ausgewaehlt werden koennen.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.

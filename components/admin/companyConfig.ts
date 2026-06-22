@@ -37,9 +37,9 @@ export const companyFields: AdminField[] = [
     label: 'Ansprechpartner',
     name: 'contactPersonId',
     relation: {
-      collectionName: 'people',
+      collectionName: 'userProfiles',
       emptyLabel: 'Keine Person auswählen',
-      labelFields: ['lastName', 'firstName', 'category'],
+      labelFields: ['displayName', 'email', 'contactEmail'],
       storeLabelAs: 'contactPersonName',
     },
     type: 'relation',
