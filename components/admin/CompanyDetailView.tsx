@@ -281,6 +281,7 @@ export default function CompanyDetailView({ companyId }: CompanyDetailViewProps)
             value={formatManagingDirectorDisplay(company.managingDirector).replace(/^Geschäftsführer:\s*/, '')}
           />
           <DetailRow label="Steuerberater" value={company.taxAdvisorName} />
+          <DetailRow label="Anwaelte / Kanzleien" value={company.legalAdvisorNames} />
           <DetailRow label="Telefon" value={company.phone} />
           <DetailRow label="Kontakt E-Mail" value={company.email} />
           <DetailRow label="Homepage" value={company.website} />

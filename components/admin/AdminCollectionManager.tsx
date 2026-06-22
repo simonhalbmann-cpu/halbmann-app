@@ -168,9 +168,9 @@ const parseContactListValue = (value: unknown): ContactListEntry[] => {
 
 const getRelationDetailLines = (record: AdminRecord) =>
   [
-    cleanSpaces(String(record.data.mobilePhone ?? '')),
+    cleanSpaces(String(record.data.mobilePhone ?? record.data.mobile ?? '')),
     cleanSpaces(String(record.data.phone ?? '')),
-    cleanSpaces(String(record.data.contactEmail ?? record.data.email ?? '')),
+    cleanSpaces(String(record.data.contactEmail ?? record.data.email ?? record.data.companyEmail ?? '')),
   ].filter(Boolean);
 
 function RelationListField({

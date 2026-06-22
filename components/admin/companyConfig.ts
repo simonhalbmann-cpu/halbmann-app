@@ -56,6 +56,18 @@ export const companyFields: AdminField[] = [
     type: 'relation',
   },
   {
+    helpText: 'Mehrere Rechtsanwaelte oder Kanzleien koennen nacheinander hinzugefuegt werden.',
+    label: 'Anwaelte / Kanzleien',
+    name: 'legalAdvisorPersonIds',
+    relation: {
+      collectionName: 'people',
+      emptyLabel: 'Anwalt oder Kanzlei hinzufuegen',
+      labelFields: ['partnerCompanyName', 'lastName', 'firstName', 'category'],
+      storeLabelAs: 'legalAdvisorNames',
+    },
+    type: 'relation-list',
+  },
+  {
     label: 'Telefon',
     name: 'phone',
     placeholder: '+49 30 1234567',

@@ -2275,3 +2275,11 @@ pm run build (gruen).
 - Die Detailansicht zeigt zentrale E-Mail, Rechnungs-E-Mail, weitere E-Mails, Homepage, Bankdaten, Steuer-/Registerdaten und Teamkontakte.
 - Die Nachrichtenmaske erkennt Dienstleister jetzt auch, wenn nur `companyEmail`/zentrale E-Mail gepflegt ist, nicht nur `email`.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-22 - Anwaelte/Kanzleien Firmen mehrfach zuordnen
+- In der Firmenmaske wurde das neue Feld `Anwaelte / Kanzleien` ergaenzt.
+- Mehrere Rechtsanwaelte oder Kanzleien koennen nacheinander aus den Dienstleister-/Personenakten hinzugefuegt werden.
+- Gespeichert werden die IDs in `legalAdvisorPersonIds` und die lesbaren Namen in `legalAdvisorNames`.
+- Die Firmendetailseite zeigt `Anwaelte / Kanzleien` unter den Stammdaten an.
+- Die Auswahlliste zeigt bei Dienstleistern jetzt auch `mobile` und `companyEmail`, nicht nur Mitarbeiter-Profilfelder.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.
