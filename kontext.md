@@ -2263,3 +2263,15 @@ pm run build (gruen).
 - Ansprechpartner speichern weiterhin in `contactPersonId` und `contactPersonName`.
 - Geschaeftsfuehrer speichern weiterhin in `managingDirectorIds` und `managingDirector`.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-22 - Dienstleister-/Steuerberaterakte professionalisiert
+- Das Formular fuer `Personen`/Dienstleister wurde auf Firmen- und Kanzleistrukturen erweitert.
+- Dienstleister koennen jetzt als Firma/Kanzlei/Organisation mit Rechtsform, Geschaeftsfuehrung/Inhaber, zentraler E-Mail, persoenlicher Hauptkontakt-Mail, Rechnungs-E-Mail, weiteren E-Mails, Homepage, Bank, IBAN, BIC, USt-IdNr., Steuernummer und Register-/Kammerinfo gepflegt werden.
+- Neue Kategorie `Rechtsanwalt / Kanzlei` ergaenzt.
+- Hauptkontakt Vorname/Nachname sind nicht mehr Pflicht, weil Steuerberater/Kanzleien oft zuerst als Organisation angelegt werden.
+- Neuer strukturierter Teamblock `contacts`:
+  - mehrere Ansprechpartner/Mitarbeiter/Anwaelte/Sachbearbeiter pro Dienstleister
+  - je Kontakt: Anrede, Name, Funktion, E-Mail, Telefon, Mobil, Notiz/Zustaendigkeit
+- Die Detailansicht zeigt zentrale E-Mail, Rechnungs-E-Mail, weitere E-Mails, Homepage, Bankdaten, Steuer-/Registerdaten und Teamkontakte.
+- Die Nachrichtenmaske erkennt Dienstleister jetzt auch, wenn nur `companyEmail`/zentrale E-Mail gepflegt ist, nicht nur `email`.
+- Verifiziert mit `npx tsc --noEmit` und `npm run build`.

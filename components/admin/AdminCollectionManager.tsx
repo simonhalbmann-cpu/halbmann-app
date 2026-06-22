@@ -50,6 +50,16 @@ type Props = {
 
 type AdminRecord = { data: DocumentData; id: string };
 type RelatedMap = Record<string, AdminRecord[]>;
+type ContactListEntry = {
+  email: string;
+  id: string;
+  mobile: string;
+  name: string;
+  notes: string;
+  phone: string;
+  role: string;
+  salutation: string;
+};
 type KnownAddress = {
   city: string;
   country: string;
@@ -123,6 +133,37 @@ const parseRelationListValue = (value: unknown) => {
     .split(',')
     .map((entry) => cleanSpaces(entry))
     .filter(Boolean);
+};
+
+const createEmptyContactListEntry = (): ContactListEntry => ({
+  email: '',
+  id: createClientId('contact'),
+  mobile: '',
+  name: '',
+  notes: '',
+  phone: '',
+  role: '',
+  salutation: '',
+});
+
+const parseContactListValue = (value: unknown): ContactListEntry[] => {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    .map((entry) => ({
+      email: cleanSpaces(String(entry.email ?? '')).toLowerCase(),
+      id: cleanSpaces(String(entry.id ?? '')) || createClientId('contact'),
+      mobile: cleanSpaces(String(entry.mobile ?? '')),
+      name: cleanSpaces(String(entry.name ?? '')),
+      notes: cleanSpaces(String(entry.notes ?? '')),
+      phone: cleanSpaces(String(entry.phone ?? '')),
+      role: cleanSpaces(String(entry.role ?? '')),
+      salutation: cleanSpaces(String(entry.salutation ?? '')),
+    }))
+    .filter((entry) =>
+      [entry.email, entry.mobile, entry.name, entry.notes, entry.phone, entry.role, entry.salutation].some(Boolean)
+    );
 };
 
 const getRelationDetailLines = (record: AdminRecord) =>
@@ -206,6 +247,117 @@ function RelationListField({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function ContactListField({
+  onChange,
+  value,
+}: {
+  onChange: (value: ContactListEntry[]) => void;
+  value: ContactListEntry[];
+}) {
+  const items = value.length > 0 ? value : [createEmptyContactListEntry()];
+
+  function updateItem(index: number, key: keyof ContactListEntry, nextValue: string) {
+    const nextItems = items.map((entry, itemIndex) =>
+      itemIndex === index
+        ? {
+            ...entry,
+            [key]: key === 'email' ? cleanSpaces(nextValue).toLowerCase() : nextValue,
+          }
+        : entry
+    );
+    onChange(nextItems);
+  }
+
+  function addItem() {
+    onChange([...items, createEmptyContactListEntry()]);
+  }
+
+  function removeItem(index: number) {
+    const nextItems = items.filter((_, itemIndex) => itemIndex !== index);
+    onChange(nextItems.length > 0 ? nextItems : [createEmptyContactListEntry()]);
+  }
+
+  return (
+    <div className="space-y-4">
+      {items.map((item, index) => (
+        <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4" key={item.id}>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-medium text-slate-900">
+              {item.name || `Kontakt ${index + 1}`}
+            </p>
+            <button
+              className="rounded-full border border-stone-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400"
+              onClick={() => removeItem(index)}
+              type="button"
+            >
+              Entfernen
+            </button>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <select
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => updateItem(index, 'salutation', event.target.value)}
+              value={item.salutation}
+            >
+              <option value="">Anrede</option>
+              <option value="Herr">Herr</option>
+              <option value="Frau">Frau</option>
+              <option value="Divers">Divers</option>
+              <option value="Ohne Angabe">Ohne Angabe</option>
+            </select>
+            <input
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => updateItem(index, 'name', event.target.value)}
+              placeholder="Name"
+              value={item.name}
+            />
+            <input
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => updateItem(index, 'role', event.target.value)}
+              placeholder="Funktion, z. B. Sachbearbeiter, Anwalt, Lohnbuchhaltung"
+              value={item.role}
+            />
+            <input
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => updateItem(index, 'email', event.target.value)}
+              placeholder="person@example.de"
+              type="email"
+              value={item.email}
+            />
+            <input
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => updateItem(index, 'phone', event.target.value)}
+              placeholder="Telefon"
+              type="tel"
+              value={item.phone}
+            />
+            <input
+              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
+              onChange={(event) => updateItem(index, 'mobile', event.target.value)}
+              placeholder="Mobil"
+              type="tel"
+              value={item.mobile}
+            />
+            <textarea
+              className="min-h-20 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60 md:col-span-2"
+              onChange={(event) => updateItem(index, 'notes', event.target.value)}
+              placeholder="Zustaendigkeit, Erreichbarkeit, interne Hinweise"
+              value={item.notes}
+            />
+          </div>
+        </div>
+      ))}
+      <button
+        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-xs font-medium text-slate-700 transition hover:border-stone-400"
+        onClick={addItem}
+        type="button"
+      >
+        Kontakt hinzufuegen
+      </button>
     </div>
   );
 }
@@ -323,6 +475,7 @@ export default function AdminCollectionManager({
   const [relatedCollections, setRelatedCollections] = useState<RelatedMap>({});
   const [knownAddresses, setKnownAddresses] = useState<KnownAddress[]>([]);
   const [initialValues, setInitialValues] = useState<Record<string, unknown>>({});
+  const [contactListValues, setContactListValues] = useState<Record<string, ContactListEntry[]>>({});
   const [textListValues, setTextListValues] = useState<Record<string, string[]>>({});
   const [relationListValues, setRelationListValues] = useState<Record<string, string[]>>({});
   const [formKey, setFormKey] = useState(() => (editMode && documentId ? documentId : 'new'));
@@ -495,6 +648,13 @@ export default function AdminCollectionManager({
         Object.entries(snapshot.data()).map(([key, value]) => [key, value ?? ''])
       );
       setInitialValues(nextValues);
+      setContactListValues(
+        Object.fromEntries(
+          fields
+            .filter((field) => field.type === 'contact-list')
+            .map((field) => [field.name, parseContactListValue(nextValues[field.name])])
+        )
+      );
       setTextListValues(
         Object.fromEntries(
           fields
@@ -526,6 +686,13 @@ export default function AdminCollectionManager({
 
   useEffect(() => {
     if (editMode) return;
+    setContactListValues(
+      Object.fromEntries(
+        fields
+          .filter((field) => field.type === 'contact-list')
+          .map((field) => [field.name, [createEmptyContactListEntry()]])
+      )
+    );
     setTextListValues(
       Object.fromEntries(
         fields
@@ -666,6 +833,11 @@ export default function AdminCollectionManager({
           .filter(Boolean);
         values[field.name] = items.join(', ');
       });
+    fields
+      .filter((field) => field.type === 'contact-list')
+      .forEach((field) => {
+        values[field.name] = parseContactListValue(contactListValues[field.name] ?? []);
+      });
     relationFields.forEach((field) => {
       const relation = field.relation;
       if (!relation) return;
@@ -780,6 +952,13 @@ export default function AdminCollectionManager({
             setPendingCompanyDocumentFiles([]);
           }
           form.reset();
+          setContactListValues(
+            Object.fromEntries(
+              fields
+                .filter((field) => field.type === 'contact-list')
+                .map((field) => [field.name, [createEmptyContactListEntry()]])
+            )
+          );
           setRelationListValues(
             Object.fromEntries(
               fields
@@ -848,7 +1027,14 @@ export default function AdminCollectionManager({
       <>
         <label className="block space-y-2">
           <span className="text-sm font-medium text-slate-700">{field.label}</span>
-          {fieldType === 'textarea' ? (
+          {fieldType === 'contact-list' ? (
+            <ContactListField
+              onChange={(nextValue) =>
+                setContactListValues((current) => ({ ...current, [field.name]: nextValue }))
+              }
+              value={contactListValues[field.name] ?? parseContactListValue(value)}
+            />
+          ) : fieldType === 'textarea' ? (
             <textarea {...common} className="min-h-28 w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" rows={field.rows ?? 4} />
           ) : fieldType === 'text-list' ? (
             <TextListField
@@ -1001,6 +1187,7 @@ export default function AdminCollectionManager({
             const fieldType = field.type ?? 'text';
             const isWide =
               fieldType === 'textarea' ||
+              fieldType === 'contact-list' ||
               fieldType === 'file' ||
               fieldType === 'image' ||
               fieldType === 'relation-list' ||

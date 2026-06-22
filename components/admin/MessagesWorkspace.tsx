@@ -70,10 +70,19 @@ function buildMessageTargetHref(record: WorkflowRecord) {
 
 function getCompanyEmail(record?: WorkflowRecord | null) {
   return (
-    cleanText(record?.data.email) ||
-    cleanText(record?.data.contactEmail) ||
     cleanText(record?.data.companyEmail) ||
-    cleanText(record?.data.officeEmail)
+    cleanText(record?.data.officeEmail) ||
+    cleanText(record?.data.contactEmail) ||
+    cleanText(record?.data.email)
+  );
+}
+
+function getServiceEmail(record?: WorkflowRecord | null) {
+  return (
+    cleanText(record?.data.email) ||
+    cleanText(record?.data.companyEmail) ||
+    cleanText(record?.data.officeEmail) ||
+    cleanText(record?.data.contactEmail)
   );
 }
 
@@ -219,11 +228,11 @@ function buildTenantLabel(record: WorkflowRecord) {
 
 function buildServiceLabel(record: WorkflowRecord) {
   return (
-    [cleanText(record.data.lastName), cleanText(record.data.firstName)].filter(Boolean).join(', ') ||
     cleanText(record.data.partnerCompanyName) ||
     cleanText(record.data.companyName) ||
+    [cleanText(record.data.lastName), cleanText(record.data.firstName)].filter(Boolean).join(', ') ||
     cleanText(record.data.name) ||
-    cleanText(record.data.email) ||
+    getServiceEmail(record) ||
     record.id
   );
 }
@@ -708,7 +717,7 @@ export default function MessagesWorkspace() {
           return {
             companyId: cleanText(row.companyId),
             contactId: contactRecord?.id || '',
-            email: cleanText(contactRecord?.data.email) || cleanText(row.email),
+            email: getServiceEmail(contactRecord) || cleanText(row.email),
             recipientType: contactRecord ? ('contact' as const) : ('email' as const),
             tenantId: '',
           };
@@ -1575,7 +1584,7 @@ export default function MessagesWorkspace() {
             composeScope === 'manual'
               ? cleanText(selectedTenant?.data.email) || cleanText(composeRecipientEmail)
               : composeScope === 'service_contacts'
-                ? cleanText(selectedContact?.data.email) || cleanText(composeRecipientEmail)
+                ? getServiceEmail(selectedContact) || cleanText(composeRecipientEmail)
               : '',
           recipientName:
             composeScope === 'manual' && selectedTenant ? buildTenantLabel(selectedTenant) : '',
@@ -2062,7 +2071,7 @@ export default function MessagesWorkspace() {
                   options={[
                     { label: 'Dienstleister wählen', value: '' },
                     ...people
-                      .filter((person) => cleanText(person.data.email))
+                      .filter((person) => getServiceEmail(person))
                       .sort((left, right) =>
                         buildServiceLabel(left).localeCompare(buildServiceLabel(right), 'de')
                       )
@@ -2118,7 +2127,7 @@ export default function MessagesWorkspace() {
                       options={[
                         { label: 'Dienstleister wählen', value: '' },
                         ...people
-                          .filter((person) => cleanText(person.data.email))
+                          .filter((person) => getServiceEmail(person))
                           .sort((left, right) =>
                             buildServiceLabel(left).localeCompare(buildServiceLabel(right), 'de')
                           )

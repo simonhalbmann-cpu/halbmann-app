@@ -46,6 +46,7 @@ const personCategoryLabels: Record<string, string> = {
   roof_maintenance: 'Dachwartung',
   gutter_cleaning: 'Regenrinnenreinigung',
   craftsperson: 'Handwerker / Dienstleister allgemein',
+  law_firm: 'Rechtsanwalt / Kanzlei',
   partner_company: 'Partnerfirma / externer Kontakt',
   caretaker: 'Hausmeister',
   tax_advisor: 'Steuerberater',
@@ -82,7 +83,29 @@ function stripTrailingSignature(body: string, signatureText: string) {
 }
 
 function formatValue(value?: unknown) {
+  if (Array.isArray(value)) {
+    const text = value.map((entry) => cleanText(entry)).filter(Boolean).join(', ');
+    return text || 'â€“';
+  }
   return cleanText(value) || 'â€“';
+}
+
+function parseContactEntries(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    .map((entry) => ({
+      email: cleanText(entry.email),
+      mobile: cleanText(entry.mobile),
+      name: cleanText(entry.name),
+      notes: cleanText(entry.notes),
+      phone: cleanText(entry.phone),
+      role: cleanText(entry.role),
+      salutation: cleanText(entry.salutation),
+    }))
+    .filter((entry) =>
+      [entry.email, entry.mobile, entry.name, entry.notes, entry.phone, entry.role, entry.salutation].some(Boolean)
+    );
 }
 
 function translatePersonCategory(value?: unknown) {
@@ -239,6 +262,7 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   }, [person]);
 
   const personDocuments = useMemo(() => cleanStoredDocuments(person?.personDocuments), [person]);
+  const contactEntries = useMemo(() => parseContactEntries(person?.contacts), [person?.contacts]);
 
   const personMessages = useMemo(
     () =>
@@ -1597,16 +1621,21 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
         <DetailCard title="Stammdaten">
           <DetailRow label="Bereich" value={translatePersonCategory(person.category)} />
           <DetailRow label="Anrede" value={translatePersonSalutation(person.salutation)} />
-          <DetailRow label="Name" value={[person.lastName, person.firstName].filter(Boolean).join(', ')} />
+          <DetailRow label="Firma" value={person.partnerCompanyName} />
+          <DetailRow label="Hauptkontakt" value={[person.lastName, person.firstName].filter(Boolean).join(', ')} />
           <DetailRow label="Geburtsdatum" value={person.birthDate} />
           <DetailRow label="Rolle / Funktion" value={person.jobTitle} />
-          <DetailRow label="Partnerfirma" value={person.partnerCompanyName} />
+          <DetailRow label="Geschaeftsfuehrung" value={person.management} />
         </DetailCard>
 
         <DetailCard title="Kontakt">
-          <DetailRow label="E-Mail" value={person.email} />
+          <DetailRow label="Persoenliche E-Mail" value={person.email} />
+          <DetailRow label="Zentrale E-Mail" value={person.companyEmail} />
+          <DetailRow label="Rechnungs-E-Mail" value={person.billingEmail} />
+          <DetailRow label="Weitere E-Mails" value={person.additionalEmails} />
           <DetailRow label="Telefon" value={person.phone} />
           <DetailRow label="Mobil" value={person.mobile} />
+          <DetailRow label="Homepage" value={person.website} />
           <DetailRow label="Bevorzugter Kontaktweg" value={translatePreferredContactMethod(person.preferredContactMethod)} />
           <DetailRow label="Zugeordnete Immobilie" value={person.propertyName} />
         </DetailCard>
@@ -1616,8 +1645,34 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
           <DetailRow label="PLZ / Ort" value={[person.postalCode, person.city].filter(Boolean).join(' ')} />
           <DetailRow label="Land" value={person.country} />
           <DetailRow label="Aktennummer" value={person.referenceNumber} />
+          <DetailRow label="Bank" value={person.bankName} />
           <DetailRow label="IBAN" value={person.iban} />
+          <DetailRow label="BIC" value={person.bic} />
+          <DetailRow label="USt-IdNr." value={person.vatId} />
+          <DetailRow label="Steuernummer" value={person.taxNumber} />
+          <DetailRow label="Register / Kammer" value={person.registerInfo} />
           <DetailRow label="Steuer-ID / Kennzeichen" value={person.taxId} />
+        </DetailCard>
+
+        <DetailCard title="Team">
+          {contactEntries.length > 0 ? (
+            <div className="grid gap-3">
+              {contactEntries.map((entry, index) => (
+                <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3" key={`${entry.email}-${entry.name}-${index}`}>
+                  <p className="text-sm font-medium text-slate-900">
+                    {[entry.salutation, entry.name].filter(Boolean).join(' ') || `Kontakt ${index + 1}`}
+                  </p>
+                  {entry.role ? <p className="mt-1 text-xs text-slate-600">{entry.role}</p> : null}
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {[entry.email, entry.phone, entry.mobile].filter(Boolean).join(' · ') || 'Keine Kontaktdaten'}
+                  </p>
+                  {entry.notes ? <p className="mt-2 text-xs leading-5 text-slate-600">{entry.notes}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <DetailRow label="Kontakte" value="" />
+          )}
         </DetailCard>
 
         <DetailCard title="Notizen">

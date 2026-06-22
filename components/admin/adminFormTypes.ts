@@ -34,6 +34,7 @@ export type AdminField = {
   type?:
     | 'date'
     | 'email'
+    | 'contact-list'
     | 'file'
     | 'image'
     | 'number'

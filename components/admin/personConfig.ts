@@ -19,6 +19,7 @@ export const personFields: AdminField[] = [
       { label: 'Dachwartung', value: 'roof_maintenance' },
       { label: 'Regenrinnenreinigung', value: 'gutter_cleaning' },
       { label: 'Handwerker / Dienstleister allgemein', value: 'craftsperson' },
+      { label: 'Rechtsanwalt / Kanzlei', value: 'law_firm' },
       { label: 'Partnerfirma / externer Kontakt', value: 'partner_company' },
       { label: 'Hausmeister', value: 'caretaker' },
       { label: 'Steuerberater', value: 'tax_advisor' },
@@ -40,8 +41,28 @@ export const personFields: AdminField[] = [
     ],
     type: 'select',
   },
-  { label: 'Vorname', name: 'firstName', placeholder: 'Max', required: true },
-  { label: 'Nachname', name: 'lastName', placeholder: 'Mustermann', required: true },
+  {
+    label: 'Firma / Kanzlei / Organisation',
+    name: 'partnerCompanyName',
+    placeholder: 'z. B. Mustermann Steuerberatungsgesellschaft mbH',
+    required: true,
+  },
+  {
+    label: 'Rechtsform',
+    name: 'legalForm',
+    options: [
+      { label: 'Einzelperson', value: 'sole_person' },
+      { label: 'GmbH', value: 'gmbh' },
+      { label: 'UG', value: 'ug' },
+      { label: 'GbR', value: 'gbr' },
+      { label: 'PartG / PartGmbB', value: 'partnership' },
+      { label: 'Kanzlei', value: 'law_office' },
+      { label: 'Sonstige', value: 'other' },
+    ],
+    type: 'select',
+  },
+  { label: 'Hauptkontakt Vorname', name: 'firstName', placeholder: 'Max' },
+  { label: 'Hauptkontakt Nachname', name: 'lastName', placeholder: 'Mustermann' },
   { label: 'Geburtsdatum', name: 'birthDate', type: 'date' },
   {
     label: 'Rolle / Funktion',
@@ -49,9 +70,9 @@ export const personFields: AdminField[] = [
     placeholder: 'z. B. Elektriker, Ansprechpartner, Hausmeister',
   },
   {
-    label: 'Partnerfirma / Unternehmen',
-    name: 'partnerCompanyName',
-    placeholder: 'z. B. Mustermann Sanitaer GmbH',
+    label: 'Geschaeftsfuehrung / Inhaber',
+    name: 'management',
+    placeholder: 'z. B. StB Max Mustermann',
   },
   {
     label: 'Zugeordnete Immobilie',
@@ -65,14 +86,45 @@ export const personFields: AdminField[] = [
     type: 'relation',
   },
   {
-    label: 'E-Mail',
+    label: 'Persoenliche E-Mail Hauptkontakt',
     name: 'email',
     placeholder: 'mustermail@example.de',
     kind: 'credential_email',
     type: 'email',
   },
+  {
+    label: 'Zentrale E-Mail',
+    name: 'companyEmail',
+    placeholder: 'kanzlei@example.de',
+    kind: 'credential_email',
+    type: 'email',
+  },
+  {
+    label: 'Rechnungs-E-Mail',
+    name: 'billingEmail',
+    placeholder: 'rechnung@example.de',
+    kind: 'credential_email',
+    type: 'email',
+  },
+  {
+    label: 'Weitere E-Mail-Adressen',
+    name: 'additionalEmails',
+    placeholder: 'weitere@example.de',
+    type: 'text-list',
+  },
+  {
+    label: 'Homepage',
+    name: 'website',
+    placeholder: 'https://www.example.de',
+  },
   { label: 'Telefon', name: 'phone', placeholder: '+49 30 1234567', type: 'tel' },
   { label: 'Mobil', name: 'mobile', placeholder: '+49 171 1234567', type: 'tel' },
+  {
+    label: 'Team / Ansprechpartner',
+    helpText: 'Mitarbeiter, Anwaelte, Sachbearbeiter oder weitere direkte Kontakte dieser Firma.',
+    name: 'contacts',
+    type: 'contact-list',
+  },
   {
     label: 'Bevorzugter Kontaktweg',
     name: 'preferredContactMethod',
@@ -124,6 +176,31 @@ export const personFields: AdminField[] = [
     name: 'iban',
     placeholder: 'DE00 0000 0000 0000 0000 0000 00',
   },
+  {
+    label: 'Bank',
+    name: 'bankName',
+    placeholder: 'z. B. Commerzbank',
+  },
+  {
+    label: 'BIC',
+    name: 'bic',
+    placeholder: 'COBADEFFXXX',
+  },
+  {
+    label: 'USt-IdNr.',
+    name: 'vatId',
+    placeholder: 'z. B. DE123456789',
+  },
+  {
+    label: 'Steuernummer',
+    name: 'taxNumber',
+    placeholder: 'optional',
+  },
+  {
+    label: 'Register / Kammer / Zulassung',
+    name: 'registerInfo',
+    placeholder: 'z. B. Steuerberaterkammer Berlin, Amtsgericht ...',
+  },
   { label: 'Steuer-ID / Kennzeichen', name: 'taxId', placeholder: 'optional' },
   {
     accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx',
@@ -140,8 +217,8 @@ export const personFields: AdminField[] = [
 ];
 
 export const personPreviewFields: PreviewField[] = [
-  { label: 'Name', name: 'lastName' },
-  { label: 'Vorname', name: 'firstName' },
+  { label: 'Firma', name: 'partnerCompanyName' },
+  { label: 'Hauptkontakt', name: 'lastName' },
 ];
 
 export const personDocumentFields: AdminDocumentField[] = [
