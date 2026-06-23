@@ -9,6 +9,7 @@ import {
   setFirestoreDocument,
 } from '../../../../lib/firestoreRest';
 import { getMailboxSettingsServer } from '../../../../lib/mailboxConfigServer';
+import { getEmailSignatureSettingsServer } from '../../../../lib/signatureConfigServer';
 import {
   buildFullEmailSignatureHtml,
   buildSignatureText,
@@ -266,7 +267,11 @@ export async function POST(request: Request) {
     const mailboxSettings = await getMailboxSettingsServer();
     const senderEmail = cleanText(mailboxSettings.inboxEmail) || 'portal@halbmann-holding.de';
     const mailHeaderText = cleanText(mailboxSettings.mailHeaderText);
-    const signature = buildDraftSignatureRecord(draft.signature);
+    const signatureSettings = await getEmailSignatureSettingsServer();
+    const signature = {
+      ...buildDraftSignatureRecord(draft.signature),
+      emailTemplateHtml: signatureSettings.templateHtml || '',
+    };
     const inlineLogo = await resolveInlineLogoForEmail(signature.logoUrl).catch(() => null);
     const emailSignatureRecord = inlineLogo
       ? {

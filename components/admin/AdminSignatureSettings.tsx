@@ -1,10 +1,16 @@
 ﻿'use client';
 
-import { collection, doc, onSnapshot, query, updateDoc, type DocumentData } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, setDoc, updateDoc, type DocumentData } from 'firebase/firestore';
 import Image from 'next/image';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { db } from '../../lib/firebase';
+import { ADMIN_SETTINGS_COLLECTION } from '../../lib/mailboxSettings';
+import {
+  DEFAULT_EMAIL_SIGNATURE_TEMPLATE_HTML,
+  EMAIL_SIGNATURE_SETTINGS_DOC_ID,
+  cleanEmailSignatureTemplate,
+} from '../../lib/signatureSettings';
 import {
   buildFullEmailSignatureHtml,
   buildSignatureAddress,
@@ -20,15 +26,6 @@ type AdminRecord = {
   data: DocumentData;
   id: string;
 };
-
-type TextAlign = 'center' | 'left';
-
-const fontOptions = [
-  'Segoe UI, Arial, sans-serif',
-  'Arial, Helvetica, sans-serif',
-  'Georgia, Times New Roman, serif',
-  'Verdana, Geneva, sans-serif',
-];
 
 function Field({
   label,
@@ -76,91 +73,6 @@ function TextAreaField({
   );
 }
 
-function ToggleChip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-        active
-          ? 'bg-[linear-gradient(180deg,#6e5a46_0%,#594737_100%)] text-stone-100'
-          : 'border border-stone-300 bg-white text-slate-700 hover:border-stone-400'
-      }`}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
-  );
-}
-
-function FormatToolbar({
-  align,
-  bold,
-  divider,
-  fontFamily,
-  fontSize,
-  italic,
-  underline,
-  onAlignChange,
-  onBoldChange,
-  onDividerChange,
-  onFontFamilyChange,
-  onFontSizeChange,
-  onItalicChange,
-  onUnderlineChange,
-}: {
-  align: TextAlign;
-  bold: boolean;
-  divider: boolean;
-  fontFamily: string;
-  fontSize: string;
-  italic: boolean;
-  underline: boolean;
-  onAlignChange: (value: TextAlign) => void;
-  onBoldChange: (value: boolean) => void;
-  onDividerChange: (value: boolean) => void;
-  onFontFamilyChange: (value: string) => void;
-  onFontSizeChange: (value: string) => void;
-  onItalicChange: (value: boolean) => void;
-  onUnderlineChange: (value: boolean) => void;
-}) {
-  return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_120px_120px]">
-      <label className="space-y-2">
-        <span className="text-sm font-medium text-slate-700">Schriftart</span>
-        <select
-          className="w-full rounded-[18px] border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-          onChange={(event) => onFontFamilyChange(event.target.value)}
-          value={fontFamily}
-        >
-          {fontOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
-      <Field label="SchriftgrÃ¶ÃŸe" onChange={onFontSizeChange} value={fontSize} />
-      <label className="space-y-2">
-        <span className="text-sm font-medium text-slate-700">Ausrichtung</span>
-        <select
-          className="w-full rounded-[18px] border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-          onChange={(event) => onAlignChange(event.target.value === 'left' ? 'left' : 'center')}
-          value={align}
-        >
-          <option value="center">Zentriert</option>
-          <option value="left">Links</option>
-        </select>
-      </label>
-      <div className="flex flex-wrap gap-2 lg:col-span-3">
-        <ToggleChip active={bold} label="Fett" onClick={() => onBoldChange(!bold)} />
-        <ToggleChip active={italic} label="Kursiv" onClick={() => onItalicChange(!italic)} />
-        <ToggleChip active={underline} label="Unterstreichen" onClick={() => onUnderlineChange(!underline)} />
-        <ToggleChip active={divider} label="Trennlinie" onClick={() => onDividerChange(!divider)} />
-      </div>
-    </div>
-  );
-}
-
 export default function AdminSignatureSettings() {
   const { profile, user } = useAuth();
   const [companies, setCompanies] = useState<AdminRecord[]>([]);
@@ -170,6 +82,7 @@ export default function AdminSignatureSettings() {
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
   const [isUploading, setIsUploading] = useState(false);
+  const [globalEmailTemplateHtml, setGlobalEmailTemplateHtml] = useState(DEFAULT_EMAIL_SIGNATURE_TEMPLATE_HTML);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -196,14 +109,32 @@ export default function AdminSignatureSettings() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, ADMIN_SETTINGS_COLLECTION, EMAIL_SIGNATURE_SETTINGS_DOC_ID),
+      (snapshot) => {
+        setGlobalEmailTemplateHtml(cleanEmailSignatureTemplate(snapshot.data()?.templateHtml));
+      },
+      (caughtError) => {
+        console.error('Fehler beim Laden der E-Mail-Signaturvorlage:', caughtError);
+        setError('Die E-Mail-Signaturvorlage konnte nicht geladen werden.');
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const selectedCompany = useMemo(
     () => companies.find((entry) => entry.id === selectedCompanyId) ?? null,
     [companies, selectedCompanyId]
   );
 
   useEffect(() => {
-    setForm(createSignatureRecord(selectedCompany?.data));
-  }, [selectedCompany]);
+    setForm({
+      ...createSignatureRecord(selectedCompany?.data),
+      emailTemplateHtml: globalEmailTemplateHtml,
+    });
+  }, [globalEmailTemplateHtml, selectedCompany]);
 
   function updateField<K extends keyof SignatureRecord>(field: K, value: SignatureRecord[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -219,7 +150,6 @@ export default function AdminSignatureSettings() {
       signatureCountry: cleanSignatureText(nextForm.country),
       signatureDepartment: cleanSignatureText(nextForm.department),
       signatureEmail: DEFAULT_SIGNATURE_EMAIL,
-      signatureEmailTemplateHtml: cleanSignatureText(nextForm.emailTemplateHtml),
       signatureFontBold: nextForm.fontBold,
       signatureFontFamily: cleanSignatureText(nextForm.fontFamily),
       signatureFontItalic: nextForm.fontItalic,
@@ -248,6 +178,17 @@ export default function AdminSignatureSettings() {
     });
   }
 
+  async function persistGlobalEmailTemplate(templateHtml: string) {
+    await setDoc(
+      doc(db, ADMIN_SETTINGS_COLLECTION, EMAIL_SIGNATURE_SETTINGS_DOC_ID),
+      {
+        templateHtml: cleanEmailSignatureTemplate(templateHtml),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  }
+
   function saveSignature() {
     if (!selectedCompanyId) return;
     setMessage('');
@@ -255,7 +196,10 @@ export default function AdminSignatureSettings() {
 
     startTransition(async () => {
       try {
-        await persistSignature(form);
+        await Promise.all([
+          persistSignature(form),
+          persistGlobalEmailTemplate(globalEmailTemplateHtml),
+        ]);
         setMessage('Signatur wurde gespeichert.');
       } catch (caughtError) {
         console.error('Fehler beim Speichern der Signatur:', caughtError);
@@ -265,17 +209,17 @@ export default function AdminSignatureSettings() {
   }
 
   function buildStarterEmailTemplate() {
-    return `<div style="font-family:Tahoma, Arial, sans-serif;font-size:13px;line-height:1.45;color:#475569;">
-  <p style="margin:0;">{{CLOSING}}</p>
-  <p style="margin:18px 0 0 0;color:#0f172a;">{{NAME}}</p>
-  <p style="margin:6px 0 0 0;color:#0f172a;">{{COMPANY_LINE}}</p>
-  <p style="margin:12px 0 0 0;">{{STREET_LINE}} Â· {{CITY_LINE}}</p>
-  <p style="margin:4px 0 0 0;">Telefon: {{PHONE}} Â· {{EMAIL}}</p>
-</div>`;
+    return DEFAULT_EMAIL_SIGNATURE_TEMPLATE_HTML;
+  }
+
+  function updateEmailTemplateHtml(value: string) {
+    const nextValue = value;
+    setGlobalEmailTemplateHtml(nextValue);
+    updateField('emailTemplateHtml', nextValue);
   }
 
   function insertEmailTemplateToken(token: string) {
-    updateField('emailTemplateHtml', `${form.emailTemplateHtml}${form.emailTemplateHtml ? ' ' : ''}${token}`);
+    updateEmailTemplateHtml(`${globalEmailTemplateHtml}${globalEmailTemplateHtml ? ' ' : ''}${token}`);
   }
 
   function clearSignature() {
@@ -290,7 +234,7 @@ export default function AdminSignatureSettings() {
           ...blank,
           closing: '',
           department: '',
-          emailTemplateHtml: '',
+          emailTemplateHtml: globalEmailTemplateHtml,
           logoAlt: '',
           logoUrl: '',
           mobilePhone: '',
@@ -362,9 +306,9 @@ export default function AdminSignatureSettings() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Signaturen</p>
-          <h2 className="mt-2 text-3xl text-slate-950">Firmensignaturen</h2>
+          <h2 className="mt-2 text-3xl text-slate-950">E-Mail-Signatur</h2>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-            FÃ¼r jede Firma kann hier eine professionelle E-Mail- und Nachrichtensignatur gepflegt werden.
+            Das Layout gilt für alle Firmen. Inhalte, Kontaktdaten und Logos kommen aus den Firmendaten der gewählten Firma.
           </p>
         </div>
       </div>
@@ -372,6 +316,9 @@ export default function AdminSignatureSettings() {
       <div className="mt-6 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="rounded-[24px] border border-stone-200 bg-stone-50 p-4">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-stone-500">Firmen</p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            Auswahl nur für Inhalte, Logo und Vorschau.
+          </p>
           <div className="mt-4 space-y-2">
             {companies.map((company) => (
               <button
@@ -397,28 +344,6 @@ export default function AdminSignatureSettings() {
             </div>
           ) : (
             <>
-              <div className="rounded-[24px] border border-stone-200 bg-stone-50 p-5">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Signaturformat</p>
-                <div className="mt-4">
-                  <FormatToolbar
-                    align={form.textAlign}
-                    bold={form.fontBold}
-                    divider={form.useDivider}
-                    fontFamily={form.fontFamily}
-                    fontSize={form.fontSize}
-                    italic={form.fontItalic}
-                    underline={form.fontUnderline}
-                    onAlignChange={(value) => updateField('textAlign', value)}
-                    onBoldChange={(value) => updateField('fontBold', value)}
-                    onDividerChange={(value) => updateField('useDivider', value)}
-                    onFontFamilyChange={(value) => updateField('fontFamily', value)}
-                    onFontSizeChange={(value) => updateField('fontSize', value)}
-                    onItalicChange={(value) => updateField('fontItalic', value)}
-                    onUnderlineChange={(value) => updateField('fontUnderline', value)}
-                  />
-                </div>
-              </div>
-
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <Field label="Abschlussformel" onChange={(value) => updateField('closing', value)} value={form.closing} />
                 <Field
@@ -489,18 +414,18 @@ export default function AdminSignatureSettings() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">
-                      Freie E-Mail-Signatur
+                      Einheitliches E-Mail-Layout
                     </p>
                     <p className="mt-2 text-sm leading-6 text-slate-600">
-                      Die Vorlage darf frei mit HTML und Platzhaltern aufgebaut werden.
+                      Diese HTML-Vorlage gilt für alle Firmen. Platzhalter ziehen beim Versand die Daten der jeweils gewählten Firma.
                     </p>
                     <p className="mt-2 text-xs leading-5 text-slate-500">
-                      Logo-Größe steuern: statt des Logo-Tokens ein eigenes Bild mit dem Logo-URL-Token setzen, z. B. Breite 160px.
+                      Logo, Adresse, Geschäftsführer, Registerdaten und Kontaktdaten kommen aus den Firmendaten.
                     </p>
                   </div>
                   <button
                     className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-stone-400"
-                    onClick={() => updateField('emailTemplateHtml', buildStarterEmailTemplate())}
+                    onClick={() => updateEmailTemplateHtml(buildStarterEmailTemplate())}
                     type="button"
                   >
                     Startvorlage einsetzen
@@ -510,8 +435,8 @@ export default function AdminSignatureSettings() {
                 <div className="mt-4">
                   <TextAreaField
                     label="HTML-Vorlage"
-                    onChange={(value) => updateField('emailTemplateHtml', value)}
-                    value={form.emailTemplateHtml}
+                    onChange={updateEmailTemplateHtml}
+                    value={globalEmailTemplateHtml}
                   />
                 </div>
 

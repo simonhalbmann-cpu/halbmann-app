@@ -2298,3 +2298,16 @@ pm run build (gruen).
   - CC/BCC-Felder wurden ergaenzt.
 - In der einzelnen Nachrichten-Antwortansicht wurden CC/BCC-Felder ergaenzt.
 - Verifiziert mit `npx tsc --noEmit` und `npm run build`.
+
+## 2026-06-23 - E-Mail-Signatur global vereinheitlicht
+- Korrektur: Briefvorlagen werden nicht ueber einen App-Editor gepflegt, sondern weiterhin mit Word-Vorlagen. Falsche lokale Aenderungen am Briefeditor wurden zurueckgenommen.
+- `components/admin/AdminSignatureSettings.tsx`: Der Signaturbereich bearbeitet jetzt ein einheitliches E-Mail-HTML-Layout fuer alle Firmen.
+- Die Firmenauswahl im Signaturbereich dient nur noch dazu, Inhalte, Logo und Vorschau fuer die jeweilige Firma zu sehen.
+- Das globale E-Mail-Signatur-Layout wird in Firestore unter `adminSettings/emailSignature` gespeichert.
+- Inhalte wie Firma, Adresse, Telefonnummer, Geschaeftsfuehrung, Registerdaten, Steuerdaten und Logo werden weiterhin aus den Firmendaten/Signaturdaten der jeweils gewaehlten Firma gezogen.
+- `app/api/message-drafts/send` laedt beim Versand das globale Signatur-Layout serverseitig und wendet es auf die Signaturdaten der ausgewaehlten Firma an; alte pro-Firma-HTML-Vorlagen bestimmen den Versand damit nicht mehr.
+- Neue Helfer:
+  - `lib/signatureSettings.ts`
+  - `lib/signatureConfigServer.ts`
+- Es wurde kein lokaler Dev-Server gestartet; der zuvor versehentlich gestartete lokale Server wurde gestoppt.
+- Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
