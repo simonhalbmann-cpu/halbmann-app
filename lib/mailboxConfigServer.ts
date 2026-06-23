@@ -1,7 +1,7 @@
 ﻿import { getAdminDb } from './firebaseAdmin';
 import { readLocalMailboxSettings } from './localMailboxConfig';
 import { DEFAULT_INBOX_EMAIL } from './mailbox';
-import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID, type MailboxSettings } from './mailboxSettings';
+import { ADMIN_SETTINGS_COLLECTION, DEFAULT_MAIL_FOOTER_TEXT, MAILBOX_SETTINGS_DOC_ID, type MailboxSettings } from './mailboxSettings';
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -20,6 +20,8 @@ function normalizeMailboxSettings(data: Partial<MailboxSettings>): MailboxSettin
   const smtpUser = cleanText(data.smtpUser) || imapUser || inboxEmail;
   const imapPassword = cleanText(data.imapPassword) || cleanText(data.smtpPassword);
   const smtpPassword = cleanText(data.smtpPassword) || imapPassword;
+  const customFooterText = cleanText(data.mailFooterText);
+  const usesDefaultFooterText = !customFooterText;
 
   return {
     ...data,
@@ -32,10 +34,10 @@ function normalizeMailboxSettings(data: Partial<MailboxSettings>): MailboxSettin
     mailFooterBold: data.mailFooterBold === true,
     mailFooterDivider: data.mailFooterDivider !== false,
     mailFooterFontFamily: cleanText(data.mailFooterFontFamily) || 'Segoe UI, Arial, sans-serif',
-    mailFooterFontSize: cleanText(data.mailFooterFontSize) || '12',
+    mailFooterFontSize: cleanText(data.mailFooterFontSize) || (usesDefaultFooterText ? '11' : '12'),
     mailFooterItalic: data.mailFooterItalic === true,
-    mailFooterText: cleanText(data.mailFooterText),
-    mailFooterTextAlign: data.mailFooterTextAlign === 'left' ? 'left' : 'center',
+    mailFooterText: customFooterText || DEFAULT_MAIL_FOOTER_TEXT,
+    mailFooterTextAlign: usesDefaultFooterText ? 'left' : data.mailFooterTextAlign === 'left' ? 'left' : 'center',
     mailFooterUnderline: data.mailFooterUnderline === true,
     mailHeaderBold: data.mailHeaderBold === true,
     mailHeaderDivider: data.mailHeaderDivider !== false,

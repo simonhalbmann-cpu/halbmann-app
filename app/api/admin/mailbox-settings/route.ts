@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { getAdminAuth, getAdminDb, hasFirebaseAdminConfig } from '../../../../lib/firebaseAdmin';
 import { deleteLocalMailboxSettings, writeLocalMailboxSettings } from '../../../../lib/localMailboxConfig';
 import { getMailboxSettingsStateServer } from '../../../../lib/mailboxConfigServer';
-import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID } from '../../../../lib/mailboxSettings';
+import { ADMIN_SETTINGS_COLLECTION, DEFAULT_MAIL_FOOTER_TEXT, MAILBOX_SETTINGS_DOC_ID } from '../../../../lib/mailboxSettings';
 import { getFirestoreDocument } from '../../../../lib/firestoreRest';
 
 export const runtime = 'nodejs';
@@ -237,8 +237,8 @@ export async function DELETE(request: Request) {
           mailFooterFontFamily: '',
           mailFooterFontSize: '',
           mailFooterItalic: false,
-          mailFooterText: '',
-          mailFooterTextAlign: 'center',
+          mailFooterText: DEFAULT_MAIL_FOOTER_TEXT,
+          mailFooterTextAlign: 'left',
           mailFooterUnderline: false,
           mailHeaderBold: false,
           mailHeaderDivider: true,
@@ -272,8 +272,8 @@ export async function DELETE(request: Request) {
         mailFooterFontFamily: '',
         mailFooterFontSize: '',
         mailFooterItalic: false,
-        mailFooterText: '',
-        mailFooterTextAlign: 'center',
+        mailFooterText: DEFAULT_MAIL_FOOTER_TEXT,
+        mailFooterTextAlign: 'left',
         mailFooterUnderline: false,
         mailHeaderBold: false,
         mailHeaderDivider: true,

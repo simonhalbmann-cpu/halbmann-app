@@ -273,6 +273,8 @@ export const EMAIL_SIGNATURE_TOKENS = [
   '{{TAX_NUMBER_LINE}}',
   '{{VAT_ID}}',
   '{{VAT_ID_LINE}}',
+  '{{LEGAL_LINE_1}}',
+  '{{LEGAL_LINE_2}}',
   '{{LOGO}}',
   '{{LOGO_URL}}',
   '{{LOGO_ALT}}',
@@ -2214,6 +2216,16 @@ function buildEmailSignatureTokenMap(signature: SignatureRecord) {
   const taxNumberDisplay = formatTaxNumberDisplay(signature.taxNumber);
   const vatIdDisplay = formatVatIdDisplay(signature.vatId);
   const resolvedLogoUrl = resolveSignatureLogoUrl(signature.logoUrl);
+  const legalLine1 = [
+    signature.registeredOffice ? `Sitz: ${signature.registeredOffice}` : '',
+    registerCourtDisplay,
+    commercialRegisterDisplay,
+  ].filter(Boolean).join(' | ');
+  const legalLine2 = [
+    managingDirectorDisplay,
+    taxNumberDisplay,
+    vatIdDisplay,
+  ].filter(Boolean).join(' | ');
 
   return {
     '{{ADDRESS}}': encodeHtml(address).replace(/\n/g, '<br />'),
@@ -2226,10 +2238,12 @@ function buildEmailSignatureTokenMap(signature: SignatureRecord) {
     '{{HRB}}': encodeHtml(commercialRegisterDisplay),
     '{{HRB_LINE}}': encodeHtml(commercialRegisterDisplay),
     '{{LEGAL_FORM}}': encodeHtml(normalizeLegalFormDisplay(signature.legalForm)),
+    '{{LEGAL_LINE_1}}': encodeHtml(legalLine1),
+    '{{LEGAL_LINE_2}}': encodeHtml(legalLine2),
     '{{LOGO}}': resolvedLogoUrl
       ? `<img src="${encodeHtml(resolvedLogoUrl)}" alt="${encodeHtml(
           signature.logoAlt || signature.companyName || 'Logo'
-        )}" width="105" style="display:block;width:105px;max-width:105px;height:auto;object-fit:contain;" />`
+        )}" width="150" style="display:block;width:150px;max-width:150px;height:auto;object-fit:contain;" />`
       : '',
     '{{LOGO_ALT}}': encodeHtml(signature.logoAlt || signature.companyName || 'Logo'),
     '{{LOGO_URL}}': encodeHtml(resolvedLogoUrl),

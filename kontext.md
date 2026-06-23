@@ -2327,3 +2327,13 @@ pm run build (gruen).
 - `buildCompanyLine` verhindert jetzt doppelte Rechtsformen wie `GmbH GmbH`, wenn der Firmenname die Rechtsform bereits enthaelt.
 - Die Erkennung alter Default-Vorlagen ersetzt nun auch das vorherige rote-Vertikallinien-Layout automatisch durch die neue Vorlage.
 - Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
+
+## 2026-06-23 - E-Mail-Signatur einspaltig und Footer-Rechtstext
+- Roter Akzentstrich wurde aus der E-Mail-Signatur entfernt.
+- Signatur ist jetzt einspaltig: Logo oben links groesser, darunter Name, Firma, Adresse und Kontaktdaten linksbuendig.
+- Der Trennstrich vor den rechtlichen Angaben ist grau und sichtbarer (`2px`).
+- Rechtliche Angaben werden ueber neue Sammelplatzhalter `{{LEGAL_LINE_1}}` und `{{LEGAL_LINE_2}}` kompakt in ein bis zwei Zeilen ausgegeben.
+- Logo-Breite wurde auf 150px erhoeht.
+- Der Mail-Footer erhaelt standardmaessig einen professionellen Vertraulichkeitshinweis, linksbuendig und kleiner gesetzt, solange kein eigener Footertext gepflegt ist.
+- Mailbox-Reset/API/UI verwenden denselben Standard-Footertext.
+- Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.

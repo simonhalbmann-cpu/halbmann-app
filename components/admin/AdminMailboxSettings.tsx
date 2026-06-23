@@ -5,7 +5,7 @@ import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { db } from '../../lib/firebase';
 import { DEFAULT_INBOX_EMAIL } from '../../lib/mailbox';
-import { ADMIN_SETTINGS_COLLECTION, MAILBOX_SETTINGS_DOC_ID } from '../../lib/mailboxSettings';
+import { ADMIN_SETTINGS_COLLECTION, DEFAULT_MAIL_FOOTER_TEXT, MAILBOX_SETTINGS_DOC_ID } from '../../lib/mailboxSettings';
 
 type TextAlign = 'center' | 'left';
 
@@ -64,8 +64,8 @@ const defaultValues: FormState = {
   mailFooterFontFamily: fontOptions[0],
   mailFooterFontSize: '12',
   mailFooterItalic: false,
-  mailFooterText: '',
-  mailFooterTextAlign: 'center',
+  mailFooterText: DEFAULT_MAIL_FOOTER_TEXT,
+  mailFooterTextAlign: 'left',
   mailFooterUnderline: false,
   mailHeaderBold: false,
   mailHeaderDivider: true,
@@ -109,8 +109,8 @@ function mapSettingsToForm(data?: Partial<FormState> | null): FormState {
     mailFooterFontFamily: cleanText(data?.mailFooterFontFamily) || defaultValues.mailFooterFontFamily,
     mailFooterFontSize: cleanText(data?.mailFooterFontSize) || defaultValues.mailFooterFontSize,
     mailFooterItalic: data?.mailFooterItalic === true,
-    mailFooterText: cleanText(data?.mailFooterText),
-    mailFooterTextAlign: data?.mailFooterTextAlign === 'left' ? 'left' : 'center',
+    mailFooterText: cleanText(data?.mailFooterText) || DEFAULT_MAIL_FOOTER_TEXT,
+    mailFooterTextAlign: cleanText(data?.mailFooterText) ? (data?.mailFooterTextAlign === 'left' ? 'left' : 'center') : 'left',
     mailFooterUnderline: data?.mailFooterUnderline === true,
     mailHeaderBold: data?.mailHeaderBold === true,
     mailHeaderDivider: data?.mailHeaderDivider !== false,
