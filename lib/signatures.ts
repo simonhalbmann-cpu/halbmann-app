@@ -2058,7 +2058,7 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
     bankName: firstRecordText(data?.bankName, data?.bank),
     bic: firstRecordText(data?.bic),
     city: firstRecordText(data?.city),
-    closing: cleanSignatureText(data?.signatureClosing) || 'Mit freundlichen GrÃ¼ÃŸen',
+    closing: cleanSignatureText(data?.signatureClosing) || 'Mit freundlichen Grüßen',
     commercialRegisterNumber:
       firstRecordText(data?.commercialRegisterNumber, data?.hrb),
     companyName: normalizeCompanyDisplayName(firstRecordText(data?.name)),
@@ -2099,7 +2099,7 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
     letterClosing:
       cleanSignatureText(data?.signatureLetterClosing) ||
       cleanSignatureText(data?.signatureClosing) ||
-      'Mit freundlichen GrÃ¼ÃŸen',
+      'Mit freundlichen Grüßen',
     letterClosingBlock: cleanSignatureText(data?.signatureLetterClosingBlock),
     letterFooter: cleanSignatureText(data?.signatureLetterFooter),
     letterGreeting: cleanSignatureText(data?.signatureLetterGreeting),
@@ -2141,7 +2141,7 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
       cleanSignatureText(data?.signatureRoleLabel),
     name: cleanSignatureText(data?.signatureName),
     phone: firstRecordText(data?.phone),
-    portalClosing: cleanSignatureText(data?.signaturePortalClosing) || 'Mit freundlichen GrÃ¼ÃŸen',
+    portalClosing: cleanSignatureText(data?.signaturePortalClosing) || 'Mit freundlichen Grüßen',
     portalCompanyName:
       normalizeCompanyDisplayName(data?.signaturePortalCompanyName) || normalizeCompanyDisplayName(data?.name),
     portalName:
@@ -2162,7 +2162,7 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
 
 export function buildMessageSignatureText(signature: SignatureRecord) {
   return [
-    signature.portalClosing || 'Mit freundlichen GrÃ¼ÃŸen',
+    signature.portalClosing || 'Mit freundlichen Grüßen',
     '',
     signature.portalName,
     signature.portalCompanyName || signature.companyName,
@@ -2220,7 +2220,7 @@ function buildEmailSignatureTokenMap(signature: SignatureRecord) {
     '{{LOGO}}': resolvedLogoUrl
       ? `<img src="${encodeHtml(resolvedLogoUrl)}" alt="${encodeHtml(
           signature.logoAlt || signature.companyName || 'Logo'
-        )}" width="180" style="display:block;width:180px;max-width:180px;height:auto;object-fit:contain;" />`
+        )}" width="120" style="display:block;width:120px;max-width:120px;height:auto;object-fit:contain;" />`
       : '',
     '{{LOGO_ALT}}': encodeHtml(signature.logoAlt || signature.companyName || 'Logo'),
     '{{LOGO_URL}}': encodeHtml(resolvedLogoUrl),
@@ -2273,7 +2273,7 @@ export function buildSignatureText(signature: SignatureRecord) {
 
   const address = buildSignatureAddress(signature);
   return [
-    signature.closing || 'Mit freundlichen GrÃ¼ÃŸen',
+    signature.closing || 'Mit freundlichen Grüßen',
     '',
     signature.name,
     buildCompanyLine(signature.companyName, signature.legalForm),
@@ -2310,7 +2310,7 @@ export function buildLetterText(body: string, signature: SignatureRecord) {
     '',
     trimmedBody,
     '',
-    signature.letterClosing || signature.closing || 'Mit freundlichen GrÃ¼ÃŸen',
+    signature.letterClosing || signature.closing || 'Mit freundlichen Grüßen',
     signature.name,
     buildCompanyLine(signature.companyName, signature.legalForm),
     address,
@@ -2642,7 +2642,7 @@ export function buildLetterHtml({
         bodyHtml || encodeHtml(cleanSignatureText(emptyBodyPlaceholder))
       }</div>
       <div style="margin-top:24px;white-space:pre-line;">
-        ${encodeHtml(signature.letterClosing || signature.closing || 'Mit freundlichen GrÃ¼ÃŸen')}
+        ${encodeHtml(signature.letterClosing || signature.closing || 'Mit freundlichen Grüßen')}
         ${signature.name ? `<br /><br />${encodeHtml(signature.name)}` : ''}
         ${
           signature.companyName

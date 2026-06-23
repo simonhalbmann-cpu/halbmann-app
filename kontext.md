@@ -2311,3 +2311,11 @@ pm run build (gruen).
   - `lib/signatureConfigServer.ts`
 - Es wurde kein lokaler Dev-Server gestartet; der zuvor versehentlich gestartete lokale Server wurde gestoppt.
 - Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
+
+## 2026-06-23 - E-Mail-Signatur Layout korrigiert
+- Die globale Standard-Mail-Signatur wurde optisch kompakter neu aufgebaut: Grussformel oben, darunter zweispaltige Signatur mit Logo links, roter Trennlinie und Firmendaten rechts.
+- Die falsche Darstellung `GrÃ¼ÃŸen` wurde behoben; die globale Vorlage nutzt HTML-Entities fuer `Mit freundlichen Gr&uuml;&szlig;en`.
+- Alte kaputte gespeicherte Default-Vorlagen aus Firestore werden automatisch erkannt (`GrÃ`, `Â·` oder altes Tahoma-Layout) und durch die neue Vorlage ersetzt.
+- Logo-Ausgabe in Mail-Signaturen wurde auf 120px Breite reduziert, damit die Signatur nicht ueberdimensioniert wirkt.
+- Zentrale Signatur-Fallbacks in `lib/signatures.ts` wurden von kaputtem Encoding auf `Mit freundlichen Grüßen` korrigiert.
+- Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.

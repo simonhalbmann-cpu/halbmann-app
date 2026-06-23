@@ -478,10 +478,10 @@ export default function AdminSignatureSettings() {
                     className={`${previewSignature.useDivider ? 'border-t border-stone-300 pt-4' : ''}`}
                     style={previewStyle}
                   >
-                    <p style={{ margin: 0 }}>{previewSignature.closing || 'Mit freundlichen GrÃ¼ÃŸen'}</p>
+                    <p style={{ margin: 0 }}>{previewSignature.closing || 'Mit freundlichen Grüßen'}</p>
                     {previewSignature.name ? <p className="text-slate-950" style={{ margin: '14px 0 0 0' }}>{previewSignature.name}</p> : null}
                     <p className="text-slate-950" style={{ margin: previewSignature.name ? '6px 0 0 0' : '14px 0 0 0' }}>
-                      {[previewSignature.companyName, previewSignature.legalForm].filter(Boolean).join(' Â· ') || 'Firmenname'}
+                      {[previewSignature.companyName, previewSignature.legalForm].filter(Boolean).join(' · ') || 'Firmenname'}
                     </p>
                     {previewSignature.department ? <p style={{ margin: '4px 0 0 0' }}>{previewSignature.department}</p> : null}
                     {address ? <p className="whitespace-pre-line" style={{ margin: '12px 0 0 0' }}>{address}</p> : null}
@@ -505,7 +505,7 @@ export default function AdminSignatureSettings() {
                 <div className="mt-5 rounded-[20px] border border-stone-200 bg-white px-6 py-5 text-slate-700">
                   <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Nachrichten-Signatur</p>
                   <div className="mt-4 text-[13px] leading-5 text-slate-700">
-                    <p>{previewSignature.portalClosing || 'Mit freundlichen GrÃ¼ÃŸen'}</p>
+                    <p>{previewSignature.portalClosing || 'Mit freundlichen Grüßen'}</p>
                     {previewSignature.portalName ? <p className="mt-3 font-medium text-slate-950">{previewSignature.portalName}</p> : null}
                     <p className={`${previewSignature.portalName ? 'mt-1.5' : 'mt-3'} font-medium text-slate-950`}>
                       {previewSignature.portalCompanyName || previewSignature.companyName || 'Firmenname'}
