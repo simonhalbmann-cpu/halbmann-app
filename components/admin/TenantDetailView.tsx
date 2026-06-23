@@ -41,6 +41,7 @@ import {
   type TenantDocumentEntry,
 } from '../../lib/tenantDocuments';
 import { uploadOutgoingMessageAttachments } from '../../lib/outgoingMessageAttachments';
+import { useLetterTemplateSettings } from './useLetterTemplateSettings';
 
 type TenantDetailViewProps = {
   activeThemeListMode?: 'archive' | 'open';
@@ -330,6 +331,7 @@ export default function TenantDetailView({
 }: TenantDetailViewProps) {
   const router = useRouter();
   const { profile, user } = useAuth();
+  const letterTemplateSettings = useLetterTemplateSettings();
   const [tenant, setTenant] = useState<DocumentData | null>(null);
   const [allTenants, setAllTenants] = useState<WorkflowRecord[]>([]);
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
@@ -1309,14 +1311,14 @@ export default function TenantDetailView({
   async function downloadHandoverProtocol(kind: 'moveIn' | 'moveOut') {
     const templateUrl = cleanText(
       kind === 'moveIn'
-        ? selectedCompany?.data.handoverMoveInTemplateUrl
-        : selectedCompany?.data.handoverMoveOutTemplateUrl
+        ? letterTemplateSettings.handoverMoveInTemplateUrl
+        : letterTemplateSettings.handoverMoveOutTemplateUrl
     );
     if (!templateUrl) {
       setError(
         kind === 'moveIn'
-          ? 'Fuer diese Firma ist noch keine Vorlage fuer das Uebergabeprotokoll Einzug hinterlegt.'
-          : 'Fuer diese Firma ist noch keine Vorlage fuer das Uebergabeprotokoll Auszug hinterlegt.'
+          ? 'Es ist noch keine globale Vorlage fuer das Uebergabeprotokoll Einzug hinterlegt.'
+          : 'Es ist noch keine globale Vorlage fuer das Uebergabeprotokoll Auszug hinterlegt.'
       );
       return;
     }
@@ -1343,6 +1345,7 @@ export default function TenantDetailView({
           recipientName: letterRecipient.name,
           recipientSalutation: letterRecipient.salutation,
           senderName: signatureRecord.name,
+          signature: signatureRecord,
           subject,
           subjectLine2,
         }),
@@ -2249,10 +2252,11 @@ export default function TenantDetailView({
               recipientName: letterRecipient.name,
               recipientSalutation: letterRecipient.salutation,
               senderName: signatureRecord.name,
+              signature: signatureRecord,
               subject,
               subjectLine2,
             }),
-            templateUrl: cleanText(selectedCompany?.data.letterTemplateUrl),
+            templateUrl: cleanText(letterTemplateSettings.letterTemplateUrl),
           });
         }
         setReplyText('');

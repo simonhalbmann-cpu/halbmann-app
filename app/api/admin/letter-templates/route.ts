@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
-import { getAdminAuth, getAdminDb, hasFirebaseAdminConfig } from '../../../../lib/firebaseAdmin';
+import { getAdminAuth, getAdminDb, getAdminStorageBucket, hasFirebaseAdminConfig } from '../../../../lib/firebaseAdmin';
 
 export const runtime = 'nodejs';
 
@@ -10,6 +11,10 @@ const ALLOWED_EXTENSIONS = new Set(['.doc', '.docx', '.dot', '.dotx']);
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildFirebaseStorageDownloadUrl(bucketName: string, storagePath: string, token: string) {
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
 }
 
 function sanitizeFileName(value: string) {
@@ -62,12 +67,9 @@ export async function POST(request: Request) {
 
   try {
     const formData = await request.formData();
-    const companyId = cleanText(formData.get('companyId'));
+    const templateType = cleanText(formData.get('templateType')) || 'letter';
     const file = formData.get('file');
 
-    if (!companyId) {
-      return NextResponse.json({ ok: false, error: 'company_id_missing' }, { status: 400 });
-    }
     if (!(file instanceof File)) {
       return NextResponse.json({ ok: false, error: 'template_file_missing' }, { status: 400 });
     }
@@ -81,12 +83,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'template_file_type_invalid' }, { status: 400 });
     }
 
-    const uploadDirectory = path.join(process.cwd(), 'public', 'uploads', 'letter-templates');
-    await mkdir(uploadDirectory, { recursive: true });
+    const savedName = `${sanitizeFileName(templateType)}-${Date.now()}-${originalName}`;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let url = '';
 
-    const savedName = `${sanitizeFileName(companyId)}-${Date.now()}-${originalName}`;
-    const targetPath = path.join(uploadDirectory, savedName);
-    await writeFile(targetPath, Buffer.from(await file.arrayBuffer()));
+    if (hasFirebaseAdminConfig()) {
+      const bucket = getAdminStorageBucket();
+      const storagePath = `letter-templates/${savedName}`;
+      const downloadToken = randomUUID();
+      await bucket.file(storagePath).save(buffer, {
+        contentType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        metadata: {
+          metadata: {
+            firebaseStorageDownloadTokens: downloadToken,
+          },
+        },
+      });
+      url = buildFirebaseStorageDownloadUrl(bucket.name, storagePath, downloadToken);
+    } else {
+      const uploadDirectory = path.join(process.cwd(), 'public', 'uploads', 'letter-templates');
+      await mkdir(uploadDirectory, { recursive: true });
+      const targetPath = path.join(uploadDirectory, savedName);
+      await writeFile(targetPath, buffer);
+      url = `/uploads/letter-templates/${savedName}`;
+    }
 
     return NextResponse.json({
       fileName: savedName,
@@ -94,7 +114,7 @@ export async function POST(request: Request) {
       originalName: file.name,
       size: file.size,
       uploadedAt: new Date().toISOString(),
-      url: `/uploads/letter-templates/${savedName}`,
+      url,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'letter_template_upload_failed';

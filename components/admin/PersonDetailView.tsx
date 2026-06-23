@@ -27,6 +27,7 @@ import { uploadOutgoingMessageAttachments } from '../../lib/outgoingMessageAttac
 import type { LocalMessageTheme } from '../../lib/localMessageThemes';
 import { buildMessageThemes, type MessageTheme } from '../../lib/messageThemes';
 import { buildLetterTemplateReplacements, downloadFilledLetterTemplate } from './letterOfficeExport';
+import { useLetterTemplateSettings } from './useLetterTemplateSettings';
 
 type PersonDetailViewProps = {
   personId: string;
@@ -173,6 +174,7 @@ function buildAddressBlock(lines: Array<unknown>) {
 export default function PersonDetailView({ personId }: PersonDetailViewProps) {
   const { profile, user } = useAuth();
   const router = useRouter();
+  const letterTemplateSettings = useLetterTemplateSettings();
   const [person, setPerson] = useState<PersonData | null>(null);
   const [messages, setMessages] = useState<WorkflowRecord[]>([]);
   const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
@@ -1126,10 +1128,11 @@ export default function PersonDetailView({ personId }: PersonDetailViewProps) {
               recipientName,
               recipientSalutation: cleanText(person.salutation),
               senderName: signatureRecord.name,
+              signature: signatureRecord,
               subject: draftSubject,
               subjectLine2: cleanText(selectedProperty?.data.name),
             }),
-            templateUrl: cleanText(selectedCompany?.data.letterTemplateUrl),
+            templateUrl: cleanText(letterTemplateSettings.letterTemplateUrl),
           });
         }
         if (cleanText(followUpDate)) {

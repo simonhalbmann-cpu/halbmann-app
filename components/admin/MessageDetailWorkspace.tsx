@@ -36,6 +36,7 @@ import { appendDeliveryLabel } from './messageDeliveryLabel';
 import MessageAttachmentPreview, { type MessageAttachmentEntry } from './MessageAttachmentPreview';
 import OutgoingAttachmentPicker, { type PendingOutgoingAttachment } from './OutgoingAttachmentPicker';
 import { uploadOutgoingMessageAttachments } from '../../lib/outgoingMessageAttachments';
+import { useLetterTemplateSettings } from './useLetterTemplateSettings';
 
 type DeliveryMode = 'both' | 'email' | 'letter';
 
@@ -136,6 +137,7 @@ function ActionButton({
 export default function MessageDetailWorkspace({ messageId }: { messageId: string }) {
   const router = useRouter();
   const { profile, user } = useAuth();
+  const letterTemplateSettings = useLetterTemplateSettings();
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
   const [tickets, setTickets] = useState<WorkflowRecord[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
@@ -605,10 +607,11 @@ export default function MessageDetailWorkspace({ messageId }: { messageId: strin
             recipientName: letterRecipient.name,
             recipientSalutation: letterRecipient.salutation,
             senderName: signature.name,
+            signature,
             subject,
             subjectLine2,
           }),
-          templateUrl: cleanText(selectedCompany?.data.letterTemplateUrl),
+          templateUrl: cleanText(letterTemplateSettings.letterTemplateUrl),
         });
       }
       if (cleanText(followUpDate) && cleanText(selectedTenant?.id)) {

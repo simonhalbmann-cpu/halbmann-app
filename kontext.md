@@ -2344,3 +2344,13 @@ pm run build (gruen).
 - `buildMessageSignatureText` gibt keine zusaetzliche Kurzsignatur mehr zurueck, damit Entwuerfe und Verlaufseintraege keine zweite Signatur neben der echten E-Mail-Signatur erhalten.
 - Alte Firestore-Felder wie `signaturePortalName` bleiben nur aus Rueckwaertskompatibilitaet im Datenmodell lesbar.
 - Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
+
+## 2026-06-23 - Brief- und Uebergabevorlagen globalisiert
+- Die Word-Vorlagen unter `/admin/einstellungen?tab=brief` sind nicht mehr pro Firma gepflegt, sondern global: eine Briefvorlage, eine Uebergabe Einzug, eine Uebergabe Auszug.
+- Die globale Vorlagenkonfiguration wird in Firestore unter `adminSettings/letterTemplates` gespeichert.
+- Briefe aus Nachrichten, Mietern und Dienstleister-/Personenakten sowie Uebergabeprotokolle ziehen die Vorlage zentral und befuellen die Inhalte weiterhin aus den passenden Firmen-/Signaturdaten.
+- Word-Platzhalter werden jetzt auch in `word/header*.xml` und `word/footer*.xml` ersetzt, damit Kopf- und Fusszeilen voll dynamisch sein koennen.
+- Neue Footer-Platzhalter fuer Word: `{{FOOTER}}`, `{{FOOTER_LINE_1}}`, `{{FOOTER_LINE_2}}`, `{{FOOTER_LINE_3}}`, plus Firmendaten wie `{{COMPANY_LINE}}`, `{{STREET_LINE}}`, `{{CITY_LINE}}`, `{{EMAIL}}`, `{{REGISTER_COURT_LINE}}`, `{{HRB_LINE}}`, `{{MANAGING_DIRECTOR_LINE}}`, `{{TAX_NUMBER_LINE}}`, `{{VAT_ID_LINE}}`, `{{IBAN}}`, `{{BIC}}`.
+- `{{EMAIL}}` wird fuer Briefvorlagen immer mit `portal@halbmann-holding.de` befuellt.
+- Vorlagen-Uploads laufen bei vorhandener Firebase-Admin-Konfiguration ueber Firebase Storage, damit sie auf Vercel dauerhaft verfuegbar sind. Alte lokale `/uploads/letter-templates/...`-Links bleiben lesbar.
+- Verifiziert mit `npm run lint` und `npm run build`.

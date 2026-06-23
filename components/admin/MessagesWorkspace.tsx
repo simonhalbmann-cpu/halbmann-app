@@ -27,6 +27,7 @@ import OutgoingAttachmentPicker, { type PendingOutgoingAttachment } from './Outg
 import MessageAttachmentPreview from './MessageAttachmentPreview';
 import TenantDetailView from './TenantDetailView';
 import { uploadOutgoingMessageAttachments } from '../../lib/outgoingMessageAttachments';
+import { useLetterTemplateSettings } from './useLetterTemplateSettings';
 
 type MailboxTab = 'archive' | 'compose' | 'inbox';
 type ComposeScope = 'all_tenants' | 'company_tenants' | 'manual' | 'property_tenants' | 'service_contacts';
@@ -369,6 +370,7 @@ export default function MessagesWorkspace() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { profile, user } = useAuth();
+  const letterTemplateSettings = useLetterTemplateSettings();
   const currentTab = (searchParams.get('tab') as MailboxTab) || 'inbox';
 
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
@@ -1216,12 +1218,6 @@ export default function MessagesWorkspace() {
         : null;
     const propertyRecord = properties.find((entry) => entry.id === cleanText(propertyId)) ?? null;
     const subjectLine2 = buildLetterSubjectLine2(propertyRecord, cleanText(tenantRecord?.data.unitLabel));
-    const propertyOwnerCompanyId = getPropertyOwnerCompanyId(propertyRecord);
-    const templateCompany =
-      companies.find((entry) => entry.id === propertyOwnerCompanyId) ??
-      companies.find((entry) => entry.id === cleanText(composeCompanyId)) ??
-      companies.find((entry) => entry.id === cleanText(recipient.companyId)) ??
-      null;
     const letterRecipient =
       recipient.recipientType === 'contact'
         ? {
@@ -1321,10 +1317,11 @@ export default function MessagesWorkspace() {
         recipientName: letterRecipient.name,
         recipientSalutation: letterRecipient.salutation,
         senderName: signature.name,
+        signature,
         subject,
         subjectLine2,
       }),
-      templateUrl: cleanText(templateCompany?.data.letterTemplateUrl),
+      templateUrl: cleanText(letterTemplateSettings.letterTemplateUrl),
     });
   }
 

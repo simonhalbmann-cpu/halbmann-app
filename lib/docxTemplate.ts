@@ -13,7 +13,7 @@ type ZipEntry = {
   uncompressedSize: number;
 };
 
-const TEXT_XML_FILE_PATTERN = /^word\/document\.xml$/;
+const TEXT_XML_FILE_PATTERN = /^word\/(?:document|header\d+|footer\d+)\.xml$/;
 const NORMAL_FONT_SIZE = 20;
 const SMALL_FONT_SIZE = 16;
 const TEMPLATE_FONT_FAMILY = 'Tahoma';

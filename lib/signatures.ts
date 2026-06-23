@@ -584,7 +584,7 @@ function buildLetterTemplateTokenMap(
     '{{CLOSING_BLOCK}}': closingBlock
       ? closingBlock
       : [
-          encodeHtml(signature.letterClosing || signature.closing || 'Mit freundlichen GrÃ¼ÃŸen'),
+          encodeHtml(signature.letterClosing || signature.closing || 'Mit freundlichen Grüßen'),
           signature.name ? encodeHtml(signature.name) : '',
           signature.companyName
             ? encodeHtml(buildCompanyLine(signature.companyName, signature.legalForm))

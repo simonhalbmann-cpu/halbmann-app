@@ -67,6 +67,24 @@ function resolveTemplatePath(templateUrl: string) {
   return path.join(process.cwd(), 'public', 'uploads', 'letter-templates', fileName);
 }
 
+async function readTemplateBuffer(templateUrl: string) {
+  const cleaned = cleanText(templateUrl);
+  if (cleaned.startsWith('/uploads/letter-templates/')) {
+    return readFile(resolveTemplatePath(cleaned));
+  }
+
+  const url = new URL(cleaned);
+  if (!['firebasestorage.googleapis.com', 'storage.googleapis.com'].includes(url.hostname)) {
+    throw new Error('letter_template_path_invalid');
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('letter_template_fetch_failed');
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
 export async function POST(request: Request) {
   const adminCheck = await requireAdmin(request);
   if (adminCheck.error) {
@@ -83,7 +101,7 @@ export async function POST(request: Request) {
     const replacements = Object.fromEntries(
       Object.entries(payload.replacements ?? {}).map(([key, value]) => [key, cleanText(value)])
     );
-    const templateBuffer = await readFile(resolveTemplatePath(templateUrl));
+    const templateBuffer = await readTemplateBuffer(templateUrl);
     const documentBuffer = fillDocxTemplate(templateBuffer, replacements);
     const outputName = `${sanitizeOutputName(cleanText(payload.fileName) || cleanText(replacements.SUBJECT) || 'Brief')}.docx`;
 

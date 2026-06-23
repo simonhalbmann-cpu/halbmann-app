@@ -1,5 +1,18 @@
 'use client';
 
+import {
+  buildCompanyLine,
+  cleanSignatureText,
+  DEFAULT_SIGNATURE_EMAIL,
+  formatCommercialRegisterDisplay,
+  formatManagingDirectorDisplay,
+  formatRegisterCourtDisplay,
+  formatTaxNumberDisplay,
+  formatVatIdDisplay,
+  normalizeLegalFormDisplay,
+  type SignatureRecord,
+} from '../../lib/signatures';
+
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -117,6 +130,7 @@ export function buildLetterTemplateReplacements({
   recipientName,
   recipientSalutation,
   senderName,
+  signature,
   subject,
   subjectLine2,
 }: {
@@ -128,6 +142,7 @@ export function buildLetterTemplateReplacements({
   recipientName?: string;
   recipientSalutation?: string;
   senderName?: string;
+  signature?: SignatureRecord;
   subject: string;
   subjectLine2?: string;
 }) {
@@ -138,30 +153,84 @@ export function buildLetterTemplateReplacements({
   }).format(new Date());
   const recipientBlock = [recipientCompany, recipientName, recipientAddress].map(cleanText).filter(Boolean).join('\n');
   const greeting = buildFormalGreeting(cleanText(recipientSalutation), cleanText(recipientName));
-  const closingText = [cleanText(closing) || 'Mit freundlichen Grüßen', cleanText(senderName), cleanText(companyName)]
+  const senderCompanyName = cleanSignatureText(signature?.companyName) || cleanText(companyName);
+  const senderLegalForm = cleanSignatureText(signature?.legalForm);
+  const companyLine = buildCompanyLine(senderCompanyName, senderLegalForm);
+  const streetLine = [signature?.street, signature?.houseNumber].map(cleanSignatureText).filter(Boolean).join(' ');
+  const cityLine = [signature?.postalCode, signature?.city].map(cleanSignatureText).filter(Boolean).join(' ');
+  const registeredOffice = cleanSignatureText(signature?.registeredOffice) || cleanSignatureText(signature?.city);
+  const registerCourtLine = formatRegisterCourtDisplay(signature?.registerCourt);
+  const commercialRegisterLine = formatCommercialRegisterDisplay(signature?.commercialRegisterNumber);
+  const managingDirectorLine = formatManagingDirectorDisplay(signature?.managingDirector);
+  const taxNumberLine = formatTaxNumberDisplay(signature?.taxNumber);
+  const vatIdLine = formatVatIdDisplay(signature?.vatId);
+  const email = DEFAULT_SIGNATURE_EMAIL;
+  const senderLine = [companyLine, streetLine, cityLine].filter(Boolean).join(' • ');
+  const footerLine1 = [companyLine, streetLine, cityLine, email, cleanSignatureText(signature?.website)]
+    .filter(Boolean)
+    .join(' • ');
+  const footerLine2 = [registerCourtLine, commercialRegisterLine, managingDirectorLine, taxNumberLine, vatIdLine]
+    .filter(Boolean)
+    .join(' • ');
+  const footerLine3 = [cleanSignatureText(signature?.bankName), cleanSignatureText(signature?.iban), cleanSignatureText(signature?.bic)]
+    .filter(Boolean)
+    .join(' • ');
+  const closingText = [cleanText(closing) || 'Mit freundlichen Grüßen', cleanText(senderName), companyLine]
     .filter(Boolean)
     .join('\n');
 
   return {
     ABSCHLUSS: closingText,
+    ABSENDER_ZEILE: senderLine,
     ANREDE: greeting,
+    BANK: cleanSignatureText(signature?.bankName),
     BETREFF: cleanText(subject),
     BETREFF_ZEILE_2: cleanText(subjectLine2),
+    BIC: cleanSignatureText(signature?.bic),
     BODY: body,
     BODY_TEXT: body,
     BRIEFTEXT: body,
+    CITY_DATE: `${cleanSignatureText(signature?.city) || 'Berlin'}, ${today}`,
+    CITY_LINE: cityLine,
     CLOSING: closingText,
     CLOSING_BLOCK: closingText,
+    COMPANY_LINE: companyLine,
+    COMPANY_NAME: senderCompanyName,
     DATE: today,
     DATUM: today,
+    EMAIL: email,
     EMPFAENGER: recipientBlock,
     EMPFAENGER_BLOCK: recipientBlock,
+    FOOTER: [footerLine1, footerLine2, footerLine3].filter(Boolean).join('\n'),
+    FOOTER_LINE_1: footerLine1,
+    FOOTER_LINE_2: footerLine2,
+    FOOTER_LINE_3: footerLine3,
+    FORMAL_SALUTATION: greeting,
     GREETING: greeting,
+    HRB: cleanSignatureText(signature?.commercialRegisterNumber),
+    HRB_LINE: commercialRegisterLine,
+    IBAN: cleanSignatureText(signature?.iban),
+    LEGAL_FORM: normalizeLegalFormDisplay(senderLegalForm),
+    LOGO_ALT: cleanSignatureText(signature?.logoAlt) || 'Halbmann',
+    MANAGING_DIRECTOR: cleanSignatureText(signature?.managingDirector),
+    MANAGING_DIRECTOR_LINE: managingDirectorLine,
+    PHONE: cleanSignatureText(signature?.phone) || cleanSignatureText(signature?.mobilePhone),
     RECIPIENT_ADDRESS: cleanText(recipientAddress),
     RECIPIENT_BLOCK: recipientBlock,
     RECIPIENT_COMPANY: cleanText(recipientCompany),
     RECIPIENT_NAME: cleanText(recipientName),
+    REGISTER_COURT: cleanSignatureText(signature?.registerCourt),
+    REGISTER_COURT_LINE: registerCourtLine,
+    REGISTERED_OFFICE: registeredOffice,
+    SENDER_LINE: senderLine,
+    SIGNATURE_NAME: cleanText(senderName),
+    STREET_LINE: streetLine,
     SUBJECT: cleanText(subject),
     SUBJECT_LINE_2: cleanText(subjectLine2),
+    TAX_NUMBER: cleanSignatureText(signature?.taxNumber),
+    TAX_NUMBER_LINE: taxNumberLine,
+    VAT_ID: cleanSignatureText(signature?.vatId),
+    VAT_ID_LINE: vatIdLine,
+    WEBSITE: cleanSignatureText(signature?.website),
   };
 }
