@@ -2337,3 +2337,10 @@ pm run build (gruen).
 - Der Mail-Footer erhaelt standardmaessig einen professionellen Vertraulichkeitshinweis, linksbuendig und kleiner gesetzt, solange kein eigener Footertext gepflegt ist.
 - Mailbox-Reset/API/UI verwenden denselben Standard-Footertext.
 - Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
+
+## 2026-06-23 - Alte Nachrichten-Signatur entfernt
+- Die separate `Nachrichten-Signatur` im Signaturbereich wurde entfernt; sie war ein Relikt aus der frueheren Portal-/Nachrichtenverlauf-Logik.
+- Die Felder `Nachrichten-Abschluss`, `Nachrichten-Name` und `Nachrichten-Firmenname` werden im Signatur-Editor nicht mehr angezeigt und nicht mehr gespeichert.
+- `buildMessageSignatureText` gibt keine zusaetzliche Kurzsignatur mehr zurueck, damit Entwuerfe und Verlaufseintraege keine zweite Signatur neben der echten E-Mail-Signatur erhalten.
+- Alte Firestore-Felder wie `signaturePortalName` bleiben nur aus Rueckwaertskompatibilitaet im Datenmodell lesbar.
+- Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.

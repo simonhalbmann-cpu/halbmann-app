@@ -2171,15 +2171,9 @@ export function createSignatureRecord(data?: Record<string, unknown> | null): Si
   };
 }
 
-export function buildMessageSignatureText(signature: SignatureRecord) {
-  return [
-    signature.portalClosing || 'Mit freundlichen Grüßen',
-    '',
-    signature.portalName,
-    signature.portalCompanyName || signature.companyName,
-  ]
-    .filter(Boolean)
-    .join('\n');
+export function buildMessageSignatureText(_signature: SignatureRecord) {
+  void _signature;
+  return '';
 }
 
 export function buildSignatureAddress(signature: SignatureRecord) {

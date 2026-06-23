@@ -163,9 +163,6 @@ export default function AdminSignatureSettings() {
       signatureMobilePhone: cleanSignatureText(nextForm.mobilePhone),
       signatureName: cleanSignatureText(nextForm.name),
       signaturePhone: cleanSignatureText(nextForm.phone),
-      signaturePortalClosing: cleanSignatureText(nextForm.portalClosing),
-      signaturePortalCompanyName: cleanSignatureText(nextForm.portalCompanyName),
-      signaturePortalName: cleanSignatureText(nextForm.portalName),
       signaturePostalCode: cleanSignatureText(nextForm.postalCode),
       signatureRegisterCourt: cleanSignatureText(nextForm.registerCourt),
       signatureRegisteredOffice: cleanSignatureText(nextForm.registeredOffice),
@@ -239,9 +236,6 @@ export default function AdminSignatureSettings() {
           logoUrl: '',
           mobilePhone: '',
           name: '',
-          portalClosing: '',
-          portalCompanyName: '',
-          portalName: '',
         };
         setForm(nextForm);
         await persistSignature(nextForm);
@@ -385,9 +379,6 @@ export default function AdminSignatureSettings() {
                 <Field label="Handelsregister / Nummer" onChange={(value) => updateField('commercialRegisterNumber', value)} value={form.commercialRegisterNumber} />
                 <Field label="Steuernummer" onChange={(value) => updateField('taxNumber', value)} value={form.taxNumber} />
                 <Field label="USt-IdNr." onChange={(value) => updateField('vatId', value)} value={form.vatId} />
-                <Field label="Nachrichten-Abschluss" onChange={(value) => updateField('portalClosing', value)} value={form.portalClosing} />
-                <Field label="Nachrichten-Name" onChange={(value) => updateField('portalName', value)} value={form.portalName} />
-                <Field label="Nachrichten-Firmenname" onChange={(value) => updateField('portalCompanyName', value)} value={form.portalCompanyName} />
                 <Field label="Logo-Alternativtext" onChange={(value) => updateField('logoAlt', value)} value={form.logoAlt} />
               </div>
 
@@ -500,17 +491,6 @@ export default function AdminSignatureSettings() {
                   </div>
                     </>
                   )}
-                </div>
-
-                <div className="mt-5 rounded-[20px] border border-stone-200 bg-white px-6 py-5 text-slate-700">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Nachrichten-Signatur</p>
-                  <div className="mt-4 text-[13px] leading-5 text-slate-700">
-                    <p>{previewSignature.portalClosing || 'Mit freundlichen Grüßen'}</p>
-                    {previewSignature.portalName ? <p className="mt-3 font-medium text-slate-950">{previewSignature.portalName}</p> : null}
-                    <p className={`${previewSignature.portalName ? 'mt-1.5' : 'mt-3'} font-medium text-slate-950`}>
-                      {previewSignature.portalCompanyName || previewSignature.companyName || 'Firmenname'}
-                    </p>
-                  </div>
                 </div>
               </div>
 
