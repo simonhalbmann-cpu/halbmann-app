@@ -115,7 +115,16 @@ export function normalizeCompanyDisplayName(value: unknown) {
 }
 
 export function buildCompanyLine(companyName: string, legalForm: string) {
-  return [cleanSignatureText(companyName), normalizeLegalFormDisplay(legalForm)].filter(Boolean).join(' ');
+  const normalizedCompanyName = normalizeCompanyDisplayName(companyName);
+  const normalizedLegalForm = normalizeLegalFormDisplay(legalForm);
+  if (!normalizedCompanyName) return normalizedLegalForm;
+  if (!normalizedLegalForm) return normalizedCompanyName;
+
+  const compactCompanyName = normalizedCompanyName.replace(/[.\s]/g, '').toLowerCase();
+  const compactLegalForm = normalizedLegalForm.replace(/[.\s]/g, '').toLowerCase();
+  if (compactCompanyName.endsWith(compactLegalForm)) return normalizedCompanyName;
+
+  return `${normalizedCompanyName} ${normalizedLegalForm}`;
 }
 
 function splitListValues(value: unknown) {
@@ -2220,7 +2229,7 @@ function buildEmailSignatureTokenMap(signature: SignatureRecord) {
     '{{LOGO}}': resolvedLogoUrl
       ? `<img src="${encodeHtml(resolvedLogoUrl)}" alt="${encodeHtml(
           signature.logoAlt || signature.companyName || 'Logo'
-        )}" width="120" style="display:block;width:120px;max-width:120px;height:auto;object-fit:contain;" />`
+        )}" width="105" style="display:block;width:105px;max-width:105px;height:auto;object-fit:contain;" />`
       : '',
     '{{LOGO_ALT}}': encodeHtml(signature.logoAlt || signature.companyName || 'Logo'),
     '{{LOGO_URL}}': encodeHtml(resolvedLogoUrl),

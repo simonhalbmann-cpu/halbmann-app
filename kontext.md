@@ -2319,3 +2319,11 @@ pm run build (gruen).
 - Logo-Ausgabe in Mail-Signaturen wurde auf 120px Breite reduziert, damit die Signatur nicht ueberdimensioniert wirkt.
 - Zentrale Signatur-Fallbacks in `lib/signatures.ts` wurden von kaputtem Encoding auf `Mit freundlichen Grüßen` korrigiert.
 - Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
+
+## 2026-06-23 - E-Mail-Signatur ruhiger gestaltet
+- Das Signatur-Layout wurde weiter beruhigt: keine lange rote Vertikallinie mehr, stattdessen Logo links mit kurzer roter Akzentlinie und Firmendaten rechts.
+- Rechtliche Angaben sitzen nun unter einer feinen grauen Trennlinie statt direkt am Hauptblock.
+- Logo-Breite wurde auf 105px reduziert.
+- `buildCompanyLine` verhindert jetzt doppelte Rechtsformen wie `GmbH GmbH`, wenn der Firmenname die Rechtsform bereits enthaelt.
+- Die Erkennung alter Default-Vorlagen ersetzt nun auch das vorherige rote-Vertikallinien-Layout automatisch durch die neue Vorlage.
+- Verifiziert mit `npx tsc --noEmit`, `npm run lint` und `npm run build`.
