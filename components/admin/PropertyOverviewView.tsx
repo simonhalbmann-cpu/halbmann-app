@@ -70,6 +70,20 @@ function parseDate(value: unknown) {
   return Number.isNaN(date) ? Number.POSITIVE_INFINITY : date;
 }
 
+function parseLeaseEndReminderMonths(value: unknown) {
+  const numeric = Number.parseInt(cleanText(value), 10);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 3;
+}
+
+function shiftDateByMonths(value: unknown, months: number) {
+  const text = cleanText(value);
+  if (!text) return '';
+  const date = new Date(`${text}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString().slice(0, 10);
+}
+
 function tenantName(tenant: AdminRecord | null | undefined) {
   if (!tenant) return '';
   return (
@@ -144,12 +158,19 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
           .sort((left, right) => parseDate(left.data.moveInDate) - parseDate(right.data.moveInDate));
         const currentTenant = linkedTenants.find((tenant) => cleanText(tenant.data.status) === 'active') ?? null;
         const upcomingTenant = linkedTenants.find((tenant) => cleanText(tenant.data.status) === 'pending') ?? null;
+        const leaseEndDate = cleanText(currentTenant?.data.moveOutDate || currentTenant?.data.leaseEndDate || currentTenant?.data.endDate);
+        const leaseEndReminderMonths = parseLeaseEndReminderMonths(currentTenant?.data.leaseEndReminderMonths);
+        const leaseWarningDate = shiftDateByMonths(leaseEndDate, -leaseEndReminderMonths);
         return {
           coldRent: cleanText(currentTenant?.data.coldRent),
           currentTenant,
           id: unitId,
           label: unitDisplayLabel(unit) || unitId || 'Einheit',
-          leaseEnd: formatDate(currentTenant?.data.moveOutDate || currentTenant?.data.leaseEndDate || currentTenant?.data.endDate),
+          leaseEnd: formatDate(leaseEndDate),
+          leaseEndRaw: leaseEndDate,
+          leaseWarningDate,
+          leaseWarningDateLabel: formatDate(leaseWarningDate),
+          leaseWarningMonths: leaseEndReminderMonths,
           nextIncrease: rentIncreaseLabel(currentTenant),
           upcomingTenant,
           upcomingTenantDate: formatDate(upcomingTenant?.data.moveInDate),
@@ -158,7 +179,15 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
     [tenants, units]
   );
 
+  const today = useMemo(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  }, []);
   const occupiedCount = unitRows.filter((unit) => unit.currentTenant).length;
+  const leaseWarnings = unitRows
+    .filter((unit) => unit.currentTenant && unit.leaseWarningDate && parseDate(unit.leaseWarningDate) <= today)
+    .sort((left, right) => parseDate(left.leaseEndRaw) - parseDate(right.leaseEndRaw));
   const nextIncrease = unitRows
     .map((unit) => ({ label: unit.label, tenant: unit.currentTenant, timestamp: parseDate(unit.currentTenant?.data.rentIncreaseNextReview) }))
     .filter((entry) => entry.tenant && Number.isFinite(entry.timestamp))
@@ -204,6 +233,19 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
           </div>
         </div>
 
+        {leaseWarnings.length > 0 ? (
+          <div className="mt-5 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <p className="font-medium">Mietvertragsende beachten</p>
+            <div className="mt-2 space-y-1">
+              {leaseWarnings.slice(0, 3).map((unit) => (
+                <p key={`lease-warning-${unit.id || unit.label}`}>
+                  {unit.label}: {tenantName(unit.currentTenant)} endet am {unit.leaseEnd || '-'}.
+                </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.6fr)]">
           <div className="overflow-hidden rounded-[18px] border border-stone-200">
             <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_110px_120px_140px] gap-3 bg-stone-50 px-4 py-3 text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">
@@ -218,7 +260,11 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
             ) : (
               unitRows.map((unit) => (
                 <div
-                  className="grid grid-cols-1 gap-2 border-t border-stone-100 px-4 py-4 text-sm text-slate-700 lg:grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_110px_120px_140px] lg:gap-3"
+                  className={`grid grid-cols-1 gap-2 border-t px-4 py-4 text-sm lg:grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_110px_120px_140px] lg:gap-3 ${
+                    unit.leaseWarningDate && parseDate(unit.leaseWarningDate) <= today
+                      ? 'border-rose-100 bg-rose-50/60 text-rose-900'
+                      : 'border-stone-100 text-slate-700'
+                  }`}
                   key={unit.id || unit.label}
                 >
                   <span className="font-medium text-slate-950">{unit.label}</span>
@@ -241,7 +287,14 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
                     )}
                   </span>
                   <span>{formatValue(unit.coldRent)}</span>
-                  <span>{unit.leaseEnd || '-'}</span>
+                  <span>
+                    {unit.leaseEnd || '-'}
+                    {unit.leaseWarningDate && parseDate(unit.leaseWarningDate) <= today ? (
+                      <span className="mt-1 block text-xs font-medium text-rose-700">
+                        Warnung seit {unit.leaseWarningDateLabel || '-'}
+                      </span>
+                    ) : null}
+                  </span>
                   <span>{unit.nextIncrease || '-'}</span>
                 </div>
               ))

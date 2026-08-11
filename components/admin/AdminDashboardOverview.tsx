@@ -151,10 +151,22 @@ function parseReminderMonths(value: unknown) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 11;
 }
 
+function parseLeaseEndReminderMonths(value: unknown) {
+  const numeric = Number.parseInt(cleanText(value), 10);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 3;
+}
+
 function shiftDateByMonths(value: unknown, months: unknown) {
   const date = parseDateInput(value);
   if (!date) return '';
   date.setMonth(date.getMonth() + parseReminderMonths(months));
+  return date.toISOString().slice(0, 10);
+}
+
+function shiftDateByRawMonths(value: unknown, months: number) {
+  const date = parseDateInput(value);
+  if (!date) return '';
+  date.setMonth(date.getMonth() + months);
   return date.toISOString().slice(0, 10);
 }
 
@@ -422,6 +434,23 @@ export default function AdminDashboardOverview() {
     });
 
     tenants.forEach((tenant) => {
+      const leaseEndDate = cleanText(tenant.data.moveOutDate || tenant.data.leaseEndDate || tenant.data.endDate);
+      const leaseEndReminderMonths = parseLeaseEndReminderMonths(tenant.data.leaseEndReminderMonths);
+      const leaseEndReminderDate = shiftDateByRawMonths(
+        leaseEndDate,
+        -leaseEndReminderMonths
+      );
+      if (leaseEndReminderDate) {
+        reminderItems.push({
+          dateValue: leaseEndReminderDate,
+          href: `/admin/mieter/${tenant.id}`,
+          id: `tenant-lease-end-${tenant.id}`,
+          label: buildTenantLabel(tenant),
+          meta: `Mietvertrag endet am ${formatDateOnly(leaseEndDate)} · Warnung ${leaseEndReminderMonths} Monate vorher`,
+          type: 'tenant',
+        });
+      }
+
       const rentIncreaseNextReview = cleanText(tenant.data.rentIncreaseNextReview);
       if (parseDateInput(rentIncreaseNextReview)) {
         reminderItems.push({

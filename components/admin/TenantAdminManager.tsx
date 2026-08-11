@@ -113,6 +113,7 @@ type TenantFormState = {
   graduatedStepCount: string;
   graduatedStepYears: string;
   identityCopiesFile: string;
+  leaseEndReminderMonths: string;
   moveInDate: string;
   moveOutDate: string;
   netOperatingCosts: string;
@@ -220,6 +221,7 @@ const defaultFormState = (): TenantFormState => ({
   graduatedStepCount: '',
   graduatedStepYears: '1',
   identityCopiesFile: '',
+  leaseEndReminderMonths: '3',
   moveInDate: '',
   moveOutDate: '',
   netOperatingCosts: '',
@@ -529,6 +531,7 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     graduatedStepCount: String(data.graduatedStepCount ?? ''),
     graduatedStepYears: String(data.graduatedStepYears ?? '1'),
     identityCopiesFile: String(data.identityCopiesFile ?? ''),
+    leaseEndReminderMonths: String(data.leaseEndReminderMonths ?? '3'),
     moveInDate,
     moveOutDate: String(data.moveOutDate ?? data.leaseEndDate ?? ''),
     netOperatingCosts,
@@ -1419,6 +1422,7 @@ export default function TenantAdminManager({
           graduatedStepCount: cleanSpaces(form.graduatedStepCount),
           graduatedStepYears: cleanSpaces(form.graduatedStepYears),
           identityCopiesFile: form.identityCopiesFile,
+          leaseEndReminderMonths: cleanSpaces(form.leaseEndReminderMonths) || '3',
           lastName: form.salutation === 'Firma' ? titleCase(form.companyName) : titleCase(lastName),
           moveInDate: form.moveInDate,
           moveOutDate: form.moveOutDate,
@@ -1784,6 +1788,13 @@ export default function TenantAdminManager({
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Ende Datum</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('moveOutDate', event.target.value)} type="date" value={form.moveOutDate} />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Warnung vor Mietende</span>
+              <div className="flex items-center gap-2">
+                <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="0" onChange={(event) => updateField('leaseEndReminderMonths', event.target.value)} type="number" value={form.leaseEndReminderMonths} />
+                <span className="shrink-0 text-sm text-slate-600">Monate</span>
+              </div>
             </label>
           </div>
 
