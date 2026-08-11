@@ -39,6 +39,7 @@ type ArchivedReminderItem = ReminderItem & {
 };
 
 type RentFilterScope = 'all' | 'properties' | 'tenants';
+type RentStatisticView = 'breakEven' | 'rentDevelopment';
 type RentTimeRange = 'all' | 'last5' | 'last10';
 type RentValueMode = 'both' | 'cold' | 'costs';
 type DashboardReminderFilter = 'dueSoon' | 'maintenance' | 'rentIncrease';
@@ -50,6 +51,12 @@ type InventoryItem = {
   id: string;
   label: string;
   meta: string;
+};
+
+type BreakEvenChartPoint = {
+  date: string;
+  projectedTotal: number;
+  safeTotal: number;
 };
 
 function cleanText(value: unknown) {
@@ -200,6 +207,11 @@ function parseMoney(value: unknown) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function parseYear(value: unknown) {
+  const date = parseDateInput(value);
+  return date ? date.getFullYear() : null;
+}
+
 function getTenantLeaseContracts(tenant: WorkflowRecord) {
   const contracts = Array.isArray(tenant.data.leaseContracts)
     ? tenant.data.leaseContracts.filter(
@@ -233,12 +245,65 @@ function tenantHasContractInProperties(tenant: WorkflowRecord, propertyIds: stri
   );
 }
 
+function getContractBaseDate(tenant: WorkflowRecord, contract: DocumentData) {
+  return (
+    cleanText(contract.moveInDate) ||
+    cleanText(tenant.data.rentIncreaseReferenceDate) ||
+    cleanText(tenant.data.moveInDate) ||
+    ''
+  );
+}
+
+function getSecureColdRentAtYear(tenant: WorkflowRecord, contract: DocumentData, contractIndex: number, year: number) {
+  const baseYear = parseYear(getContractBaseDate(tenant, contract));
+  const endYear = parseYear(contract.moveOutDate || contract.leaseEndDate || contract.endDate);
+  if ((baseYear !== null && year < baseYear) || (endYear !== null && year > endYear)) return 0;
+  let coldRent = parseMoney(contract.coldRent ?? tenant.data.coldRent);
+  if (contractIndex !== 0 || cleanText(tenant.data.rentIncreaseType) !== 'graduated') return coldRent;
+
+  const rentIncreaseRows = Array.isArray(tenant.data.rentIncreaseRows) ? tenant.data.rentIncreaseRows : [];
+  rentIncreaseRows
+    .filter((entry) => entry && typeof entry === 'object')
+    .forEach((entry) => {
+      const row = entry as DocumentData;
+      const rowYear = parseYear(row.fromDate);
+      const rowColdRent = parseMoney(row.coldRent);
+      if (rowYear !== null && rowYear <= year && rowColdRent > 0) {
+        coldRent = rowColdRent;
+      }
+    });
+
+  return coldRent;
+}
+
+function getProjectedColdRentAtYear(tenant: WorkflowRecord, contract: DocumentData, contractIndex: number, year: number) {
+  const secureColdRent = getSecureColdRentAtYear(tenant, contract, contractIndex, year);
+  if (contractIndex !== 0 || cleanText(tenant.data.rentIncreaseType) !== 'legal') return secureColdRent;
+
+  const referenceDate =
+    cleanText(tenant.data.rentIncreaseReferenceDate) ||
+    getContractBaseDate(tenant, contract);
+  const referenceYear = parseYear(referenceDate);
+  if (referenceYear === null || year <= referenceYear) return secureColdRent;
+  const increaseSteps = Math.floor((year - referenceYear) / 3);
+  return secureColdRent * 1.1 ** Math.max(increaseSteps, 0);
+}
+
 function formatMoney(value: number) {
   return new Intl.NumberFormat('de-DE', {
     currency: 'EUR',
     maximumFractionDigits: 0,
     style: 'currency',
   }).format(value);
+}
+
+function niceDashboardStep(rawStep: number) {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return 10000;
+  const exponent = Math.floor(Math.log10(rawStep));
+  const base = 10 ** exponent;
+  const fraction = rawStep / base;
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return Math.max(niceFraction * base, 1000);
 }
 
 function getRentIncreaseTypeLabel(value: unknown) {
@@ -330,6 +395,141 @@ function DashboardFilterButtons({
   );
 }
 
+function BreakEvenChart({
+  projectedBreakEvenYear,
+  purchasePrice,
+  safeBreakEvenYear,
+  points,
+}: {
+  projectedBreakEvenYear: number | null;
+  purchasePrice: number;
+  safeBreakEvenYear: number | null;
+  points: BreakEvenChartPoint[];
+}) {
+  if (purchasePrice <= 0) {
+    return (
+      <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-slate-600">
+        Fuer die Break-Even-Ansicht fehlt noch ein Kaufpreis beim ausgewaehlten Objekt.
+      </div>
+    );
+  }
+  if (points.length === 0) {
+    return (
+      <div className="rounded-[20px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-slate-600">
+        Fuer die gewaehlte Auswahl liegen noch keine Mietdaten vor.
+      </div>
+    );
+  }
+
+  const width = Math.max(760, points.length * 70);
+  const height = 280;
+  const padding = { bottom: 42, left: 86, right: 24, top: 20 };
+  const maxValue = Math.max(
+    purchasePrice,
+    ...points.flatMap((point) => [point.safeTotal, point.projectedTotal]),
+    1
+  );
+  const yStep = niceDashboardStep(maxValue / 4);
+  const yMax = Math.max(yStep, Math.ceil(maxValue / yStep) * yStep);
+  const minYear = Number.parseInt(points[0].date.slice(0, 4), 10);
+  const maxYear = Number.parseInt(points[points.length - 1].date.slice(0, 4), 10);
+  const yearRange = Math.max(maxYear - minYear, 1);
+  const toX = (date: string) => {
+    const year = Number.parseInt(date.slice(0, 4), 10);
+    return padding.left + ((year - minYear) / yearRange) * (width - padding.left - padding.right);
+  };
+  const toY = (value: number) =>
+    height - padding.bottom - (value / yMax) * (height - padding.top - padding.bottom);
+  const lineFor = (key: 'projectedTotal' | 'safeTotal') =>
+    points
+      .map((point, index) => `${index === 0 ? 'M' : 'L'} ${toX(point.date).toFixed(2)} ${toY(point[key]).toFixed(2)}`)
+      .join(' ');
+  const purchaseY = toY(purchasePrice);
+  const yTicks = Array.from({ length: Math.floor(yMax / yStep) + 1 }, (_, index) => {
+    const value = index * yStep;
+    return { label: formatMoney(value), value, y: toY(value) };
+  });
+
+  return (
+    <div>
+      <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-3">
+        <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Kaufpreis</p>
+          <p className="mt-1 font-semibold text-slate-950">{formatMoney(purchasePrice)}</p>
+        </div>
+        <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Sicherer Break Even</p>
+          <p className="mt-1 font-semibold text-slate-950">{safeBreakEvenYear ?? 'nach 50+ Jahren'}</p>
+        </div>
+        <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Mit Prognose</p>
+          <p className="mt-1 font-semibold text-slate-950">{projectedBreakEvenYear ?? 'nach 50+ Jahren'}</p>
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-x-auto">
+        <svg className="h-auto min-w-[720px] w-full" viewBox={`0 0 ${width} ${height}`}>
+          {yTicks.map((tick) => (
+            <g key={tick.value}>
+              <line
+                stroke="#e7e5e4"
+                strokeDasharray={tick.value === 0 ? '0' : '4 6'}
+                strokeWidth="1"
+                x1={padding.left}
+                x2={width - padding.right}
+                y1={tick.y}
+                y2={tick.y}
+              />
+              <text fill="#78716c" fontSize="11" textAnchor="end" x={padding.left - 8} y={tick.y + 4}>
+                {tick.label}
+              </text>
+            </g>
+          ))}
+          <line
+            stroke="#7f1d1d"
+            strokeDasharray="8 6"
+            strokeWidth="2"
+            x1={padding.left}
+            x2={width - padding.right}
+            y1={purchaseY}
+            y2={purchaseY}
+          />
+          <path d={lineFor('safeTotal')} fill="none" stroke="#b45309" strokeWidth="3" />
+          <path d={lineFor('projectedTotal')} fill="none" stroke="#0f766e" strokeWidth="3" />
+          {points.map((point) => (
+            <g key={point.date}>
+              <circle cx={toX(point.date)} cy={toY(point.safeTotal)} fill="#b45309" r="3.8">
+                <title>{`${point.date.slice(0, 4)} sicher: ${formatMoney(point.safeTotal)}`}</title>
+              </circle>
+              <circle cx={toX(point.date)} cy={toY(point.projectedTotal)} fill="#0f766e" r="3.8">
+                <title>{`${point.date.slice(0, 4)} Prognose: ${formatMoney(point.projectedTotal)}`}</title>
+              </circle>
+              <text fill="#78716c" fontSize="11" textAnchor="middle" x={toX(point.date)} y={height - 12}>
+                {point.date.slice(0, 4)}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-600">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-red-900" />
+          Kaufpreis
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-700" />
+          Sichere Mietsumme
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-teal-700" />
+          Mit geplanten Erhoehungen
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function buildUnitLabel(unit: DocumentData) {
   return (
     cleanText(unit.unitLabel) ||
@@ -350,6 +550,7 @@ export default function AdminDashboardOverview() {
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
   const [loadError, setLoadError] = useState('');
+  const [rentStatisticView, setRentStatisticView] = useState<RentStatisticView>('rentDevelopment');
   const [rentTimeRange, setRentTimeRange] = useState<RentTimeRange>('last10');
   const [rentFilterScope, setRentFilterScope] = useState<RentFilterScope>('all');
   const [rentValueMode, setRentValueMode] = useState<RentValueMode>('both');
@@ -1056,6 +1257,81 @@ export default function AdminDashboardOverview() {
     });
   }, [filteredTenantsForChart, rentFilterScope, rentTimeRange, selectedPropertyIds]);
 
+  const breakEvenData = useMemo(() => {
+    const selectedPropertySet =
+      rentFilterScope === 'properties' && selectedPropertyIds.length > 0
+        ? new Set(selectedPropertyIds)
+        : null;
+    const contractSeries = filteredTenantsForChart.flatMap((tenant) =>
+      getTenantLeaseContracts(tenant)
+        .map((contract, contractIndex) => ({ contract, contractIndex, tenant }))
+        .filter(({ contract, tenant }) => isActiveTenantContract(tenant, contract))
+        .filter(({ contract }) => !selectedPropertySet || selectedPropertySet.has(cleanText(contract.propertyId)))
+    );
+    const contractPropertyIds = Array.from(
+      new Set(contractSeries.map(({ contract }) => cleanText(contract.propertyId)).filter(Boolean))
+    );
+    const propertyIds =
+      rentFilterScope === 'properties'
+        ? selectedPropertyIds.length > 0
+          ? selectedPropertyIds
+          : properties.map((property) => property.id)
+        : rentFilterScope === 'all'
+          ? properties.map((property) => property.id)
+          : contractPropertyIds;
+    const selectedProperties = properties.filter((property) => propertyIds.includes(property.id));
+    const purchasePrice = selectedProperties.reduce(
+      (total, property) => total + parseMoney(property.data.purchasePrice),
+      0
+    );
+    const propertyStartYears = selectedProperties
+      .map((property) => parseYear(property.data.ownershipSince || property.data.purchaseDate))
+      .filter((year): year is number => year !== null);
+    const contractStartYears = contractSeries
+      .map(({ contract, tenant }) => parseYear(getContractBaseDate(tenant, contract)))
+      .filter((year): year is number => year !== null);
+    const currentYear = new Date().getFullYear();
+    const startYear = Math.min(...(propertyStartYears.length > 0 ? propertyStartYears : contractStartYears), currentYear);
+    const maxProjectionYear = startYear + 50;
+    let safeTotal = 0;
+    let projectedTotal = 0;
+    const points: BreakEvenChartPoint[] = [];
+    let safeBreakEvenYear: number | null = null;
+    let projectedBreakEvenYear: number | null = null;
+
+    for (let year = startYear; year <= maxProjectionYear; year += 1) {
+      const annualSafeRent = contractSeries.reduce(
+        (total, { contract, contractIndex, tenant }) =>
+          total + getSecureColdRentAtYear(tenant, contract, contractIndex, year) * 12,
+        0
+      );
+      const annualProjectedRent = contractSeries.reduce(
+        (total, { contract, contractIndex, tenant }) =>
+          total + getProjectedColdRentAtYear(tenant, contract, contractIndex, year) * 12,
+        0
+      );
+      safeTotal += annualSafeRent;
+      projectedTotal += annualProjectedRent;
+      if (!safeBreakEvenYear && purchasePrice > 0 && safeTotal >= purchasePrice) safeBreakEvenYear = year;
+      if (!projectedBreakEvenYear && purchasePrice > 0 && projectedTotal >= purchasePrice) projectedBreakEvenYear = year;
+      points.push({ date: `${year}-01-01`, projectedTotal, safeTotal });
+
+      if (
+        year >= currentYear + 10 &&
+        (purchasePrice <= 0 || (safeBreakEvenYear && projectedBreakEvenYear))
+      ) {
+        break;
+      }
+    }
+
+    return {
+      points,
+      projectedBreakEvenYear,
+      purchasePrice,
+      safeBreakEvenYear,
+    };
+  }, [filteredTenantsForChart, properties, rentFilterScope, selectedPropertyIds]);
+
   function togglePropertySelection(propertyId: string) {
     setSelectedPropertyIds((current) =>
       current.includes(propertyId) ? current.filter((id) => id !== propertyId) : [...current, propertyId]
@@ -1430,36 +1706,60 @@ export default function AdminDashboardOverview() {
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
                 Statistik
               </p>
-              <h3 className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">Mietentwicklung</h3>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {[
+                  { label: 'Mietentwicklung', value: 'rentDevelopment' },
+                  { label: 'Break Even', value: 'breakEven' },
+                ].map((option) => (
+                  <button
+                    className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                      rentStatisticView === option.value
+                        ? 'border-amber-700 bg-amber-700 text-white'
+                        : 'border-stone-300 bg-white text-slate-700 hover:border-amber-700/40 hover:text-slate-950'
+                    }`}
+                    key={option.value}
+                    onClick={() => setRentStatisticView(option.value as RentStatisticView)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Jahresvergleich fuer Kaltmiete und Nebenkosten nach Mieter, Objekt oder Gesamtbestand.
+                {rentStatisticView === 'breakEven'
+                  ? 'Kumulierte Mieten gegen Kaufpreis: sicher mit Staffeln und als Prognose mit gesetzlichen Erhoehungen.'
+                  : 'Jahresvergleich fuer Kaltmiete und Nebenkosten nach Mieter, Objekt oder Gesamtbestand.'}
               </p>
             </div>
-            <div className="grid w-full max-w-3xl gap-2 sm:grid-cols-3">
-              <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
-                <span>Zeitraum</span>
-                <select
-                  className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none"
-                  onChange={(event) => setRentTimeRange(event.target.value as RentTimeRange)}
-                  value={rentTimeRange}
-                >
-                  <option value="all">Gesamtzeit</option>
-                  <option value="last5">Letzte 5 Jahre</option>
-                  <option value="last10">Letzte 10 Jahre</option>
-                </select>
-              </label>
-              <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
-                <span>Anzeige</span>
-                <select
-                  className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none"
-                  onChange={(event) => setRentValueMode(event.target.value as RentValueMode)}
-                  value={rentValueMode}
-                >
-                  <option value="cold">Kaltmiete</option>
-                  <option value="costs">Nebenkosten</option>
-                  <option value="both">Beides</option>
-                </select>
-              </label>
+            <div className={`grid w-full gap-2 ${rentStatisticView === 'breakEven' ? 'max-w-xs' : 'max-w-3xl sm:grid-cols-3'}`}>
+              {rentStatisticView === 'rentDevelopment' ? (
+                <>
+                  <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+                    <span>Zeitraum</span>
+                    <select
+                      className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none"
+                      onChange={(event) => setRentTimeRange(event.target.value as RentTimeRange)}
+                      value={rentTimeRange}
+                    >
+                      <option value="all">Gesamtzeit</option>
+                      <option value="last5">Letzte 5 Jahre</option>
+                      <option value="last10">Letzte 10 Jahre</option>
+                    </select>
+                  </label>
+                  <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+                    <span>Anzeige</span>
+                    <select
+                      className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none"
+                      onChange={(event) => setRentValueMode(event.target.value as RentValueMode)}
+                      value={rentValueMode}
+                    >
+                      <option value="cold">Kaltmiete</option>
+                      <option value="costs">Nebenkosten</option>
+                      <option value="both">Beides</option>
+                    </select>
+                  </label>
+                </>
+              ) : null}
               <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
                 <span>Quelle</span>
                 <select
@@ -1502,17 +1802,26 @@ export default function AdminDashboardOverview() {
           </div>
 
           <div className="mt-5 min-w-0">
-            <RentHistoryChart
-              defaultMode={rentValueMode}
-              emptyText="Für die gewählte Auswahl liegen noch keine Mietdaten vor."
-              framed={false}
-              mode={rentValueMode}
-              points={dashboardRentPoints}
-              showCosts
-              showModeControl={false}
-              subtitle=""
-              title=""
-            />
+            {rentStatisticView === 'breakEven' ? (
+              <BreakEvenChart
+                points={breakEvenData.points}
+                projectedBreakEvenYear={breakEvenData.projectedBreakEvenYear}
+                purchasePrice={breakEvenData.purchasePrice}
+                safeBreakEvenYear={breakEvenData.safeBreakEvenYear}
+              />
+            ) : (
+              <RentHistoryChart
+                defaultMode={rentValueMode}
+                emptyText="Für die gewählte Auswahl liegen noch keine Mietdaten vor."
+                framed={false}
+                mode={rentValueMode}
+                points={dashboardRentPoints}
+                showCosts
+                showModeControl={false}
+                subtitle=""
+                title=""
+              />
+            )}
           </div>
         </div>
       </section>
