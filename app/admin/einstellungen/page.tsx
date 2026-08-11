@@ -1,12 +1,8 @@
-import AdminAiSettings from '../../../components/admin/AdminAiSettings';
 import AdminEmployeeSettings from '../../../components/admin/AdminEmployeeSettings';
-import AdminLetterTemplateSettings from '../../../components/admin/AdminLetterTemplateSettings';
-import AdminMailboxSettings from '../../../components/admin/AdminMailboxSettings';
 import AdminProfileSettings from '../../../components/admin/AdminProfileSettings';
 import AdminSettingsTabs from '../../../components/admin/AdminSettingsTabs';
-import AdminSignatureSettings from '../../../components/admin/AdminSignatureSettings';
 
-type SettingsTab = 'brief' | 'ki' | 'mitarbeiter' | 'postfach' | 'profil' | 'signaturen';
+type SettingsTab = 'mitarbeiter' | 'profil';
 
 export default async function AdminSettingsPage({
   searchParams,
@@ -15,36 +11,17 @@ export default async function AdminSettingsPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const currentTab: SettingsTab =
-    resolvedSearchParams.tab === 'brief'
-      ? 'brief'
-      : resolvedSearchParams.tab === 'signaturen'
-      ? 'signaturen'
-      : resolvedSearchParams.tab === 'mitarbeiter'
+    resolvedSearchParams.tab === 'mitarbeiter'
       ? 'mitarbeiter'
-      : resolvedSearchParams.tab === 'profil'
-      ? 'profil'
-      : resolvedSearchParams.tab === 'ki'
-        ? 'ki'
-        : 'postfach';
+      : 'profil';
   return (
     <div className="space-y-6">
       <AdminSettingsTabs currentTab={currentTab} />
 
-      {currentTab === 'brief' ? (
-        <AdminLetterTemplateSettings />
-      ) : currentTab === 'profil' ? (
-        <AdminProfileSettings />
-      ) : currentTab === 'mitarbeiter' ? (
+      {currentTab === 'mitarbeiter' ? (
         <AdminEmployeeSettings />
-      ) : currentTab === 'signaturen' ? (
-        <div className="space-y-6">
-          <AdminSignatureSettings />
-          <AdminMailboxSettings mode="layout" />
-        </div>
-      ) : currentTab === 'ki' ? (
-        <AdminAiSettings />
       ) : (
-        <AdminMailboxSettings mode="credentials" />
+        <AdminProfileSettings />
       )}
     </div>
   );

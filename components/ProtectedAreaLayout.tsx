@@ -60,12 +60,8 @@ const settingsLinks: Array<{
   label: string;
   permissionKey: AdminPermissionKey;
 }> = [
-  { href: '/admin/einstellungen', label: 'E-Mail-Postfach', permissionKey: 'settings.mailbox' },
   { href: '/admin/einstellungen?tab=profil', label: 'Mein Profil', permissionKey: 'settings.profile' },
   { href: '/admin/einstellungen?tab=mitarbeiter', label: 'Mitarbeiter', permissionKey: 'settings.employees' },
-  { href: '/admin/einstellungen?tab=ki', label: 'KI-Prompt', permissionKey: 'settings.ai' },
-  { href: '/admin/einstellungen?tab=brief', label: 'Vorlagen', permissionKey: 'settings.letters' },
-  { href: '/admin/einstellungen?tab=signaturen', label: 'Signaturen', permissionKey: 'settings.signatures' },
 ];
 
 const cleanText = (value: unknown) =>
@@ -171,10 +167,7 @@ function resolveRequiredAdminPermission(
   if (pathname === '/admin/einstellungen') {
     if (settingsTab === 'profil') return 'settings.profile';
     if (settingsTab === 'mitarbeiter') return 'settings.employees';
-    if (settingsTab === 'ki') return 'settings.ai';
-    if (settingsTab === 'brief') return 'settings.letters';
-    if (settingsTab === 'signaturen') return 'settings.signatures';
-    return 'settings.mailbox';
+    return 'settings.profile';
   }
   if (pathname.startsWith('/admin/einstellungen/mitarbeiter/')) {
     return 'settings.employees';
@@ -209,10 +202,7 @@ function resolveRequiredAdminPermission(
 function resolveSettingsSidebarTitle(settingsTab: string) {
   if (settingsTab === 'profil') return 'Mein Profil';
   if (settingsTab === 'mitarbeiter') return 'Mitarbeiter';
-  if (settingsTab === 'ki') return 'KI';
-  if (settingsTab === 'brief') return 'Vorlagen';
-  if (settingsTab === 'signaturen') return 'Signaturen';
-  return 'Postfach-Zugang';
+  return 'Mein Profil';
 }
 
 function resolveAdminSidebarTitle(

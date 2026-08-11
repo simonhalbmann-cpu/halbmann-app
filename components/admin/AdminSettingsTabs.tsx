@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useAuth } from '../../hooks/useAuth';
 import { hasAdminPermission, type AdminPermissionKey } from '../../lib/adminPermissions';
 
-type SettingsTab = 'brief' | 'ki' | 'mitarbeiter' | 'postfach' | 'profil' | 'signaturen';
+type SettingsTab = 'mitarbeiter' | 'profil';
 
 const settingsTabs: Array<{
   href: string;
@@ -12,12 +12,8 @@ const settingsTabs: Array<{
   label: string;
   permissionKey: AdminPermissionKey;
 }> = [
-  { href: '/admin/einstellungen', key: 'postfach', label: 'Postfach-Zugang', permissionKey: 'settings.mailbox' },
   { href: '/admin/einstellungen?tab=profil', key: 'profil', label: 'Mein Profil', permissionKey: 'settings.profile' },
   { href: '/admin/einstellungen?tab=mitarbeiter', key: 'mitarbeiter', label: 'Mitarbeiter', permissionKey: 'settings.employees' },
-  { href: '/admin/einstellungen?tab=ki', key: 'ki', label: 'KI', permissionKey: 'settings.ai' },
-  { href: '/admin/einstellungen?tab=brief', key: 'brief', label: 'Vorlagen', permissionKey: 'settings.letters' },
-  { href: '/admin/einstellungen?tab=signaturen', key: 'signaturen', label: 'Signaturen', permissionKey: 'settings.signatures' },
 ];
 
 export default function AdminSettingsTabs({ currentTab }: { currentTab: SettingsTab }) {

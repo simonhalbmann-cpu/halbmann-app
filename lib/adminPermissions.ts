@@ -61,26 +61,6 @@ export const adminPermissionGroups: AdminPermissionGroup[] = [
         label: 'Mitarbeiter verwalten',
         description: 'Verwalter anlegen, deaktivieren, loeschen und deren Rechte bearbeiten.',
       },
-      {
-        key: 'settings.mailbox',
-        label: 'Postfach-Zugang',
-        description: 'IMAP/SMTP-Zugangsdaten fuer den Nachrichteneingang und Versand aendern.',
-      },
-      {
-        key: 'settings.ai',
-        label: 'KI-Einstellungen',
-        description: 'Vorlagen und Regeln fuer automatische Antwortvorschlaege bearbeiten.',
-      },
-      {
-        key: 'settings.letters',
-        label: 'Vorlagen',
-        description: 'Brieftexte, Briefkopf, Uebergabeprotokolle und Standardbausteine verwalten.',
-      },
-      {
-        key: 'settings.signatures',
-        label: 'Signaturen',
-        description: 'E-Mail- und Briefsignaturen der Firmen bearbeiten.',
-      },
     ],
   },
   {
