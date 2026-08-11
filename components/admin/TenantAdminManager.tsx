@@ -87,13 +87,14 @@ type UnitOption = {
 type LeaseContractForm = {
   coldRent: string;
   id: string;
-  leaseEndReminderMonths: string;
   leaseOptionCount: string;
   leaseOptionEnabled: string;
   leaseOptionYears: string;
   moveInDate: string;
   moveOutDate: string;
   netOperatingCosts: string;
+  rentIncreaseNextReview: string;
+  rentIncreaseReminderIntervalYears: string;
   selectedUnitKey: string;
   status: string;
 };
@@ -498,13 +499,14 @@ const mapLeaseContract = (contract: unknown): LeaseContractForm | null => {
   return {
     coldRent: String(data.coldRent ?? ''),
     id: String(data.id ?? createClientId('contract')),
-    leaseEndReminderMonths: String(data.leaseEndReminderMonths ?? '3'),
     leaseOptionCount: String(data.leaseOptionCount ?? ''),
     leaseOptionEnabled: String(data.leaseOptionEnabled ?? 'no'),
     leaseOptionYears: String(data.leaseOptionYears ?? ''),
     moveInDate: String(data.moveInDate ?? ''),
     moveOutDate: String(data.moveOutDate ?? data.leaseEndDate ?? ''),
     netOperatingCosts: String(data.netOperatingCosts ?? ''),
+    rentIncreaseNextReview: String(data.rentIncreaseNextReview ?? ''),
+    rentIncreaseReminderIntervalYears: String(data.rentIncreaseReminderIntervalYears ?? '1'),
     selectedUnitKey,
     status: String(data.status ?? 'active'),
   };
@@ -1026,13 +1028,14 @@ export default function TenantAdminManager({
         {
           coldRent: '',
           id: createClientId('contract'),
-          leaseEndReminderMonths: current.leaseEndReminderMonths || '3',
           leaseOptionCount: '',
           leaseOptionEnabled: 'no',
           leaseOptionYears: '',
           moveInDate: current.moveInDate,
           moveOutDate: '',
           netOperatingCosts: '',
+          rentIncreaseNextReview: '',
+          rentIncreaseReminderIntervalYears: '1',
           selectedUnitKey: '',
           status: 'active',
         },
@@ -1588,7 +1591,7 @@ export default function TenantAdminManager({
           .map(({ contract, unit }) => ({
             coldRent: formatMoneyInput(contract.coldRent),
             id: contract.id,
-            leaseEndReminderMonths: cleanSpaces(contract.leaseEndReminderMonths) || '3',
+            leaseEndReminderMonths: cleanSpaces(form.leaseEndReminderMonths) || '3',
             leaseOptionCount: contract.leaseOptionEnabled === 'yes' ? cleanSpaces(contract.leaseOptionCount) : '',
             leaseOptionEnabled: contract.leaseOptionEnabled,
             leaseOptionYears: contract.leaseOptionEnabled === 'yes' ? cleanSpaces(contract.leaseOptionYears) : '',
@@ -1597,6 +1600,8 @@ export default function TenantAdminManager({
             netOperatingCosts: formatMoneyInput(contract.netOperatingCosts),
             propertyId: unit.propertyId,
             propertyName: unit.propertyName,
+            rentIncreaseNextReview: contract.rentIncreaseNextReview,
+            rentIncreaseReminderIntervalYears: contract.rentIncreaseReminderIntervalYears,
             status: contract.status,
             unitId: unit.unitId,
             unitLabel: unit.unitLabel,
@@ -2247,8 +2252,16 @@ export default function TenantAdminManager({
                         <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'moveOutDate', event.target.value)} type="date" value={contract.moveOutDate} />
                       </label>
                       <label className="block space-y-2">
-                        <span className="text-sm font-medium text-slate-700">Warnung Monate vorher</span>
-                        <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="0" onChange={(event) => updateLeaseContract(contract.id, 'leaseEndReminderMonths', event.target.value)} type="number" value={contract.leaseEndReminderMonths} />
+                        <span className="text-sm font-medium text-slate-700">Mieterhoehung erinnern am</span>
+                        <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'rentIncreaseNextReview', event.target.value)} type="date" value={contract.rentIncreaseNextReview} />
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Wiederholung</span>
+                        <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'rentIncreaseReminderIntervalYears', event.target.value)} value={contract.rentIncreaseReminderIntervalYears}>
+                          {rentIncreaseReminderIntervalOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
                       </label>
                       <label className="block space-y-2">
                         <span className="text-sm font-medium text-slate-700">Option</span>

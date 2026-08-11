@@ -156,7 +156,9 @@ function tenantName(tenant: AdminRecord | null | undefined) {
   );
 }
 
-function rentIncreaseLabel(tenant: AdminRecord | null | undefined) {
+function rentIncreaseLabel(tenant: AdminRecord | null | undefined, contract?: DocumentData | null) {
+  const contractRentIncreaseDate = formatDate(contract?.rentIncreaseNextReview);
+  if (contractRentIncreaseDate) return `Mieterhoehung am ${contractRentIncreaseDate}`;
   if (!tenant) return '';
   const type = cleanText(tenant.data.rentIncreaseType);
   if (!type) return '';
@@ -249,7 +251,7 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
             ? `${nextLeaseWarningTarget.label} am ${formatDate(nextLeaseWarningTarget.endDate)}`
             : '',
           leaseWarningMonths: leaseEndReminderMonths,
-          nextIncrease: rentIncreaseLabel(currentTenant),
+          nextIncrease: rentIncreaseLabel(currentTenant, currentContract),
           upcomingTenant,
           upcomingTenantDate: formatDate(upcomingContract?.moveInDate),
         };

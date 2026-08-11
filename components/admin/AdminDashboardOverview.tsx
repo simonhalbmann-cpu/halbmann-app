@@ -518,7 +518,7 @@ export default function AdminDashboardOverview() {
           leaseEndDate,
           -leaseEndReminderMonths
         );
-        if (leaseEndReminderDate) {
+        if (contractIndex === 0 && leaseEndReminderDate) {
           reminderItems.push({
             category: 'lease',
             dateValue: leaseEndReminderDate,
@@ -530,7 +530,7 @@ export default function AdminDashboardOverview() {
           });
         }
 
-        buildLeaseOptionEndDates(contract).forEach((optionEndDate, optionIndex) => {
+        if (contractIndex === 0) buildLeaseOptionEndDates(contract).forEach((optionEndDate, optionIndex) => {
           const optionReminderDate = shiftDateByRawMonths(
             optionEndDate,
             -leaseEndReminderMonths
@@ -546,6 +546,19 @@ export default function AdminDashboardOverview() {
             type: 'tenant',
           });
         });
+
+        const contractRentIncreaseNextReview = cleanText(contract.rentIncreaseNextReview);
+        if (contractIndex > 0 && parseDateInput(contractRentIncreaseNextReview)) {
+          reminderItems.push({
+            category: 'rentIncrease',
+            dateValue: contractRentIncreaseNextReview,
+            href: `/admin/mieter/${tenant.id}`,
+            id: `tenant-contract-rent-${tenant.id}-${contractId}`,
+            label: buildTenantLabel(tenant),
+            meta: `${unitLabel ? `${unitLabel} - ` : ''}Mieterhoehung pruefen`,
+            type: 'tenant',
+          });
+        }
       });
       const rentIncreaseType = cleanText(tenant.data.rentIncreaseType);
       const rentIncreaseNextReview = cleanText(tenant.data.rentIncreaseNextReview);
