@@ -1842,7 +1842,7 @@ export default function TenantAdminManager({
             </label>
           </div>
 
-          <div className={`${form.salutation === 'Firma' ? 'hidden' : ''} rounded-[28px] border border-stone-200 bg-stone-50/70 p-5`}>
+          <div className="hidden">
             <div>
               <p className="text-sm font-medium text-slate-900">Firma / Zentrale</p>
               <p className="mt-1 text-xs leading-6 text-slate-500">
