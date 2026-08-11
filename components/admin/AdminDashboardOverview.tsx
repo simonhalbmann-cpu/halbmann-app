@@ -25,6 +25,7 @@ import { buildMessageThemes } from '../../lib/messageThemes';
 import RentHistoryChart, { type RentHistoryChartPoint } from './RentHistoryChart';
 
 type ReminderItem = {
+  category: 'lease' | 'maintenance' | 'rentIncrease' | 'other';
   dateValue: string;
   href: string;
   id: string;
@@ -38,7 +39,7 @@ type ArchivedReminderItem = ReminderItem & {
 };
 
 type RentFilterScope = 'all' | 'properties' | 'tenants';
-type DashboardReminderFilter = 'dueSoon' | 'rentIncrease';
+type DashboardReminderFilter = 'dueSoon' | 'maintenance' | 'rentIncrease';
 type DashboardThemeFilter = 'new' | 'open';
 type DashboardInventoryFilter = 'activeTenants' | 'properties' | 'vacancy';
 
@@ -175,6 +176,13 @@ function mapArchivedReminder(record: WorkflowRecord): ArchivedReminderItem | nul
   const type = cleanText(record.data.type);
   return {
     archivedAt: record.data.archivedAt,
+    category:
+      cleanText(record.data.category) === 'lease' ||
+      cleanText(record.data.category) === 'maintenance' ||
+      cleanText(record.data.category) === 'rentIncrease' ||
+      cleanText(record.data.category) === 'other'
+        ? (cleanText(record.data.category) as ReminderItem['category'])
+        : 'other',
     dateValue,
     href: cleanText(record.data.href),
     id,
@@ -265,6 +273,7 @@ function getRentIncreaseTypeLabel(value: unknown) {
 }
 
 function isRentIncreaseReminder(entry: ReminderItem) {
+  if (entry.category !== 'rentIncrease') return false;
   const meta = entry.meta.toLowerCase();
   return (
     entry.type === 'tenant' &&
@@ -276,6 +285,14 @@ function isRentIncreaseReminder(entry: ReminderItem) {
       meta.includes('mietprÃ¼fung') ||
       meta.includes('mietpruefung'))
   );
+}
+
+function isLeaseReminder(entry: ReminderItem) {
+  return entry.category === 'lease';
+}
+
+function isMaintenanceReminder(entry: ReminderItem) {
+  return entry.category === 'maintenance';
 }
 
 function EmptyList({ text }: { text: string }) {
@@ -422,6 +439,7 @@ export default function AdminDashboardOverview() {
       label: entry.label,
       meta: entry.meta,
       reminderId: entry.id,
+      category: entry.category,
       type: entry.type,
     });
   }
@@ -488,6 +506,7 @@ export default function AdminDashboardOverview() {
       const parsed = parseDateInput(dueDate);
       if (!parsed) return;
       reminderItems.push({
+        category: 'other',
         dateValue: dueDate,
         href: `/admin/nachrichten?themeId=${theme.id}`,
         id: `theme-${theme.id}`,
@@ -502,6 +521,7 @@ export default function AdminDashboardOverview() {
       const parsed = parseDateInput(dueDate);
       if (!parsed) return;
       reminderItems.push({
+        category: 'other',
         dateValue: dueDate,
         href: '/admin/nachrichten',
         id: `message-${message.id}`,
@@ -520,6 +540,7 @@ export default function AdminDashboardOverview() {
       );
       if (leaseEndReminderDate) {
         reminderItems.push({
+          category: 'lease',
           dateValue: leaseEndReminderDate,
           href: `/admin/mieter/${tenant.id}`,
           id: `tenant-lease-end-${tenant.id}`,
@@ -536,6 +557,7 @@ export default function AdminDashboardOverview() {
         );
         if (!optionReminderDate) return;
         reminderItems.push({
+          category: 'lease',
           dateValue: optionReminderDate,
           href: `/admin/mieter/${tenant.id}`,
           id: `tenant-option-end-${tenant.id}-${optionIndex}`,
@@ -549,6 +571,7 @@ export default function AdminDashboardOverview() {
       const rentIncreaseNextReview = cleanText(tenant.data.rentIncreaseNextReview);
       if (rentIncreaseType && parseDateInput(rentIncreaseNextReview)) {
         reminderItems.push({
+          category: 'rentIncrease',
           dateValue: rentIncreaseNextReview,
           href: buildTenantComposeHref({
             instruction: `Bitte bereite eine sachliche, kurze Nachricht an ${buildTenantLabel(tenant)} vor. Es geht um die Prüfung der nächsten Mieterhöhung. Bitte keine verbindliche Zusage und keine konkrete neue Miete behaupten, sondern freundlich ankündigen, dass die Vertrags- und Rechtslage geprüft wird und wir uns mit den Details separat melden.`,
@@ -571,6 +594,7 @@ export default function AdminDashboardOverview() {
         const fromDate = cleanText((row as DocumentData).fromDate);
         if (!parseDateInput(fromDate)) return;
         reminderItems.push({
+          category: 'rentIncrease',
           dateValue: fromDate,
           href: buildTenantComposeHref({
             instruction: `Bitte bereite eine sachliche Nachricht an ${buildTenantLabel(tenant)} zur hinterlegten Staffelmiete ab ${formatDateOnly(fromDate)} vor. Der Ton soll ruhig und klar sein. Bitte keine unnötigen juristischen Details, nur freundliche Information und Hinweis auf die Vertragsgrundlage.`,
@@ -592,6 +616,7 @@ export default function AdminDashboardOverview() {
         const parsed = parseDateInput(reminderDate);
         if (!parsed) return;
         reminderItems.push({
+          category: 'rentIncrease',
           dateValue: reminderDate,
           href: buildTenantComposeHref({
             instruction: `Bitte bereite eine kurze, professionelle Nachricht an ${buildTenantLabel(tenant)} vor. Anlass ist die Prüfung einer möglichen Mieterhöhung. Bitte zurückhaltend formulieren und keine konkrete Erhöhung zusagen, solange die Prüfung nicht abgeschlossen ist.`,
@@ -615,6 +640,7 @@ export default function AdminDashboardOverview() {
       );
       if (roofReminderDate) {
         reminderItems.push({
+          category: 'maintenance',
           dateValue: roofReminderDate,
           href: buildMaintenanceComposeHref({
             instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Dachwartung am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
@@ -635,6 +661,7 @@ export default function AdminDashboardOverview() {
       );
       if (gutterReminderDate) {
         reminderItems.push({
+          category: 'maintenance',
           dateValue: gutterReminderDate,
           href: buildMaintenanceComposeHref({
             instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Regenrinnenreinigung am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
@@ -661,6 +688,7 @@ export default function AdminDashboardOverview() {
         );
         if (!heatingReminderDate) return;
         reminderItems.push({
+          category: 'maintenance',
           dateValue: heatingReminderDate,
           href: buildMaintenanceComposeHref({
             instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Heizungswartung (${cleanText(heating.type) || 'Heizung'}) am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
@@ -693,6 +721,7 @@ export default function AdminDashboardOverview() {
           );
           if (!heatingReminderDate) return;
           reminderItems.push({
+            category: 'maintenance',
             dateValue: heatingReminderDate,
             href: buildMaintenanceComposeHref({
               instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Heizungswartung (${cleanText(heating.type) || 'Heizung'}) am Objekt ${propertyLabel}${unitLabel ? `, Einheit ${unitLabel}` : ''} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
@@ -751,8 +780,13 @@ export default function AdminDashboardOverview() {
     [activeReminders, today]
   );
 
-  const dueSoonGeneralReminders = useMemo(
-    () => dueSoonReminders.filter((entry) => !isRentIncreaseReminder(entry)),
+  const leaseReminders = useMemo(
+    () => activeReminders.filter(isLeaseReminder),
+    [activeReminders]
+  );
+
+  const dueSoonLeaseReminders = useMemo(
+    () => dueSoonReminders.filter(isLeaseReminder),
     [dueSoonReminders]
   );
 
@@ -861,6 +895,16 @@ export default function AdminDashboardOverview() {
     [dueSoonReminders]
   );
 
+  const maintenanceReminders = useMemo(
+    () => activeReminders.filter(isMaintenanceReminder),
+    [activeReminders]
+  );
+
+  const activeMaintenanceReminders = useMemo(
+    () => dueSoonReminders.filter(isMaintenanceReminder),
+    [dueSoonReminders]
+  );
+
   const visibleDashboardReminders = useMemo(
     () =>
       showReminderArchive
@@ -870,12 +914,21 @@ export default function AdminDashboardOverview() {
         ? showAllReminders
           ? rentIncreaseReminders
           : activeRentIncreaseReminders
-        : dueSoonGeneralReminders,
+        : dashboardReminderFilter === 'maintenance'
+          ? showAllReminders
+            ? maintenanceReminders
+            : activeMaintenanceReminders
+          : showAllReminders
+            ? leaseReminders
+            : dueSoonLeaseReminders,
     [
       activeRentIncreaseReminders,
+      activeMaintenanceReminders,
       archivedReminderItems,
       dashboardReminderFilter,
-      dueSoonGeneralReminders,
+      dueSoonLeaseReminders,
+      leaseReminders,
+      maintenanceReminders,
       rentIncreaseReminders,
       showAllReminders,
       showReminderArchive,
@@ -889,6 +942,23 @@ export default function AdminDashboardOverview() {
         : visibleDashboardReminders.slice(0, 3),
     [dashboardReminderFilter, showAllReminders, showReminderArchive, visibleDashboardReminders]
   );
+
+  const selectedReminderTotal = useMemo(() => {
+    if (dashboardReminderFilter === 'rentIncrease') return rentIncreaseReminders.length;
+    if (dashboardReminderFilter === 'maintenance') return maintenanceReminders.length;
+    return leaseReminders.length;
+  }, [dashboardReminderFilter, leaseReminders.length, maintenanceReminders.length, rentIncreaseReminders.length]);
+
+  const selectedActiveReminderTotal = useMemo(() => {
+    if (dashboardReminderFilter === 'rentIncrease') return activeRentIncreaseReminders.length;
+    if (dashboardReminderFilter === 'maintenance') return activeMaintenanceReminders.length;
+    return dueSoonLeaseReminders.length;
+  }, [
+    activeMaintenanceReminders.length,
+    activeRentIncreaseReminders.length,
+    dashboardReminderFilter,
+    dueSoonLeaseReminders.length,
+  ]);
 
   const filteredTenantsForChart = useMemo(() => {
     if (rentFilterScope === 'all') return activeRentTenants;
@@ -994,7 +1064,7 @@ export default function AdminDashboardOverview() {
   }
 
   function focusDashboardSection(
-    sectionId: 'dashboard-inventory' | 'dashboard-reminders' | 'dashboard-themes',
+    sectionId: 'dashboard-inventory' | 'dashboard-reminders',
     options: {
       inventoryFilter?: DashboardInventoryFilter;
       reminderFilter?: DashboardReminderFilter;
@@ -1008,6 +1078,7 @@ export default function AdminDashboardOverview() {
     if (options.reminderFilter) {
       setDashboardReminderFilter(options.reminderFilter);
       setShowAllReminders(false);
+      setShowReminderArchive(false);
     }
     if (options.inventoryFilter) {
       setDashboardInventoryFilter(options.inventoryFilter);
@@ -1035,33 +1106,28 @@ export default function AdminDashboardOverview() {
           Heute relevant
         </p>
 
-        <div className="mt-4 grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-[20px] border border-stone-200 bg-stone-200 lg:grid-cols-4">
+        <div className="mt-4 grid min-w-0 grid-cols-1 gap-px overflow-hidden rounded-[20px] border border-stone-200 bg-stone-200 sm:grid-cols-3">
           {[
             {
-              active: dashboardThemeFilter === 'open',
-              label: 'Offen',
-              onClick: () => focusDashboardSection('dashboard-themes', { themeFilter: 'open' }),
-              value: openThemes.length,
-            },
-            {
-              active: dashboardThemeFilter === 'new',
-              label: 'Neu',
-              onClick: () => focusDashboardSection('dashboard-themes', { themeFilter: 'new' }),
-              value: newThemes.length,
-            },
-            {
-              active: dashboardReminderFilter === 'dueSoon',
+              active: dashboardReminderFilter === 'dueSoon' && !showReminderArchive,
               label: 'Fristen',
               onClick: () =>
                 focusDashboardSection('dashboard-reminders', { reminderFilter: 'dueSoon' }),
-              value: dueSoonGeneralReminders.length,
+              value: dueSoonLeaseReminders.length,
             },
             {
-              active: dashboardReminderFilter === 'rentIncrease',
+              active: dashboardReminderFilter === 'rentIncrease' && !showReminderArchive,
               label: 'Mieterhoehung',
               onClick: () =>
                 focusDashboardSection('dashboard-reminders', { reminderFilter: 'rentIncrease' }),
               value: activeRentIncreaseReminders.length,
+            },
+            {
+              active: dashboardReminderFilter === 'maintenance' && !showReminderArchive,
+              label: 'Termine',
+              onClick: () =>
+                focusDashboardSection('dashboard-reminders', { reminderFilter: 'maintenance' }),
+              value: activeMaintenanceReminders.length,
             },
           ].map((item) => (
             <button
@@ -1159,9 +1225,9 @@ export default function AdminDashboardOverview() {
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.85fr)]">
+      <section className="min-w-0">
         <div
-          className="min-w-0 scroll-mt-24 rounded-[24px] border border-stone-200 bg-white p-4 sm:p-6"
+          className="hidden"
           id="dashboard-themes"
         >
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
@@ -1258,7 +1324,9 @@ export default function AdminDashboardOverview() {
                   ? 'Archiv'
                   : dashboardReminderFilter === 'rentIncrease'
                     ? 'Mieterhoehungen'
-                    : 'Naechste Fristen'}
+                    : dashboardReminderFilter === 'maintenance'
+                      ? 'Termine'
+                      : 'Fristen'}
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1274,9 +1342,7 @@ export default function AdminDashboardOverview() {
                 Archiv
               </button>
               {!showReminderArchive &&
-              (dashboardReminderFilter === 'rentIncrease'
-                ? rentIncreaseReminders.length > activeRentIncreaseReminders.length
-                : visibleDashboardReminders.length > 3) ? (
+              (selectedReminderTotal > selectedActiveReminderTotal || visibleDashboardReminders.length > 3) ? (
                 <button
                   className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
                   onClick={() => setShowAllReminders((current) => !current)}
@@ -1297,7 +1363,9 @@ export default function AdminDashboardOverview() {
                       ? 'Noch keine erledigten Termine im Archiv.'
                       : dashboardReminderFilter === 'rentIncrease'
                       ? 'Aktuell keine Mieterhöhungen vorgemerkt.'
-                      : 'Aktuell keine Wiedervorlagen in den nächsten 14 Tagen.'
+                      : dashboardReminderFilter === 'maintenance'
+                        ? 'Aktuell keine Wartungstermine in den nächsten 14 Tagen.'
+                        : 'Aktuell keine Miet- oder Optionsfristen in den nächsten 14 Tagen.'
                   }
                 />
               </div>
