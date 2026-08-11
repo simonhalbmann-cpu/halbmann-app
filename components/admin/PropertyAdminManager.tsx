@@ -1342,7 +1342,7 @@ export default function PropertyAdminManager({
             </label>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-4">
+          <div className="grid gap-5 md:grid-cols-3">
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Baujahr</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateTextField('yearBuilt', event.target.value)} placeholder="z. B. 1998" value={form.yearBuilt} />
@@ -1373,10 +1373,6 @@ export default function PropertyAdminManager({
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Kaufpreis</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onBlur={(event) => updateFormField('purchasePrice', formatMoneyForBlur(event.target.value))} onChange={(event) => updateFormField('purchasePrice', cleanSpaces(event.target.value))} placeholder="z. B. 1.250.000 EUR" value={form.purchasePrice} />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Anfangsrendite</span>
-              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('initialYieldPercent', cleanSpaces(event.target.value))} placeholder="z. B. 4,8 %" value={form.initialYieldPercent} />
             </label>
           </div>
 
