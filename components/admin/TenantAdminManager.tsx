@@ -114,6 +114,9 @@ type TenantFormState = {
   graduatedStepYears: string;
   identityCopiesFile: string;
   leaseEndReminderMonths: string;
+  leaseOptionCount: string;
+  leaseOptionEnabled: string;
+  leaseOptionYears: string;
   moveInDate: string;
   moveOutDate: string;
   netOperatingCosts: string;
@@ -222,6 +225,9 @@ const defaultFormState = (): TenantFormState => ({
   graduatedStepYears: '1',
   identityCopiesFile: '',
   leaseEndReminderMonths: '3',
+  leaseOptionCount: '',
+  leaseOptionEnabled: 'no',
+  leaseOptionYears: '',
   moveInDate: '',
   moveOutDate: '',
   netOperatingCosts: '',
@@ -536,6 +542,9 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     graduatedStepYears: String(data.graduatedStepYears ?? '1'),
     identityCopiesFile: String(data.identityCopiesFile ?? ''),
     leaseEndReminderMonths: String(data.leaseEndReminderMonths ?? '3'),
+    leaseOptionCount: String(data.leaseOptionCount ?? ''),
+    leaseOptionEnabled: String(data.leaseOptionEnabled ?? 'no'),
+    leaseOptionYears: String(data.leaseOptionYears ?? ''),
     moveInDate,
     moveOutDate: String(data.moveOutDate ?? data.leaseEndDate ?? ''),
     netOperatingCosts,
@@ -1403,7 +1412,7 @@ export default function TenantAdminManager({
 
         const hasRentIncreaseType = Boolean(cleanSpaces(form.rentIncreaseType));
         const payload = {
-          additionalPersons: form.additionalPersons,
+          additionalPersons: [],
           annualStatementFile: form.annualStatementFile,
           bankStatementsFile: form.bankStatementsFile,
           companyCity: titleCase(form.companyCity),
@@ -1426,14 +1435,17 @@ export default function TenantAdminManager({
           email: cleanSpaces(form.email).toLowerCase(),
           firstName: form.salutation === 'Firma' ? '' : titleCase(form.firstName),
           salutation: cleanSpaces(form.salutation),
-          guarantorExists: form.guarantorExists,
-          guarantorId: form.guarantorId,
-          guarantorLabel: form.guarantorLabel,
+          guarantorExists: 'no',
+          guarantorId: '',
+          guarantorLabel: '',
           graduatedNoticeMonths: cleanSpaces(form.graduatedNoticeMonths),
           graduatedStepCount: cleanSpaces(form.graduatedStepCount),
           graduatedStepYears: cleanSpaces(form.graduatedStepYears),
           identityCopiesFile: form.identityCopiesFile,
           leaseEndReminderMonths: cleanSpaces(form.leaseEndReminderMonths) || '3',
+          leaseOptionCount: form.leaseOptionEnabled === 'yes' ? cleanSpaces(form.leaseOptionCount) : '',
+          leaseOptionEnabled: form.leaseOptionEnabled,
+          leaseOptionYears: form.leaseOptionEnabled === 'yes' ? cleanSpaces(form.leaseOptionYears) : '',
           lastName: form.salutation === 'Firma' ? titleCase(form.companyName) : titleCase(lastName),
           moveInDate: form.moveInDate,
           moveOutDate: form.moveOutDate,
@@ -1800,8 +1812,29 @@ export default function TenantAdminManager({
               <span className="text-sm font-medium text-slate-700">Ende Datum</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('moveOutDate', event.target.value)} type="date" value={form.moveOutDate} />
             </label>
+            <div className="grid gap-4 rounded-[24px] border border-stone-200 bg-white/70 p-4 md:col-span-2 xl:col-span-3 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Option</span>
+                <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('leaseOptionEnabled', event.target.value)} value={form.leaseOptionEnabled}>
+                  <option value="no">Nein</option>
+                  <option value="yes">Ja</option>
+                </select>
+              </label>
+              {form.leaseOptionEnabled === 'yes' ? (
+                <>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Anzahl Optionen</span>
+                    <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="1" onChange={(event) => updateField('leaseOptionCount', event.target.value)} type="number" value={form.leaseOptionCount} />
+                  </label>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Jahre je Optionsziehung</span>
+                    <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="1" onChange={(event) => updateField('leaseOptionYears', event.target.value)} type="number" value={form.leaseOptionYears} />
+                  </label>
+                </>
+              ) : null}
+            </div>
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Warnung vor Mietende</span>
+              <span className="text-sm font-medium text-slate-700">Warnung vor Miet/Optionsende</span>
               <div className="flex items-center gap-2">
                 <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="0" onChange={(event) => updateField('leaseEndReminderMonths', event.target.value)} type="number" value={form.leaseEndReminderMonths} />
                 <span className="shrink-0 text-sm text-slate-600">Monate</span>
@@ -1861,7 +1894,7 @@ export default function TenantAdminManager({
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+          <div className="hidden rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-900">Weitere Personen</p>
@@ -2088,7 +2121,7 @@ export default function TenantAdminManager({
             ) : null}
           </div>
 
-          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+          <div className="hidden rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Gibt es einen Bürgen?</span>

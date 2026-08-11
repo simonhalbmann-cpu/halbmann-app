@@ -84,6 +84,44 @@ function shiftDateByMonths(value: unknown, months: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function parseNonNegativeInteger(value: unknown) {
+  const numeric = Number.parseInt(cleanText(value), 10);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+}
+
+function buildLeaseWarningTargets(tenantData: DocumentData | undefined, warningMonths: number) {
+  if (!tenantData) return [];
+  const leaseEndDate = cleanText(tenantData.moveOutDate || tenantData.leaseEndDate || tenantData.endDate);
+  const targets = leaseEndDate
+    ? [
+        {
+          endDate: leaseEndDate,
+          label: 'Mietende',
+          warningDate: shiftDateByMonths(leaseEndDate, -warningMonths),
+        },
+      ]
+    : [];
+
+  if (cleanText(tenantData.leaseOptionEnabled) !== 'yes') return targets;
+  const baseDate = leaseEndDate ? new Date(`${leaseEndDate}T12:00:00`) : null;
+  const optionCount = parseNonNegativeInteger(tenantData.leaseOptionCount);
+  const optionYears = parseNonNegativeInteger(tenantData.leaseOptionYears);
+  if (!baseDate || Number.isNaN(baseDate.getTime()) || !optionCount || !optionYears) return targets;
+
+  Array.from({ length: optionCount }).forEach((_, index) => {
+    const date = new Date(baseDate);
+    date.setFullYear(date.getFullYear() + optionYears * (index + 1));
+    const endDate = date.toISOString().slice(0, 10);
+    targets.push({
+      endDate,
+      label: `Option ${index + 1}`,
+      warningDate: shiftDateByMonths(endDate, -warningMonths),
+    });
+  });
+
+  return targets;
+}
+
 function tenantName(tenant: AdminRecord | null | undefined) {
   if (!tenant) return '';
   return (
@@ -160,7 +198,10 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
         const upcomingTenant = linkedTenants.find((tenant) => cleanText(tenant.data.status) === 'pending') ?? null;
         const leaseEndDate = cleanText(currentTenant?.data.moveOutDate || currentTenant?.data.leaseEndDate || currentTenant?.data.endDate);
         const leaseEndReminderMonths = parseLeaseEndReminderMonths(currentTenant?.data.leaseEndReminderMonths);
-        const leaseWarningDate = shiftDateByMonths(leaseEndDate, -leaseEndReminderMonths);
+        const leaseWarningTargets = buildLeaseWarningTargets(currentTenant?.data, leaseEndReminderMonths)
+          .filter((target) => target.warningDate)
+          .sort((left, right) => parseDate(left.warningDate) - parseDate(right.warningDate));
+        const nextLeaseWarningTarget = leaseWarningTargets[0] ?? null;
         return {
           coldRent: cleanText(currentTenant?.data.coldRent),
           currentTenant,
@@ -168,8 +209,11 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
           label: unitDisplayLabel(unit) || unitId || 'Einheit',
           leaseEnd: formatDate(leaseEndDate),
           leaseEndRaw: leaseEndDate,
-          leaseWarningDate,
-          leaseWarningDateLabel: formatDate(leaseWarningDate),
+          leaseWarningDate: nextLeaseWarningTarget?.warningDate ?? '',
+          leaseWarningDateLabel: formatDate(nextLeaseWarningTarget?.warningDate),
+          leaseWarningEndLabel: nextLeaseWarningTarget
+            ? `${nextLeaseWarningTarget.label} am ${formatDate(nextLeaseWarningTarget.endDate)}`
+            : '',
           leaseWarningMonths: leaseEndReminderMonths,
           nextIncrease: rentIncreaseLabel(currentTenant),
           upcomingTenant,
@@ -187,7 +231,7 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
   const occupiedCount = unitRows.filter((unit) => unit.currentTenant).length;
   const leaseWarnings = unitRows
     .filter((unit) => unit.currentTenant && unit.leaseWarningDate && parseDate(unit.leaseWarningDate) <= today)
-    .sort((left, right) => parseDate(left.leaseEndRaw) - parseDate(right.leaseEndRaw));
+    .sort((left, right) => parseDate(left.leaseWarningDate) - parseDate(right.leaseWarningDate));
   const nextIncrease = unitRows
     .map((unit) => ({ label: unit.label, tenant: unit.currentTenant, timestamp: parseDate(unit.currentTenant?.data.rentIncreaseNextReview) }))
     .filter((entry) => entry.tenant && Number.isFinite(entry.timestamp))
@@ -235,11 +279,11 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
 
         {leaseWarnings.length > 0 ? (
           <div className="mt-5 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            <p className="font-medium">Mietvertragsende beachten</p>
+            <p className="font-medium">Miet-/Optionsende beachten</p>
             <div className="mt-2 space-y-1">
               {leaseWarnings.slice(0, 3).map((unit) => (
                 <p key={`lease-warning-${unit.id || unit.label}`}>
-                  {unit.label}: {tenantName(unit.currentTenant)} endet am {unit.leaseEnd || '-'}.
+                  {unit.label}: {tenantName(unit.currentTenant)} - {unit.leaseWarningEndLabel || `Mietende am ${unit.leaseEnd || '-'}`}.
                 </p>
               ))}
             </div>
@@ -291,7 +335,7 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
                     {unit.leaseEnd || '-'}
                     {unit.leaseWarningDate && parseDate(unit.leaseWarningDate) <= today ? (
                       <span className="mt-1 block text-xs font-medium text-rose-700">
-                        Warnung seit {unit.leaseWarningDateLabel || '-'}
+                        {unit.leaseWarningEndLabel || 'Miet-/Optionsende'} · Warnung seit {unit.leaseWarningDateLabel || '-'}
                       </span>
                     ) : null}
                   </span>

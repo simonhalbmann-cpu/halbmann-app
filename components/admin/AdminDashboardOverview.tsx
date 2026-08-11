@@ -170,6 +170,26 @@ function shiftDateByRawMonths(value: unknown, months: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function parseNonNegativeInteger(value: unknown) {
+  const numeric = Number.parseInt(cleanText(value), 10);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+}
+
+function buildLeaseOptionEndDates(tenantData: DocumentData) {
+  if (cleanText(tenantData.leaseOptionEnabled) !== 'yes') return [];
+  const baseDate = parseDateInput(tenantData.moveOutDate || tenantData.leaseEndDate || tenantData.endDate);
+  if (!baseDate) return [];
+  const optionCount = parseNonNegativeInteger(tenantData.leaseOptionCount);
+  const optionYears = parseNonNegativeInteger(tenantData.leaseOptionYears);
+  if (!optionCount || !optionYears) return [];
+
+  return Array.from({ length: optionCount }, (_, index) => {
+    const date = new Date(baseDate);
+    date.setFullYear(date.getFullYear() + optionYears * (index + 1));
+    return date.toISOString().slice(0, 10);
+  });
+}
+
 function buildTenantLabel(record?: WorkflowRecord | null) {
   if (!record) return 'Ohne Mieter';
   return (
@@ -450,6 +470,22 @@ export default function AdminDashboardOverview() {
           type: 'tenant',
         });
       }
+
+      buildLeaseOptionEndDates(tenant.data).forEach((optionEndDate, optionIndex) => {
+        const optionReminderDate = shiftDateByRawMonths(
+          optionEndDate,
+          -leaseEndReminderMonths
+        );
+        if (!optionReminderDate) return;
+        reminderItems.push({
+          dateValue: optionReminderDate,
+          href: `/admin/mieter/${tenant.id}`,
+          id: `tenant-option-end-${tenant.id}-${optionIndex}`,
+          label: buildTenantLabel(tenant),
+          meta: `Option ${optionIndex + 1} endet am ${formatDateOnly(optionEndDate)} · Warnung ${leaseEndReminderMonths} Monate vorher`,
+          type: 'tenant',
+        });
+      });
 
       const rentIncreaseType = cleanText(tenant.data.rentIncreaseType);
       const rentIncreaseNextReview = cleanText(tenant.data.rentIncreaseNextReview);
