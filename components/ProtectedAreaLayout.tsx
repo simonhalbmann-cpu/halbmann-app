@@ -315,7 +315,7 @@ export default function ProtectedAreaLayout({
   const canReadTenants = requiredRole !== 'admin' || hasAdminPermission(profile, 'tenants.read');
   const canReadContacts = requiredRole !== 'admin' || hasAdminPermission(profile, 'contacts.read');
   const canViewInventoryTree =
-    requiredRole === 'admin' && (canReadCompanies || canReadProperties || canReadTenants || canReadContacts);
+    requiredRole === 'admin' && (canReadProperties || canReadTenants || canReadContacts);
   const isCompactHeaderRoute = isMessageRoute || isTenantOverviewRoute || isTenantDetailRoute || isBriefSettingsRoute;
   const propertyDetailId = useMemo(() => {
     const match = pathname.match(/^\/admin\/immobilie\/([^/]+)$/);
@@ -634,125 +634,93 @@ export default function ProtectedAreaLayout({
   }
 
   const companyTree = useMemo(() => {
-    if (requiredRole === 'admin' && !canReadCompanies && !canReadProperties && !canReadTenants && !canReadContacts) {
+    if (requiredRole === 'admin' && !canReadProperties && !canReadTenants && !canReadContacts) {
       return [];
     }
 
     const searchText = search.trim().toLowerCase();
-    const sortedCompanies = [...companies].sort((left, right) =>
-      cleanText(left.data.name).localeCompare(cleanText(right.data.name), 'de')
-    );
-
-    return sortedCompanies
-      .map((company) => {
-        const companyProperties = properties
-          .filter((property) => cleanText(property.data.ownerId) === company.id)
+    const mappedProperties = properties
+      .slice()
+      .sort((left, right) =>
+        cleanText(left.data.name).localeCompare(cleanText(right.data.name), 'de')
+      )
+      .map((property) => {
+        const propertyTenants = tenants
+          .filter((tenant) => canReadTenants && cleanText(tenant.data.propertyId) === property.id)
           .sort((left, right) =>
-            cleanText(left.data.name).localeCompare(cleanText(right.data.name), 'de')
-          )
-          .map((property) => {
-            const propertyTenants = tenants
-              .filter((tenant) => canReadTenants && cleanText(tenant.data.propertyId) === property.id)
-              .sort((left, right) =>
-                cleanText(right.data.moveInDate).localeCompare(cleanText(left.data.moveInDate), 'de')
-              );
+            cleanText(right.data.moveInDate).localeCompare(cleanText(left.data.moveInDate), 'de')
+          );
 
-            const units = Array.isArray(property.data.units) ? property.data.units : [];
-            const mappedUnits = units
-              .map((unit) => {
-                if (!unit || typeof unit !== 'object') return null;
-                const unitId = cleanText(unit.id);
-                if (!unitId) return null;
-                const currentTenant =
-                  propertyTenants.find(
-                    (tenant) =>
-                      cleanText(tenant.data.unitId) === unitId &&
-                      cleanText(tenant.data.status) === 'active'
-                  ) ?? null;
-
-                return {
-                  currentTenant,
-                  id: unitId,
-                  label: unitDisplayLabel(unit),
-                  menuLabel: unitMenuLabel(unit.floor, unit.unitPosition),
-                };
-              })
-              .filter(Boolean) as {
-              currentTenant: AdminRecord | null;
-              id: string;
-              label: string;
-            }[];
+        const units = Array.isArray(property.data.units) ? property.data.units : [];
+        const mappedUnits = units
+          .map((unit) => {
+            if (!unit || typeof unit !== 'object') return null;
+            const unitId = cleanText(unit.id);
+            if (!unitId) return null;
+            const currentTenant =
+              propertyTenants.find(
+                (tenant) =>
+                  cleanText(tenant.data.unitId) === unitId &&
+                  cleanText(tenant.data.status) === 'active'
+              ) ?? null;
 
             return {
-              id: property.id,
-              label: cleanText(property.data.name) || property.id,
-              units: canReadProperties || canReadTenants ? mappedUnits : [],
+              currentTenant,
+              id: unitId,
+              label: unitDisplayLabel(unit),
+              menuLabel: unitMenuLabel(unit.floor, unit.unitPosition),
             };
           })
-          .filter(() => canReadProperties || canReadTenants);
-
-        if (!searchText) {
-          return {
-            id: company.id,
-            label: cleanText(company.data.name) || company.id,
-            properties: companyProperties,
-          };
-        }
-
-        const matchingProperties = companyProperties
-          .map((property) => ({
-            ...property,
-            units: property.units.filter((unit) => {
-              const currentTenantName = unit.currentTenant
-                ? [cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
-                    .filter(Boolean)
-                    .join(', ')
-                : '';
-              return [
-                unit.label.toLowerCase(),
-                currentTenantName.toLowerCase(),
-              ].some((value) => value.includes(searchText));
-            }),
-          }))
-          .filter((property) => {
-            const propertyMatches = property.label.toLowerCase().includes(searchText);
-            return propertyMatches || property.units.length > 0;
-          });
-
-        const companyMatches = (cleanText(company.data.name) || company.id)
-          .toLowerCase()
-          .includes(searchText);
-
-        if (!companyMatches && matchingProperties.length === 0) {
-          return null;
-        }
-
-        return {
-          id: company.id,
-          label: cleanText(company.data.name) || company.id,
-          properties: companyMatches ? companyProperties : matchingProperties,
-        };
-      })
-      .filter(Boolean) as {
-      id: string;
-      label: string;
-      properties: {
-        id: string;
-        label: string;
-        units: {
+          .filter(Boolean) as {
           currentTenant: AdminRecord | null;
           id: string;
           label: string;
           menuLabel: string;
         }[];
+
+        return {
+          id: property.id,
+          label: cleanText(property.data.name) || property.id,
+          units: canReadProperties || canReadTenants ? mappedUnits : [],
+        };
+      })
+      .filter(() => canReadProperties || canReadTenants);
+
+    if (!searchText) {
+      return mappedProperties;
+    }
+
+    return mappedProperties
+      .map((property) => ({
+        ...property,
+        units: property.units.filter((unit) => {
+          const currentTenantName = unit.currentTenant
+            ? [cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
+                .filter(Boolean)
+                .join(', ')
+            : '';
+          return [
+            unit.label.toLowerCase(),
+            currentTenantName.toLowerCase(),
+          ].some((value) => value.includes(searchText));
+        }),
+      }))
+      .filter((property) => {
+        const propertyMatches = property.label.toLowerCase().includes(searchText);
+        return propertyMatches || property.units.length > 0;
+      }) as {
+      id: string;
+      label: string;
+      units: {
+        currentTenant: AdminRecord | null;
+        id: string;
+        label: string;
+        menuLabel: string;
       }[];
     }[];
   }, [
-    canReadCompanies,
-    canReadContacts,
     canReadProperties,
     canReadTenants,
-    companies,
     properties,
     requiredRole,
     search,
@@ -992,8 +960,7 @@ export default function ProtectedAreaLayout({
                       ) : null}
 
                       <div className="max-h-[62vh] space-y-1 overflow-y-auto pr-1">
-                        {companyTree.flatMap((company) =>
-                          company.properties.map((property) => (
+                        {companyTree.map((property) => (
                                   <div className="space-y-1" key={`mobile-property-${property.id}`}>
                                     <div className="flex items-center gap-1 rounded-[14px] hover:bg-white/6">
                                       <button
@@ -1074,8 +1041,7 @@ export default function ProtectedAreaLayout({
                                     </div>
                                   ) : null}
                                 </div>
-                              ))
-                        )}
+                        ))}
                       </div>
                     </div>
                   ) : null}
@@ -1200,13 +1166,12 @@ export default function ProtectedAreaLayout({
 
                     {openSections.Bestand ?? false ? (
                       <div className="mt-3 space-y-2">
-                        {companyTree.flatMap((company) => company.properties).length === 0 ? (
+                        {companyTree.length === 0 ? (
                           <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-sm text-slate-500">
                             Keine Immobilien im Bestand gefunden.
                           </div>
                         ) : (
-                          companyTree.flatMap((company) =>
-                            company.properties.map((property) => (
+                          companyTree.map((property) => (
                                     <div className="space-y-2" key={property.id}>
                                       <div className="flex items-center gap-2">
                                         <button
@@ -1303,7 +1268,6 @@ export default function ProtectedAreaLayout({
                                       ) : null}
                                     </div>
                                   ))
-                          )
                         )}
                       </div>
                     ) : null}
