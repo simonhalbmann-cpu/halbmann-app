@@ -646,16 +646,6 @@ export default function PropertyAdminManager({
     return formatPropertyNumber(currentMax + 1);
   }, [properties]);
 
-  const ownerOptions = useMemo(
-    () =>
-      companies
-        .slice()
-        .sort((left, right) =>
-          String(left.data.name ?? '').localeCompare(String(right.data.name ?? ''), 'de')
-        ),
-    [companies]
-  );
-
   const personOptions = useMemo(
     () =>
       people
@@ -1153,8 +1143,8 @@ export default function PropertyAdminManager({
       setError('Nur Verwalter dürfen in diesem Bereich Daten anlegen.');
       return;
     }
-    if (!form.name || !form.usageType || !form.ownershipType || !form.ownerId) {
-      setError('Bitte Objektname, Nutzungsart, Eigentumsart und Eigentümer ausfüllen.');
+    if (!form.name || !form.usageType || !form.ownershipType) {
+      setError('Bitte Objektname, Nutzungsart und Eigentumsart ausfüllen.');
       return;
     }
     if (form.ownershipType === 'full_ownership' && units.length === 0) {
@@ -1168,7 +1158,6 @@ export default function PropertyAdminManager({
     startTransition(async () => {
       try {
         const currentDocumentId = documentId;
-        const selectedOwner = ownerOptions.find((record) => record.id === form.ownerId);
         const payload = {
           ...form,
           city: titleCase(form.city),
@@ -1176,7 +1165,6 @@ export default function PropertyAdminManager({
           heatingSystems: form.heatingEntries.map((entry) => entry.type),
           meterDraftType: '',
           name: cleanSpaces(form.name),
-          ownerName: selectedOwner ? String(selectedOwner.data.name ?? '') : form.ownerName,
           propertyNumber: form.propertyNumber || nextPropertyNumber,
           purchasePrice: form.purchasePrice ? formatMoneyNumber(parseMoney(form.purchasePrice)) : '',
           street: titleCase(form.street),
@@ -1309,15 +1297,6 @@ export default function PropertyAdminManager({
                 <option value="">Bitte wählen</option>
                 {ownershipOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Eigentümer</span>
-              <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('ownerId', event.target.value)} required value={form.ownerId}>
-                <option value="">Bitte wählen</option>
-                {ownerOptions.map((record) => (
-                  <option key={record.id} value={record.id}>{String(record.data.name ?? record.id)}</option>
                 ))}
               </select>
             </label>
