@@ -1075,12 +1075,6 @@ export default function AdminDashboardOverview() {
                   {showAllThemes ? 'Weniger ^' : 'Alle >'}
                 </button>
               ) : null}
-              <Link
-                className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
-                href="/admin/nachrichten"
-              >
-                Nachrichten
-              </Link>
             </div>
           </div>
 

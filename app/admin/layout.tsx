@@ -8,7 +8,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         {
           links: [
             { href: '/admin', label: 'Dashboard' },
-            { href: '/admin/nachrichten', label: 'Nachrichten', permissionKey: 'messages.read' },
           ],
         },
         {

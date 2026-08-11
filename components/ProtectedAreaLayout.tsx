@@ -987,15 +987,6 @@ export default function ProtectedAreaLayout({
               >
                 Dashboard
               </Link>
-              <Link
-                className={`block rounded-[16px] px-4 py-3 text-sm font-medium ${
-                  isCurrentPath(pathname, '/admin/nachrichten') ? 'bg-white text-slate-950' : 'text-stone-100 hover:bg-white/8'
-                }`}
-                href="/admin/nachrichten"
-                onClick={() => setMobileAdminMenuOpen(false)}
-              >
-                Nachrichten
-              </Link>
               {canViewInventoryTree ? (
                 <div className="rounded-[16px] border border-white/10 bg-white/[0.04]">
                   <button
