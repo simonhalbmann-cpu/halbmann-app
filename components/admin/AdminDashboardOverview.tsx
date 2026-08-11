@@ -256,8 +256,7 @@ function getContractBaseDate(tenant: WorkflowRecord, contract: DocumentData) {
 
 function getSecureColdRentAtYear(tenant: WorkflowRecord, contract: DocumentData, contractIndex: number, year: number) {
   const baseYear = parseYear(getContractBaseDate(tenant, contract));
-  const endYear = parseYear(contract.moveOutDate || contract.leaseEndDate || contract.endDate);
-  if ((baseYear !== null && year < baseYear) || (endYear !== null && year > endYear)) return 0;
+  if (baseYear !== null && year < baseYear) return 0;
   let coldRent = parseMoney(contract.coldRent ?? tenant.data.coldRent);
   if (contractIndex !== 0 || cleanText(tenant.data.rentIncreaseType) !== 'graduated') return coldRent;
 
@@ -396,11 +395,15 @@ function DashboardFilterButtons({
 }
 
 function BreakEvenChart({
+  currentAnnualProjectedRent,
+  currentAnnualSafeRent,
   projectedBreakEvenYear,
   purchasePrice,
   safeBreakEvenYear,
   points,
 }: {
+  currentAnnualProjectedRent: number;
+  currentAnnualSafeRent: number;
   projectedBreakEvenYear: number | null;
   purchasePrice: number;
   safeBreakEvenYear: number | null;
@@ -452,10 +455,17 @@ function BreakEvenChart({
 
   return (
     <div>
-      <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-3">
+      <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-4">
         <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Kaufpreis</p>
           <p className="mt-1 font-semibold text-slate-950">{formatMoney(purchasePrice)}</p>
+        </div>
+        <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Jahresmiete aktuell</p>
+          <p className="mt-1 font-semibold text-slate-950">
+            {formatMoney(currentAnnualSafeRent)}
+            {currentAnnualProjectedRent > currentAnnualSafeRent ? ` / ${formatMoney(currentAnnualProjectedRent)}` : ''}
+          </p>
         </div>
         <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Sicherer Break Even</p>
@@ -1291,6 +1301,16 @@ export default function AdminDashboardOverview() {
       .map(({ contract, tenant }) => parseYear(getContractBaseDate(tenant, contract)))
       .filter((year): year is number => year !== null);
     const currentYear = new Date().getFullYear();
+    const currentAnnualSafeRent = contractSeries.reduce(
+      (total, { contract, contractIndex, tenant }) =>
+        total + getSecureColdRentAtYear(tenant, contract, contractIndex, currentYear) * 12,
+      0
+    );
+    const currentAnnualProjectedRent = contractSeries.reduce(
+      (total, { contract, contractIndex, tenant }) =>
+        total + getProjectedColdRentAtYear(tenant, contract, contractIndex, currentYear) * 12,
+      0
+    );
     const startYear = Math.min(...(propertyStartYears.length > 0 ? propertyStartYears : contractStartYears), currentYear);
     const maxProjectionYear = startYear + 50;
     let safeTotal = 0;
@@ -1325,6 +1345,8 @@ export default function AdminDashboardOverview() {
     }
 
     return {
+      currentAnnualProjectedRent,
+      currentAnnualSafeRent,
       points,
       projectedBreakEvenYear,
       purchasePrice,
@@ -1804,6 +1826,8 @@ export default function AdminDashboardOverview() {
           <div className="mt-5 min-w-0">
             {rentStatisticView === 'breakEven' ? (
               <BreakEvenChart
+                currentAnnualProjectedRent={breakEvenData.currentAnnualProjectedRent}
+                currentAnnualSafeRent={breakEvenData.currentAnnualSafeRent}
                 points={breakEvenData.points}
                 projectedBreakEvenYear={breakEvenData.projectedBreakEvenYear}
                 purchasePrice={breakEvenData.purchasePrice}
