@@ -2646,6 +2646,7 @@ export default function TenantDetailView({
         </div>
       </section>
 
+      {isMessagesLayout ? (
       <section className="min-w-0 overflow-x-hidden rounded-[24px] border border-stone-200 bg-white px-4 pb-5 pt-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)] sm:px-5">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -3140,6 +3141,7 @@ export default function TenantDetailView({
           ) : null}
         </div>
       </section>
+      ) : null}
 
       {themePendingDelete ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/30 px-4">
