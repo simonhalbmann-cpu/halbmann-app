@@ -294,15 +294,10 @@ function getNextLegalRentIncreaseDate(tenant: WorkflowRecord, contract: Document
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const sixMonthsFromToday = addMonthsToDate(today, 6);
-  const nextReviewDate = parseDateInput(tenant.data.rentIncreaseNextReview);
-  if (nextReviewDate) {
-    return nextReviewDate <= today ? sixMonthsFromToday : nextReviewDate;
-  }
-
   const referenceDate = parseDateInput(
     cleanText(tenant.data.rentIncreaseReferenceDate) || getContractBaseDate(tenant, contract)
   );
-  if (!referenceDate) return null;
+  if (!referenceDate) return parseDateInput(tenant.data.rentIncreaseNextReview);
   const regularIncreaseDate = addMonthsToDate(referenceDate, 36);
   return regularIncreaseDate <= today ? sixMonthsFromToday : regularIncreaseDate;
 }
@@ -322,32 +317,20 @@ function getProjectedColdRentAtDate(
   return secureColdRent * 1.1 ** increaseSteps;
 }
 
-function getAnnualColdRentAtYear(
-  contractSeries: Array<{ contract: DocumentData; contractIndex: number; tenant: WorkflowRecord }>,
-  year: number,
-  mode: 'projected' | 'safe'
-) {
-  return Array.from({ length: 12 }, (_, monthIndex) => new Date(year, monthIndex, 15)).reduce(
-    (yearTotal, targetDate) =>
-      yearTotal +
-      contractSeries.reduce(
-        (monthTotal, { contract, contractIndex, tenant }) =>
-          monthTotal +
-          (mode === 'projected'
-            ? getProjectedColdRentAtDate(tenant, contract, contractIndex, targetDate)
-            : getSecureColdRentAtDate(tenant, contract, contractIndex, targetDate)),
-        0
-      ),
-    0
-  );
-}
-
 function formatMoney(value: number) {
   return new Intl.NumberFormat('de-DE', {
     currency: 'EUR',
     maximumFractionDigits: 0,
     style: 'currency',
   }).format(value);
+}
+
+function formatBreakEvenDate(date: Date | null) {
+  if (!date) return 'nach 50+ Jahren';
+  return date.toLocaleDateString('de-DE', {
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function niceDashboardStep(rawStep: number) {
@@ -450,15 +433,15 @@ function DashboardFilterButtons({
 
 function BreakEvenChart({
   currentAnnualSafeRent,
-  projectedBreakEvenYear,
+  projectedBreakEvenDate,
   purchasePrice,
-  safeBreakEvenYear,
+  safeBreakEvenDate,
   points,
 }: {
   currentAnnualSafeRent: number;
-  projectedBreakEvenYear: number | null;
+  projectedBreakEvenDate: Date | null;
   purchasePrice: number;
-  safeBreakEvenYear: number | null;
+  safeBreakEvenDate: Date | null;
   points: BreakEvenChartPoint[];
 }) {
   if (purchasePrice <= 0) {
@@ -518,11 +501,11 @@ function BreakEvenChart({
         </div>
         <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Sicherer Break Even</p>
-          <p className="mt-1 font-semibold text-slate-950">{safeBreakEvenYear ?? 'nach 50+ Jahren'}</p>
+          <p className="mt-1 font-semibold text-slate-950">{formatBreakEvenDate(safeBreakEvenDate)}</p>
         </div>
         <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Mit Prognose</p>
-          <p className="mt-1 font-semibold text-slate-950">{projectedBreakEvenYear ?? 'nach 50+ Jahren'}</p>
+          <p className="mt-1 font-semibold text-slate-950">{formatBreakEvenDate(projectedBreakEvenDate)}</p>
         </div>
       </div>
 
@@ -1361,21 +1344,36 @@ export default function AdminDashboardOverview() {
     let safeTotal = 0;
     let projectedTotal = 0;
     const points: BreakEvenChartPoint[] = [];
-    let safeBreakEvenYear: number | null = null;
-    let projectedBreakEvenYear: number | null = null;
+    let safeBreakEvenDate: Date | null = null;
+    let projectedBreakEvenDate: Date | null = null;
 
     for (let year = startYear; year <= maxProjectionYear; year += 1) {
-      const annualSafeRent = getAnnualColdRentAtYear(contractSeries, year, 'safe');
-      const annualProjectedRent = getAnnualColdRentAtYear(contractSeries, year, 'projected');
-      safeTotal += annualSafeRent;
-      projectedTotal += annualProjectedRent;
-      if (!safeBreakEvenYear && purchasePrice > 0 && safeTotal >= purchasePrice) safeBreakEvenYear = year;
-      if (!projectedBreakEvenYear && purchasePrice > 0 && projectedTotal >= purchasePrice) projectedBreakEvenYear = year;
+      for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+        const targetDate = new Date(year, monthIndex, 15);
+        const safeMonthlyRent = contractSeries.reduce(
+          (total, { contract, contractIndex, tenant }) =>
+            total + getSecureColdRentAtDate(tenant, contract, contractIndex, targetDate),
+          0
+        );
+        const projectedMonthlyRent = contractSeries.reduce(
+          (total, { contract, contractIndex, tenant }) =>
+            total + getProjectedColdRentAtDate(tenant, contract, contractIndex, targetDate),
+          0
+        );
+        safeTotal += safeMonthlyRent;
+        projectedTotal += projectedMonthlyRent;
+        if (!safeBreakEvenDate && purchasePrice > 0 && safeTotal >= purchasePrice) {
+          safeBreakEvenDate = targetDate;
+        }
+        if (!projectedBreakEvenDate && purchasePrice > 0 && projectedTotal >= purchasePrice) {
+          projectedBreakEvenDate = targetDate;
+        }
+      }
       points.push({ date: `${year}-01-01`, projectedTotal, safeTotal });
 
       if (
         year >= currentYear + 10 &&
-        (purchasePrice <= 0 || (safeBreakEvenYear && projectedBreakEvenYear))
+        (purchasePrice <= 0 || (safeBreakEvenDate && projectedBreakEvenDate))
       ) {
         break;
       }
@@ -1384,9 +1382,9 @@ export default function AdminDashboardOverview() {
     return {
       currentAnnualSafeRent,
       points,
-      projectedBreakEvenYear,
+      projectedBreakEvenDate,
       purchasePrice,
-      safeBreakEvenYear,
+      safeBreakEvenDate,
     };
   }, [filteredTenantsForChart, properties, rentFilterScope, selectedPropertyIds]);
 
@@ -1864,9 +1862,9 @@ export default function AdminDashboardOverview() {
               <BreakEvenChart
                 currentAnnualSafeRent={breakEvenData.currentAnnualSafeRent}
                 points={breakEvenData.points}
-                projectedBreakEvenYear={breakEvenData.projectedBreakEvenYear}
+                projectedBreakEvenDate={breakEvenData.projectedBreakEvenDate}
                 purchasePrice={breakEvenData.purchasePrice}
-                safeBreakEvenYear={breakEvenData.safeBreakEvenYear}
+                safeBreakEvenDate={breakEvenData.safeBreakEvenDate}
               />
             ) : (
               <RentHistoryChart
