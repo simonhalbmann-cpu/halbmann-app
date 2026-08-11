@@ -109,11 +109,16 @@ type TenantFormState = {
   guarantorExists: string;
   guarantorId: string;
   guarantorLabel: string;
+  graduatedNoticeMonths: string;
+  graduatedStepCount: string;
+  graduatedStepYears: string;
   identityCopiesFile: string;
   moveInDate: string;
+  moveOutDate: string;
   netOperatingCosts: string;
   notes: string;
   phone: string;
+  rentIncreaseReminderIntervalYears: string;
   rentIncreaseNextReview: string;
   rentIncreaseReferenceDate: string;
   rentHistory: RentHistoryEntry[];
@@ -142,6 +147,14 @@ const rentIncreaseOptions = [
   { label: 'Staffelmiete', value: 'graduated' },
   { label: 'Indexmiete', value: 'index' },
   { label: 'Nach Gesetz', value: 'legal' },
+];
+
+const rentIncreaseReminderIntervalOptions = [
+  { label: 'Jedes Jahr', value: '1' },
+  { label: 'Alle 2 Jahre', value: '2' },
+  { label: 'Alle 3 Jahre', value: '3' },
+  { label: 'Alle 4 Jahre', value: '4' },
+  { label: 'Alle 5 Jahre', value: '5' },
 ];
 
 const depositTypeOptions = [
@@ -203,12 +216,17 @@ const defaultFormState = (): TenantFormState => ({
   guarantorExists: 'no',
   guarantorId: '',
   guarantorLabel: '',
+  graduatedNoticeMonths: '1',
+  graduatedStepCount: '',
+  graduatedStepYears: '1',
   identityCopiesFile: '',
   moveInDate: '',
+  moveOutDate: '',
   netOperatingCosts: '',
   notes: '',
   phone: '',
   pendingColdRent: '',
+  rentIncreaseReminderIntervalYears: '1',
   rentIncreaseNextReview: '',
   rentIncreaseReferenceDate: '',
   rentHistory: [],
@@ -290,9 +308,6 @@ const createOneYearRange = (startDate: string) => ({
   toDate: startDate ? shiftDays(shiftMonths(startDate, 12), -1) : '',
 });
 
-const calculateReminderForRule = (referenceDate: string, monthsUntilReminder: number) =>
-  shiftMonths(referenceDate, monthsUntilReminder);
-
 const formatMoneyForBlur = (value: string) => {
   const amount = parseMoney(value);
   return amount > 0 ? formatMoneyNumber(amount) : '';
@@ -319,6 +334,11 @@ const todayDate = () => new Date().toISOString().slice(0, 10);
 
 const getEffectiveReferenceDate = (referenceDate: string, moveInDate: string) =>
   referenceDate || moveInDate || todayDate();
+
+const parsePositiveInteger = (value: string, fallback: number) => {
+  const numeric = Number.parseInt(value, 10);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+};
 
 const getRentIncreaseTypeLabel = (type: string) =>
   rentIncreaseLabelMap[type] ?? 'Mieterhoehung';
@@ -377,23 +397,8 @@ const recalculateGraduatedRows = (baseColdRent: string, rows: RentIncreaseRow[])
   });
 };
 
-const calculateRentReminder = (
-  type: string,
-  referenceDate: string,
-  rows: RentIncreaseRow[]
-) => {
-  if (type === 'graduated') {
-    const nextGraduatedRow = rows.find((row) => row.fromDate);
-    return nextGraduatedRow?.reminderDate ?? '';
-  }
-  if (type === 'index') {
-    return calculateReminderForRule(referenceDate, 11);
-  }
-  if (type === 'legal') {
-    return calculateReminderForRule(referenceDate, 30);
-  }
-  return '';
-};
+const calculateRentReminder = (referenceDate: string, intervalYears: string) =>
+  referenceDate ? shiftMonths(referenceDate, parsePositiveInteger(intervalYears, 1) * 12) : '';
 
 const mapRentHistoryEntry = (entry: unknown): RentHistoryEntry | null => {
   if (!entry || typeof entry !== 'object') return null;
@@ -486,6 +491,7 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
   const rentIncreaseType = String(data.rentIncreaseType ?? '');
   const moveInDate = String(data.moveInDate ?? '');
   const rentIncreaseReferenceDate = String(data.rentIncreaseReferenceDate ?? '');
+  const rentIncreaseReminderIntervalYears = String(data.rentIncreaseReminderIntervalYears ?? '1');
   const effectiveReferenceDate = getEffectiveReferenceDate(rentIncreaseReferenceDate, moveInDate);
   const coldRent = String(data.coldRent ?? '');
   const netOperatingCosts = String(data.netOperatingCosts ?? '');
@@ -519,17 +525,20 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     guarantorExists: String(data.guarantorExists ?? 'no'),
     guarantorId: String(data.guarantorId ?? ''),
     guarantorLabel: String(data.guarantorLabel ?? ''),
+    graduatedNoticeMonths: String(data.graduatedNoticeMonths ?? '1'),
+    graduatedStepCount: String(data.graduatedStepCount ?? ''),
+    graduatedStepYears: String(data.graduatedStepYears ?? '1'),
     identityCopiesFile: String(data.identityCopiesFile ?? ''),
     moveInDate,
+    moveOutDate: String(data.moveOutDate ?? data.leaseEndDate ?? ''),
     netOperatingCosts,
     notes: String(data.notes ?? ''),
     pendingColdRent: '',
     phone: String(data.phone ?? ''),
-    rentIncreaseNextReview: calculateRentReminder(
-      rentIncreaseType,
-      effectiveReferenceDate,
-      rentIncreaseRows
-    ),
+    rentIncreaseReminderIntervalYears,
+    rentIncreaseNextReview:
+      String(data.rentIncreaseNextReview ?? '') ||
+      calculateRentReminder(effectiveReferenceDate, rentIncreaseReminderIntervalYears),
     rentIncreaseReferenceDate,
     rentHistory: buildRentHistoryFromData(
       rentHistory,
@@ -787,18 +796,55 @@ export default function TenantAdminManager({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function handleSalutationChange(value: string) {
+    setForm((current) => ({
+      ...current,
+      companyContactName: value === 'Firma' ? current.companyContactName : '',
+      companyName: value === 'Firma' ? current.companyName : '',
+      firstName: value === 'Firma' ? '' : current.firstName,
+      salutation: value,
+    }));
+    if (value === 'Firma') setLastName('');
+  }
+
   function updateMoveInDate(value: string) {
     setForm((current) => {
       const nextReferenceDate = current.rentIncreaseReferenceDate || value;
       return {
         ...current,
         moveInDate: value,
-        rentIncreaseNextReview: calculateRentReminder(
-          current.rentIncreaseType,
-          nextReferenceDate,
-          current.rentIncreaseRows
-        ),
+        rentIncreaseNextReview:
+          current.rentIncreaseNextReview ||
+          calculateRentReminder(nextReferenceDate, current.rentIncreaseReminderIntervalYears),
         rentIncreaseReferenceDate: nextReferenceDate,
+      };
+    });
+  }
+
+  function handleColdRentChange(value: string) {
+    setForm((current) => {
+      const nextColdRent = formatMoneyInput(value);
+      return {
+        ...current,
+        coldRent: nextColdRent,
+        rentIncreaseRows:
+          current.rentIncreaseType === 'graduated'
+            ? recalculateGraduatedRows(current.pendingColdRent || nextColdRent, current.rentIncreaseRows)
+            : current.rentIncreaseRows,
+      };
+    });
+  }
+
+  function handleColdRentBlur(value: string) {
+    setForm((current) => {
+      const nextColdRent = formatMoneyForBlur(value);
+      return {
+        ...current,
+        coldRent: nextColdRent,
+        rentIncreaseRows:
+          current.rentIncreaseType === 'graduated'
+            ? recalculateGraduatedRows(current.pendingColdRent || nextColdRent, current.rentIncreaseRows)
+            : current.rentIncreaseRows,
       };
     });
   }
@@ -922,11 +968,9 @@ export default function TenantAdminManager({
 
       return {
         ...current,
-        rentIncreaseNextReview: calculateRentReminder(
-          value,
-          referenceDate,
-          nextRows
-        ),
+        rentIncreaseNextReview:
+          current.rentIncreaseNextReview ||
+          calculateRentReminder(referenceDate, current.rentIncreaseReminderIntervalYears),
         rentIncreaseRows: nextRows,
         rentIncreaseType: value,
       };
@@ -936,13 +980,57 @@ export default function TenantAdminManager({
   function handleRentIncreaseReferenceDateChange(value: string) {
     setForm((current) => ({
       ...current,
-      rentIncreaseNextReview: calculateRentReminder(
-        current.rentIncreaseType,
-        value,
-        current.rentIncreaseRows
-      ),
+      rentIncreaseNextReview: current.rentIncreaseNextReview || calculateRentReminder(value, current.rentIncreaseReminderIntervalYears),
       rentIncreaseReferenceDate: value,
     }));
+  }
+
+  function handleRentIncreaseReminderIntervalChange(value: string) {
+    setForm((current) => ({
+      ...current,
+      rentIncreaseNextReview: calculateRentReminder(
+        current.rentIncreaseReferenceDate || current.moveInDate,
+        value
+      ),
+      rentIncreaseReminderIntervalYears: value,
+    }));
+  }
+
+  function generateGraduatedRows() {
+    setForm((current) => {
+      const stepCount = parsePositiveInteger(current.graduatedStepCount, 0);
+      const stepYears = parsePositiveInteger(current.graduatedStepYears, 1);
+      const noticeMonths = parsePositiveInteger(current.graduatedNoticeMonths, 1);
+      const firstStartDate = current.rentIncreaseReferenceDate || current.moveInDate;
+      if (!stepCount || !firstStartDate) return current;
+
+      let previousColdRent = parseMoney(current.pendingColdRent || current.coldRent);
+      const rows = Array.from({ length: stepCount }, (_, index) => {
+        const fromDate = shiftMonths(firstStartDate, index * stepYears * 12);
+        const toDate = shiftDays(shiftMonths(fromDate, stepYears * 12), -1);
+        const existing = current.rentIncreaseRows[index];
+        const percentValue = Number.parseFloat((existing?.percentIncrease || '0').replace('%', '').replace(',', '.')) || 0;
+        const euroIncrease = previousColdRent * (percentValue / 100);
+        const nextColdRent = previousColdRent + euroIncrease;
+        previousColdRent = nextColdRent;
+        return {
+          ...createRentIncreaseRow(formatMoneyNumber(previousColdRent)),
+          coldRent: formatMoneyNumber(nextColdRent),
+          euroIncrease: formatMoneyNumber(euroIncrease),
+          fromDate,
+          id: existing?.id || createClientId('rent'),
+          percentIncrease: formatPercent(percentValue),
+          reminderDate: shiftMonths(fromDate, -noticeMonths),
+          toDate,
+        };
+      });
+
+      return {
+        ...current,
+        rentIncreaseRows: rows,
+        rentIncreaseType: 'graduated',
+      };
+    });
   }
 
   function addRentIncreaseRow() {
@@ -973,11 +1061,6 @@ export default function TenantAdminManager({
 
       return {
         ...current,
-        rentIncreaseNextReview: calculateRentReminder(
-          current.rentIncreaseType,
-          current.rentIncreaseReferenceDate || current.moveInDate,
-          nextRows
-        ),
         rentIncreaseRows: nextRows,
       };
     });
@@ -988,11 +1071,6 @@ export default function TenantAdminManager({
       const nextRows = current.rentIncreaseRows.filter((row) => row.id !== rowId);
       return {
         ...current,
-        rentIncreaseNextReview: calculateRentReminder(
-          current.rentIncreaseType,
-          current.rentIncreaseReferenceDate || current.moveInDate,
-          nextRows
-        ),
         rentIncreaseRows: nextRows,
       };
     });
@@ -1047,11 +1125,6 @@ export default function TenantAdminManager({
 
       return {
         ...current,
-        rentIncreaseNextReview: calculateRentReminder(
-          current.rentIncreaseType,
-          current.rentIncreaseReferenceDate || current.moveInDate,
-          nextRows
-        ),
         rentIncreaseRows: nextRows,
       };
     });
@@ -1263,6 +1336,11 @@ export default function TenantAdminManager({
       return;
     }
 
+    if (form.salutation === 'Firma' && !cleanSpaces(form.companyName)) {
+      setError('Bitte den Firmennamen eintragen.');
+      return;
+    }
+
     if (form.pendingColdRent && !form.rentIncreaseReferenceDate) {
       setError(
         'Bitte ein Datum bei Letzte Mieterhöhung hinterlegen, wenn du eine neue Kaltmiete speicherst.'
@@ -1332,14 +1410,18 @@ export default function TenantAdminManager({
           depositType: form.depositType,
           documentsNotes: cleanSpaces(form.documentsNotes),
           email: cleanSpaces(form.email).toLowerCase(),
-          firstName: titleCase(form.firstName),
+          firstName: form.salutation === 'Firma' ? '' : titleCase(form.firstName),
           salutation: cleanSpaces(form.salutation),
           guarantorExists: form.guarantorExists,
           guarantorId: form.guarantorId,
           guarantorLabel: form.guarantorLabel,
+          graduatedNoticeMonths: cleanSpaces(form.graduatedNoticeMonths),
+          graduatedStepCount: cleanSpaces(form.graduatedStepCount),
+          graduatedStepYears: cleanSpaces(form.graduatedStepYears),
           identityCopiesFile: form.identityCopiesFile,
-          lastName: titleCase(lastName),
+          lastName: form.salutation === 'Firma' ? titleCase(form.companyName) : titleCase(lastName),
           moveInDate: form.moveInDate,
+          moveOutDate: form.moveOutDate,
           netOperatingCosts: formatMoneyInput(form.netOperatingCosts),
           notes: cleanSpaces(form.notes),
           ownerName: selectedUnit.ownerName,
@@ -1349,6 +1431,7 @@ export default function TenantAdminManager({
           propertyUnit: selectedUnit.label,
           rentHistory: nextHistory,
           rentIncreaseNextReview: form.rentIncreaseNextReview,
+          rentIncreaseReminderIntervalYears: form.rentIncreaseReminderIntervalYears,
           rentIncreaseReferenceDate: form.rentIncreaseReferenceDate,
           rentIncreaseRows: form.rentIncreaseRows,
           rentIncreaseType: form.rentIncreaseType,
@@ -1367,9 +1450,10 @@ export default function TenantAdminManager({
           warmRent: calculatedWarmRent,
         };
 
-        const tenantName = [titleCase(lastName), titleCase(form.firstName)]
-          .filter(Boolean)
-          .join(', ');
+        const tenantName =
+          form.salutation === 'Firma'
+            ? titleCase(form.companyName)
+            : [titleCase(lastName), titleCase(form.firstName)].filter(Boolean).join(', ');
 
         const currentDocumentId = documentId;
 
@@ -1627,24 +1711,39 @@ export default function TenantAdminManager({
               <span className="text-sm font-medium text-slate-700">Anrede</span>
               <select
                 className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60"
-                onChange={(event) => updateField('salutation', event.target.value)}
+                onChange={(event) => handleSalutationChange(event.target.value)}
                 value={form.salutation}
               >
                 <option value="">Bitte wählen</option>
                 <option value="Herr">Herr</option>
                 <option value="Frau">Frau</option>
-                <option value="Divers">Divers</option>
+                <option value="Firma">Firma</option>
                 <option value="Ohne Angabe">Ohne Angabe</option>
               </select>
             </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Vorname</span>
-              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('firstName', titleCase(event.target.value))} placeholder="Max" required value={form.firstName} />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Nachname</span>
-              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => setLastName(titleCase(event.target.value))} placeholder="Mustermann" required value={lastName} />
-            </label>
+            {form.salutation === 'Firma' ? (
+              <>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Firmenname</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('companyName', titleCase(event.target.value))} placeholder="z. B. Mustermann GmbH" required value={form.companyName} />
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Ansprechperson</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('companyContactName', titleCase(event.target.value))} placeholder="Vor- und Nachname" value={form.companyContactName} />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Vorname</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('firstName', titleCase(event.target.value))} placeholder="Max" required value={form.firstName} />
+                </label>
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">Nachname</span>
+                  <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => setLastName(titleCase(event.target.value))} placeholder="Mustermann" required value={lastName} />
+                </label>
+              </>
+            )}
             <label className="block space-y-2 xl:col-span-2">
               <span className="text-sm font-medium text-slate-700">Einheit</span>
               <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('selectedUnitKey', event.target.value)} required value={form.selectedUnitKey}>
@@ -1682,9 +1781,13 @@ export default function TenantAdminManager({
               <span className="text-sm font-medium text-slate-700">Einzugsdatum</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateMoveInDate(event.target.value)} type="date" value={form.moveInDate} />
             </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Ende Datum</span>
+              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('moveOutDate', event.target.value)} type="date" value={form.moveOutDate} />
+            </label>
           </div>
 
-          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+          <div className={`${form.salutation === 'Firma' ? 'hidden' : ''} rounded-[28px] border border-stone-200 bg-stone-50/70 p-5`}>
             <div>
               <p className="text-sm font-medium text-slate-900">Firma / Zentrale</p>
               <p className="mt-1 text-xs leading-6 text-slate-500">
@@ -1706,7 +1809,6 @@ export default function TenantAdminManager({
                   <option value="">Bitte wählen</option>
                   <option value="Herr">Herr</option>
                   <option value="Frau">Frau</option>
-                  <option value="Divers">Divers</option>
                   <option value="Ohne Angabe">Ohne Angabe</option>
                 </select>
               </label>
@@ -1792,7 +1894,7 @@ export default function TenantAdminManager({
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Aktuelle Kaltmiete</span>
-              <input className="w-full rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-slate-700 outline-none" readOnly value={form.coldRent} />
+              <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onBlur={(event) => handleColdRentBlur(event.target.value)} onChange={(event) => handleColdRentChange(event.target.value)} placeholder="z. B. 850,00 EUR" value={form.coldRent} />
             </label>
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Betriebskosten</span>
@@ -1868,12 +1970,42 @@ export default function TenantAdminManager({
               </label>
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Nächste Erinnerung</span>
-                <input className="w-full rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-slate-700 outline-none" readOnly value={form.rentIncreaseNextReview} />
+                <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateField('rentIncreaseNextReview', event.target.value)} type="date" value={form.rentIncreaseNextReview} />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Wiederholung</span>
+                <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => handleRentIncreaseReminderIntervalChange(event.target.value)} value={form.rentIncreaseReminderIntervalYears}>
+                  {rentIncreaseReminderIntervalOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
             {form.rentIncreaseType === 'graduated' ? (
               <div className="mt-5 space-y-4">
+                <div className="rounded-[24px] border border-amber-200 bg-amber-50/60 p-4">
+                  <p className="text-sm font-medium text-slate-900">Staffeln erzeugen</p>
+                  <div className="mt-3 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                    <label className="block space-y-2">
+                      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Anzahl Staffeln</span>
+                      <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="1" onChange={(event) => updateField('graduatedStepCount', event.target.value)} type="number" value={form.graduatedStepCount} />
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Jahre je Staffel</span>
+                      <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="1" onChange={(event) => updateField('graduatedStepYears', event.target.value)} type="number" value={form.graduatedStepYears} />
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">Frist vor Staffelbeginn</span>
+                      <input className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="0" onChange={(event) => updateField('graduatedNoticeMonths', event.target.value)} type="number" value={form.graduatedNoticeMonths} />
+                    </label>
+                    <button className="rounded-full border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={generateGraduatedRows} type="button">
+                      Staffeln anlegen
+                    </button>
+                  </div>
+                </div>
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900">Staffelplan</p>
