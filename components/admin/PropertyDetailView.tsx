@@ -643,52 +643,6 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
 
   return (
     <div className="admin-page space-y-4">
-      <section className="admin-hero rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,250,240,0.96)_0%,rgba(247,241,231,0.94)_100%)] p-6 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.35)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Immobilie ansehen</p>
-        <div className="mt-2 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <MiniStat label="Objektnummer" value={property.propertyNumber} />
-              <MiniStat label="Nutzungsart" value={translateUsageType(property.usageType)} />
-              <MiniStat label="Eigentumsart" value={translateOwnershipType(property.ownershipType)} />
-              <MiniStat label="Eigentuemer" value={ownerLabel} />
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-              href={`/admin/immobilie/${propertyId}/bearbeiten`}
-            >
-              Bearbeiten
-            </Link>
-            <Link
-              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-              href="/admin/immobilie"
-            >
-              Zur Immobilienuebersicht
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">Objektdaten</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <Field label="Adresse" value={[property.street, property.houseNumber, property.postalCode, property.city].filter(Boolean).join(', ')} />
-          <Field label="Bestand" value={`${translateUsageType(property.usageType)} / ${Array.isArray(property.units) ? property.units.length : 0} Einheiten`} />
-          <Field label="Leerstand" value={String((Array.isArray(property.units) ? property.units : []).filter((unit) => unit && typeof unit === 'object' && !cleanText(unit.tenantId)).length)} />
-          <Field label="Eigentum" value={[translateOwnershipType(property.ownershipType), ownerLabel].filter(Boolean).join(' / ')} />
-          <Field label="Wirtschaftlichkeit" value={[cleanText(property.purchasePrice) ? `Kaufpreis ${cleanText(property.purchasePrice)}` : '', cleanText(property.initialYieldPercent) ? `Rendite ${cleanText(property.initialYieldPercent)}` : ''].filter(Boolean).join(' / ')} />
-          <Field label="Technik" value={[cleanText(property.propertyNumber) ? `Objekt ${cleanText(property.propertyNumber)}` : '', property.hasCentralHeating === 'no' ? 'Keine Zentralheizung' : 'Zentralheizung'].filter(Boolean).join(' / ')} />
-          {cleanText(property.ownershipType) === 'partial_ownership' ? (
-            <>
-              <Field label="Position Keller" value={property.basementPosition} />
-              <Field label="Position Briefkasten" value={property.mailboxPosition} />
-            </>
-          ) : null}
-        </div>
-      </section>
-
       {false ? (
         <DocumentLibrarySection
           documents={propertyDocuments}
@@ -768,6 +722,52 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
           )}
         </div>
       </section>
+
+      <div className="grid scroll-mt-28 gap-4 xl:grid-cols-2" id="details">
+        <DetailCard title="Adresse und Bestand">
+          <DetailRow label="Strasse" value={[property.street, property.houseNumber].filter(Boolean).join(' ')} />
+          <DetailRow label="PLZ / Ort" value={[property.postalCode, property.city].filter(Boolean).join(' ')} />
+          <DetailRow label="Baujahr" value={property.yearBuilt} />
+          <DetailRow label="Nutzungsart" value={translateUsageType(property.usageType)} />
+          {cleanText(property.ownershipType) === 'partial_ownership' ? (
+            <>
+              <DetailRow label="Position Keller" value={property.basementPosition} />
+              <DetailRow label="Position Briefkasten" value={property.mailboxPosition} />
+            </>
+          ) : null}
+          <DetailRow label="Einheiten" value={String(Array.isArray(property.units) ? property.units.length : 0)} />
+        </DetailCard>
+
+        <DetailCard title="Eigentum und Wirtschaftlichkeit">
+          <DetailRow label="Kaufdatum" value={property.purchaseDate} />
+          <DetailRow label="Eigentum seit" value={property.ownershipSince} />
+          <DetailRow label="Kaufpreis" value={property.purchasePrice} />
+        </DetailCard>
+
+        <DetailCard title="Technik">
+          <DetailRow label="Objektnummer" value={property.propertyNumber} />
+          <DetailRow label="Zentralheizung" value={property.hasCentralHeating === 'no' ? 'Nein' : 'Ja'} />
+          <DetailRow
+            label="Heizungsarten"
+            value={
+              heatingEntries.length > 0
+                ? heatingEntries
+                    .map((entry) =>
+                      [translateHeatingType(entry.type), cleanText(entry.buildYear), cleanText(entry.lastMaintenance)]
+                        .filter(Boolean)
+                        .join(' - ')
+                    )
+                    .join(', ')
+                : Array.isArray(property.heatingSystems)
+                  ? property.heatingSystems
+                      .map((entry) => translateHeatingType(entry))
+                      .filter(Boolean)
+                      .join(', ')
+                  : translateHeatingType(property.heatingSystems)
+            }
+          />
+        </DetailCard>
+      </div>
 
       <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
           <button
@@ -867,21 +867,12 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
             </>
           ) : null}
           <DetailRow label="Einheiten" value={String(Array.isArray(property.units) ? property.units.length : 0)} />
-          <DetailRow
-            label="Leerstand"
-            value={String(
-              (Array.isArray(property.units) ? property.units : []).filter(
-                (unit) => unit && typeof unit === 'object' && !cleanText(unit.tenantId)
-              ).length
-            )}
-          />
         </DetailCard>
 
         <DetailCard title="Eigentum und Wirtschaftlichkeit">
           <DetailRow label="Kaufdatum" value={property.purchaseDate} />
           <DetailRow label="Eigentum seit" value={property.ownershipSince} />
           <DetailRow label="Kaufpreis" value={property.purchasePrice} />
-          <DetailRow label="Anfangsrendite" value={property.initialYieldPercent} />
         </DetailCard>
 
         <DetailCard title="Technik">
@@ -1378,17 +1369,3 @@ function MaintenanceRow({
   );
 }
 
-function MiniStat({ label, value }: { label: string; value?: unknown }) {
-  const formattedValue = formatValue(value);
-  return (
-    <div className="admin-field rounded-[14px] border border-stone-200 bg-white/72 px-3 py-2">
-      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</p>
-      <p
-        className="admin-field-value mt-1 min-w-0 truncate whitespace-nowrap text-sm leading-6 text-slate-900"
-        title={formattedValue}
-      >
-        {formattedValue}
-      </p>
-    </div>
-  );
-}

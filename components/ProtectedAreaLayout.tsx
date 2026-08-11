@@ -260,8 +260,6 @@ export default function ProtectedAreaLayout({
   const [tenants, setTenants] = useState<AdminRecord[]>([]);
   const [search, setSearch] = useState('');
   const [settingsTab, setSettingsTab] = useState('');
-  const [openProperties, setOpenProperties] = useState<Record<string, boolean>>({});
-  const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
   const [mailSyncNote, setMailSyncNote] = useState('');
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [mobileAdminMenuOpen, setMobileAdminMenuOpen] = useState(false);
@@ -597,39 +595,18 @@ export default function ProtectedAreaLayout({
     }));
   }
 
-  function toggleProperty(propertyId: string) {
-    setOpenProperties((current) => ({ [propertyId]: !current[propertyId] }));
-  }
-
-  function toggleUnit(unitKey: string) {
-    setOpenUnits((current) => ({ [unitKey]: !current[unitKey] }));
-  }
-
   function openProperty(propertyId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenProperties({ [propertyId]: true });
-    setOpenUnits({});
     router.push(`/admin/immobilie/${propertyId}`);
-  }
-
-  function openPropertyServices(propertyId: string) {
-    setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenProperties({ [propertyId]: true });
-    setOpenUnits({});
-    router.push(`/admin/immobilie/${propertyId}/dienstleister`);
   }
 
   function openUnit(propertyId: string, unitId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenProperties({ [propertyId]: true });
-    setOpenUnits({ [`${propertyId}-${unitId}`]: true });
     router.push(`/admin/einheit/${propertyId}/${unitId}`);
   }
 
   function openTenant(propertyId: string, unitId: string, tenantId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenProperties({ [propertyId]: true });
-    setOpenUnits({ [`${propertyId}-${unitId}`]: true });
     router.push(`/admin/mieter/${tenantId}`);
   }
 
@@ -961,86 +938,21 @@ export default function ProtectedAreaLayout({
 
                       <div className="max-h-[62vh] space-y-1 overflow-y-auto pr-1">
                         {companyTree.map((property) => (
-                                  <div className="space-y-1" key={`mobile-property-${property.id}`}>
-                                    <div className="flex items-center gap-1 rounded-[14px] hover:bg-white/6">
-                                      <button
-                                        className="min-w-0 flex-1 px-3 py-2 text-left text-sm text-stone-200"
-                                        onClick={() => {
-                                          openProperty(property.id);
-                                          setMobileAdminMenuOpen(false);
-                                        }}
-                                        type="button"
-                                      >
-                                        {property.label}
-                                      </button>
-                                      <button
-                                        aria-label={openProperties[property.id] ?? false ? 'Objekt einklappen' : 'Objekt aufklappen'}
-                                        className="flex h-8 w-8 shrink-0 items-center justify-center text-base leading-none text-amber-200"
-                                        onClick={() => toggleProperty(property.id)}
-                                        type="button"
-                                      >
-                                        {openProperties[property.id] ?? false ? '-' : '+'}
-                                      </button>
-                                    </div>
-                                  {canReadContacts ? (
-                                    <button
-                                      className="w-full rounded-[14px] px-3 py-2 text-left text-xs text-stone-300"
-                                      onClick={() => {
-                                        openPropertyServices(property.id);
-                                        setMobileAdminMenuOpen(false);
-                                      }}
-                                      type="button"
-                                    >
-                                      Dienstleister
-                                    </button>
-                                  ) : null}
-                                  {openProperties[property.id] ? (
-                                    <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
-                                      {property.units.map((unit) => {
-                                        const unitKey = `${property.id}-${unit.id}`;
-                                        return (
-                                          <div className="space-y-1" key={`mobile-unit-${property.id}-${unit.id}`}>
-                                            <div className="flex items-center gap-1 rounded-[14px] hover:bg-white/6">
-                                              <button
-                                                className="min-w-0 flex-1 px-3 py-2 text-left text-xs text-stone-300"
-                                                onClick={() => {
-                                                  openUnit(property.id, unit.id);
-                                                  setMobileAdminMenuOpen(false);
-                                                }}
-                                                type="button"
-                                              >
-                                                {unit.menuLabel}
-                                              </button>
-                                              <button
-                                                aria-label={openUnits[unitKey] ?? false ? 'Einheit einklappen' : 'Einheit aufklappen'}
-                                                className="flex h-8 w-8 shrink-0 items-center justify-center text-base leading-none text-amber-200"
-                                                onClick={() => toggleUnit(unitKey)}
-                                                type="button"
-                                              >
-                                                {openUnits[unitKey] ?? false ? '-' : '+'}
-                                              </button>
-                                            </div>
-                                            {openUnits[unitKey] && unit.currentTenant ? (
-                                              <button
-                                                className="ml-3 flex items-center gap-2 rounded-[14px] px-3 py-2 text-left text-xs text-stone-200"
-                                                onClick={() => {
-                                                  openTenant(property.id, unit.id, unit.currentTenant!.id);
-                                                  setMobileAdminMenuOpen(false);
-                                                }}
-                                                type="button"
-                                              >
-                                                <span className="h-2 w-2 rounded-full bg-amber-300" />
-                                                {[cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
-                                                  .filter(Boolean)
-                                                  .join(', ')}
-                                              </button>
-                                            ) : null}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : null}
-                                </div>
+                          <button
+                            className={`w-full rounded-[14px] px-3 py-2 text-left text-sm transition ${
+                              isCurrentPath(pathname, `/admin/immobilie/${property.id}`)
+                                ? 'bg-white/14 text-white'
+                                : 'text-stone-200 hover:bg-white/6'
+                            }`}
+                            key={`mobile-property-${property.id}`}
+                            onClick={() => {
+                              openProperty(property.id);
+                              setMobileAdminMenuOpen(false);
+                            }}
+                            type="button"
+                          >
+                            {property.label}
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -1172,102 +1084,20 @@ export default function ProtectedAreaLayout({
                           </div>
                         ) : (
                           companyTree.map((property) => (
-                                    <div className="space-y-2" key={property.id}>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          className={`flex-1 rounded-[16px] px-3 py-2 text-left text-xs leading-5 transition ${
-                                            isCurrentPath(pathname, `/admin/immobilie/${property.id}`)
-                                              ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
-                                              : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
-                                          }`}
-                                          onClick={() => openProperty(property.id)}
-                                          title={property.label}
-                                          type="button"
-                                        >
-                                          {property.label}
-                                        </button>
-                                        <button
-                                          aria-label={openProperties[property.id] ?? false ? 'Objekt einklappen' : 'Objekt aufklappen'}
-                                          className="px-1 py-2 text-sm text-slate-400 transition hover:text-slate-700"
-                                          onClick={() => toggleProperty(property.id)}
-                                          type="button"
-                                        >
-                                          {openProperties[property.id] ?? false ? '˄' : '˅'}
-                                        </button>
-                                      </div>
-                                      {openProperties[property.id] ? (
-                                        <div className="ml-3 space-y-2 border-l border-stone-200 pl-3">
-                                          {canReadContacts ? (
-                                            <button
-                                              className={`w-full rounded-[14px] px-3 py-2 text-left text-xs leading-5 transition ${
-                                                isCurrentPath(pathname, `/admin/immobilie/${property.id}/dienstleister`)
-                                                  ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
-                                                  : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
-                                              }`}
-                                              onClick={() => openPropertyServices(property.id)}
-                                              title={`Dienstleister ${property.label}`}
-                                              type="button"
-                                            >
-                                              Dienstleister
-                                            </button>
-                                          ) : null}
-                                          {property.units.map((unit) => {
-                                            const unitKey = `${property.id}-${unit.id}`;
-                                            return (
-                                              <div className="space-y-2" key={unitKey}>
-                                                <div className="flex items-center gap-2">
-                                                  <button
-                                                    className={`flex-1 rounded-[14px] px-3 py-2 text-left text-xs leading-5 transition ${
-                                                      isCurrentPath(pathname, `/admin/einheit/${property.id}/${unit.id}`)
-                                                        ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
-                                                        : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
-                                                    }`}
-                                                    onClick={() => openUnit(property.id, unit.id)}
-                                                    title={unit.menuLabel}
-                                                    type="button"
-                                                  >
-                                                    {unit.menuLabel}
-                                                  </button>
-                                                  <button
-                                                    aria-label={openUnits[unitKey] ?? false ? 'Einheit einklappen' : 'Einheit aufklappen'}
-                                                    className="px-1 py-2 text-sm text-slate-400 transition hover:text-slate-700"
-                                                    onClick={() => toggleUnit(unitKey)}
-                                                    type="button"
-                                                  >
-                                                    {openUnits[unitKey] ?? false ? '˄' : '˅'}
-                                                  </button>
-                                                </div>
-                                                {openUnits[unitKey] ? (
-                                                  <div className="ml-3 space-y-2 border-l border-stone-200 pl-3">
-                                                    <div className="rounded-[14px] bg-white px-3 py-2 text-xs leading-5 text-slate-600">
-                                                      {unit.currentTenant ? (
-                                                        <button
-                                                          className={`flex items-center gap-2 text-left text-xs transition ${
-                                                            isCurrentPath(pathname, `/admin/mieter/${unit.currentTenant!.id}`)
-                                                              ? 'text-slate-950 underline decoration-stone-300 underline-offset-4'
-                                                              : 'text-slate-700 hover:text-amber-800'
-                                                          }`}
-                                                          onClick={() => openTenant(property.id, unit.id, unit.currentTenant!.id)}
-                                                          type="button"
-                                                        >
-                                                          <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                                                          {[cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
-                                                            .filter(Boolean)
-                                                            .join(', ')}
-                                                        </button>
-                                                      ) : (
-                                                        <p className="mt-1 text-sm text-slate-900">Kein Mieter zugeordnet</p>
-                                                      )}
-                                                    </div>
-                                                  </div>
-                                                ) : null}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ))
+                            <button
+                              className={`w-full rounded-[16px] px-3 py-2 text-left text-xs leading-5 transition ${
+                                isCurrentPath(pathname, `/admin/immobilie/${property.id}`)
+                                  ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
+                                  : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
+                              }`}
+                              key={property.id}
+                              onClick={() => openProperty(property.id)}
+                              title={property.label}
+                              type="button"
+                            >
+                              {property.label}
+                            </button>
+                          ))
                         )}
                       </div>
                     ) : null}
@@ -1353,8 +1183,32 @@ export default function ProtectedAreaLayout({
             }`}
           >
             <div className="flex items-start justify-center gap-6 text-center lg:justify-between lg:text-left">
-              <div className="min-w-0">
-                {resolvedHeaderContent.title ? <h1 className="font-serif text-3xl text-slate-950">{resolvedHeaderContent.title}</h1> : null}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-col items-center gap-3 lg:flex-row lg:items-center">
+                  {resolvedHeaderContent.title ? <h1 className="font-serif text-3xl text-slate-950">{resolvedHeaderContent.title}</h1> : null}
+                  {propertyDetailId ? (
+                    <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
+                      <Link
+                        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                        href={`/admin/immobilie/${propertyDetailId}#details`}
+                      >
+                        Details
+                      </Link>
+                      <Link
+                        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                        href={`/admin/immobilie/${propertyDetailId}/bearbeiten`}
+                      >
+                        Bearbeiten
+                      </Link>
+                      <Link
+                        className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
+                        href="/admin/immobilie"
+                      >
+                        Übersicht
+                      </Link>
+                    </div>
+                  ) : null}
+                </div>
                 {resolvedHeaderContent.description ? (
                   <p className="mx-auto mt-2 max-w-3xl text-sm leading-7 text-slate-600 lg:mx-0">{resolvedHeaderContent.description}</p>
                 ) : null}
