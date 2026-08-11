@@ -96,8 +96,8 @@ function tenantName(tenant: AdminRecord | null | undefined) {
 function rentIncreaseLabel(tenant: AdminRecord | null | undefined) {
   if (!tenant) return '';
   const type = cleanText(tenant.data.rentIncreaseType);
+  if (!type) return '';
   const date = formatDate(tenant.data.rentIncreaseNextReview);
-  if (!type && !date) return '';
   const label =
     type === 'graduated'
       ? 'Staffelmiete'

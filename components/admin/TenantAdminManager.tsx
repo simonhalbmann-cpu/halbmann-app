@@ -495,6 +495,10 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
   const rentIncreaseReferenceDate = String(data.rentIncreaseReferenceDate ?? '');
   const rentIncreaseReminderIntervalYears = String(data.rentIncreaseReminderIntervalYears ?? '1');
   const effectiveReferenceDate = getEffectiveReferenceDate(rentIncreaseReferenceDate, moveInDate);
+  const rentIncreaseNextReview = rentIncreaseType
+    ? String(data.rentIncreaseNextReview ?? '') ||
+      calculateRentReminder(effectiveReferenceDate, rentIncreaseReminderIntervalYears)
+    : '';
   const coldRent = String(data.coldRent ?? '');
   const netOperatingCosts = String(data.netOperatingCosts ?? '');
 
@@ -539,9 +543,7 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     pendingColdRent: '',
     phone: String(data.phone ?? ''),
     rentIncreaseReminderIntervalYears,
-    rentIncreaseNextReview:
-      String(data.rentIncreaseNextReview ?? '') ||
-      calculateRentReminder(effectiveReferenceDate, rentIncreaseReminderIntervalYears),
+    rentIncreaseNextReview,
     rentIncreaseReferenceDate,
     rentHistory: buildRentHistoryFromData(
       rentHistory,
@@ -817,9 +819,11 @@ export default function TenantAdminManager({
         ...current,
         moveInDate: value,
         rentIncreaseNextReview:
-          current.rentIncreaseNextReview ||
-          calculateRentReminder(nextReferenceDate, current.rentIncreaseReminderIntervalYears),
-        rentIncreaseReferenceDate: nextReferenceDate,
+          current.rentIncreaseType
+            ? current.rentIncreaseNextReview ||
+              calculateRentReminder(nextReferenceDate, current.rentIncreaseReminderIntervalYears)
+            : '',
+        rentIncreaseReferenceDate: current.rentIncreaseType ? nextReferenceDate : current.rentIncreaseReferenceDate,
       };
     });
   }
@@ -972,8 +976,10 @@ export default function TenantAdminManager({
       return {
         ...current,
         rentIncreaseNextReview:
-          current.rentIncreaseNextReview ||
-          calculateRentReminder(referenceDate, current.rentIncreaseReminderIntervalYears),
+          value
+            ? current.rentIncreaseNextReview ||
+              calculateRentReminder(referenceDate, current.rentIncreaseReminderIntervalYears)
+            : '',
         rentIncreaseRows: nextRows,
         rentIncreaseType: value,
       };
@@ -983,7 +989,9 @@ export default function TenantAdminManager({
   function handleRentIncreaseReferenceDateChange(value: string) {
     setForm((current) => ({
       ...current,
-      rentIncreaseNextReview: current.rentIncreaseNextReview || calculateRentReminder(value, current.rentIncreaseReminderIntervalYears),
+      rentIncreaseNextReview: current.rentIncreaseType
+        ? current.rentIncreaseNextReview || calculateRentReminder(value, current.rentIncreaseReminderIntervalYears)
+        : '',
       rentIncreaseReferenceDate: value,
     }));
   }
@@ -991,10 +999,12 @@ export default function TenantAdminManager({
   function handleRentIncreaseReminderIntervalChange(value: string) {
     setForm((current) => ({
       ...current,
-      rentIncreaseNextReview: calculateRentReminder(
-        current.rentIncreaseReferenceDate || current.moveInDate,
-        value
-      ),
+      rentIncreaseNextReview: current.rentIncreaseType
+        ? calculateRentReminder(
+            current.rentIncreaseReferenceDate || current.moveInDate,
+            value
+          )
+        : '',
       rentIncreaseReminderIntervalYears: value,
     }));
   }
@@ -1391,6 +1401,7 @@ export default function TenantAdminManager({
               effectiveReferenceDate
             );
 
+        const hasRentIncreaseType = Boolean(cleanSpaces(form.rentIncreaseType));
         const payload = {
           additionalPersons: form.additionalPersons,
           annualStatementFile: form.annualStatementFile,
@@ -1434,10 +1445,10 @@ export default function TenantAdminManager({
           propertyName: selectedUnit.propertyName,
           propertyUnit: selectedUnit.label,
           rentHistory: nextHistory,
-          rentIncreaseNextReview: form.rentIncreaseNextReview,
+          rentIncreaseNextReview: hasRentIncreaseType ? form.rentIncreaseNextReview : '',
           rentIncreaseReminderIntervalYears: form.rentIncreaseReminderIntervalYears,
-          rentIncreaseReferenceDate: form.rentIncreaseReferenceDate,
-          rentIncreaseRows: form.rentIncreaseRows,
+          rentIncreaseReferenceDate: hasRentIncreaseType ? form.rentIncreaseReferenceDate : '',
+          rentIncreaseRows: hasRentIncreaseType ? form.rentIncreaseRows : [],
           rentIncreaseType: form.rentIncreaseType,
           salaryProofsFile: form.salaryProofsFile,
           schufaFile: form.schufaFile,

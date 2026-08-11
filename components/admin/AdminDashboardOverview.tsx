@@ -451,8 +451,9 @@ export default function AdminDashboardOverview() {
         });
       }
 
+      const rentIncreaseType = cleanText(tenant.data.rentIncreaseType);
       const rentIncreaseNextReview = cleanText(tenant.data.rentIncreaseNextReview);
-      if (parseDateInput(rentIncreaseNextReview)) {
+      if (rentIncreaseType && parseDateInput(rentIncreaseNextReview)) {
         reminderItems.push({
           dateValue: rentIncreaseNextReview,
           href: buildTenantComposeHref({
@@ -463,7 +464,7 @@ export default function AdminDashboardOverview() {
           }),
           id: `tenant-rent-next-${tenant.id}`,
           label: buildTenantLabel(tenant),
-          meta: `Mieterhöhung prüfen · ${getRentIncreaseTypeLabel(tenant.data.rentIncreaseType)}`,
+          meta: `Mieterhöhung prüfen · ${getRentIncreaseTypeLabel(rentIncreaseType)}`,
           type: 'tenant',
         });
       }
