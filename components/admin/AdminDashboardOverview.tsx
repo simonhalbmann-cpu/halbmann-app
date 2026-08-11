@@ -212,6 +212,16 @@ function parseYear(value: unknown) {
   return date ? date.getFullYear() : null;
 }
 
+function addMonthsToDate(date: Date, months: number) {
+  const shifted = new Date(date);
+  shifted.setMonth(shifted.getMonth() + months);
+  return shifted;
+}
+
+function getMonthDistance(fromDate: Date, toDate: Date) {
+  return (toDate.getFullYear() - fromDate.getFullYear()) * 12 + toDate.getMonth() - fromDate.getMonth();
+}
+
 function getTenantLeaseContracts(tenant: WorkflowRecord) {
   const contracts = Array.isArray(tenant.data.leaseContracts)
     ? tenant.data.leaseContracts.filter(
@@ -254,9 +264,14 @@ function getContractBaseDate(tenant: WorkflowRecord, contract: DocumentData) {
   );
 }
 
-function getSecureColdRentAtYear(tenant: WorkflowRecord, contract: DocumentData, contractIndex: number, year: number) {
-  const baseYear = parseYear(getContractBaseDate(tenant, contract));
-  if (baseYear !== null && year < baseYear) return 0;
+function getSecureColdRentAtDate(
+  tenant: WorkflowRecord,
+  contract: DocumentData,
+  contractIndex: number,
+  targetDate: Date
+) {
+  const baseDate = parseDateInput(getContractBaseDate(tenant, contract));
+  if (baseDate && targetDate < baseDate) return 0;
   let coldRent = parseMoney(contract.coldRent ?? tenant.data.coldRent);
   if (contractIndex !== 0 || cleanText(tenant.data.rentIncreaseType) !== 'graduated') return coldRent;
 
@@ -265,9 +280,9 @@ function getSecureColdRentAtYear(tenant: WorkflowRecord, contract: DocumentData,
     .filter((entry) => entry && typeof entry === 'object')
     .forEach((entry) => {
       const row = entry as DocumentData;
-      const rowYear = parseYear(row.fromDate);
+      const rowDate = parseDateInput(row.fromDate);
       const rowColdRent = parseMoney(row.coldRent);
-      if (rowYear !== null && rowYear <= year && rowColdRent > 0) {
+      if (rowDate && rowDate <= targetDate && rowColdRent > 0) {
         coldRent = rowColdRent;
       }
     });
@@ -275,17 +290,56 @@ function getSecureColdRentAtYear(tenant: WorkflowRecord, contract: DocumentData,
   return coldRent;
 }
 
-function getProjectedColdRentAtYear(tenant: WorkflowRecord, contract: DocumentData, contractIndex: number, year: number) {
-  const secureColdRent = getSecureColdRentAtYear(tenant, contract, contractIndex, year);
+function getNextLegalRentIncreaseDate(tenant: WorkflowRecord, contract: DocumentData) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sixMonthsFromToday = addMonthsToDate(today, 6);
+  const nextReviewDate = parseDateInput(tenant.data.rentIncreaseNextReview);
+  if (nextReviewDate) {
+    return nextReviewDate <= today ? sixMonthsFromToday : nextReviewDate;
+  }
+
+  const referenceDate = parseDateInput(
+    cleanText(tenant.data.rentIncreaseReferenceDate) || getContractBaseDate(tenant, contract)
+  );
+  if (!referenceDate) return null;
+  const regularIncreaseDate = addMonthsToDate(referenceDate, 36);
+  return regularIncreaseDate <= today ? sixMonthsFromToday : regularIncreaseDate;
+}
+
+function getProjectedColdRentAtDate(
+  tenant: WorkflowRecord,
+  contract: DocumentData,
+  contractIndex: number,
+  targetDate: Date
+) {
+  const secureColdRent = getSecureColdRentAtDate(tenant, contract, contractIndex, targetDate);
   if (contractIndex !== 0 || cleanText(tenant.data.rentIncreaseType) !== 'legal') return secureColdRent;
 
-  const referenceDate =
-    cleanText(tenant.data.rentIncreaseReferenceDate) ||
-    getContractBaseDate(tenant, contract);
-  const referenceYear = parseYear(referenceDate);
-  if (referenceYear === null || year <= referenceYear) return secureColdRent;
-  const increaseSteps = Math.floor((year - referenceYear) / 3);
-  return secureColdRent * 1.1 ** Math.max(increaseSteps, 0);
+  const firstIncreaseDate = getNextLegalRentIncreaseDate(tenant, contract);
+  if (!firstIncreaseDate || targetDate < firstIncreaseDate) return secureColdRent;
+  const increaseSteps = Math.floor(Math.max(getMonthDistance(firstIncreaseDate, targetDate), 0) / 36) + 1;
+  return secureColdRent * 1.1 ** increaseSteps;
+}
+
+function getAnnualColdRentAtYear(
+  contractSeries: Array<{ contract: DocumentData; contractIndex: number; tenant: WorkflowRecord }>,
+  year: number,
+  mode: 'projected' | 'safe'
+) {
+  return Array.from({ length: 12 }, (_, monthIndex) => new Date(year, monthIndex, 15)).reduce(
+    (yearTotal, targetDate) =>
+      yearTotal +
+      contractSeries.reduce(
+        (monthTotal, { contract, contractIndex, tenant }) =>
+          monthTotal +
+          (mode === 'projected'
+            ? getProjectedColdRentAtDate(tenant, contract, contractIndex, targetDate)
+            : getSecureColdRentAtDate(tenant, contract, contractIndex, targetDate)),
+        0
+      ),
+    0
+  );
 }
 
 function formatMoney(value: number) {
@@ -395,14 +449,12 @@ function DashboardFilterButtons({
 }
 
 function BreakEvenChart({
-  currentAnnualProjectedRent,
   currentAnnualSafeRent,
   projectedBreakEvenYear,
   purchasePrice,
   safeBreakEvenYear,
   points,
 }: {
-  currentAnnualProjectedRent: number;
   currentAnnualSafeRent: number;
   projectedBreakEvenYear: number | null;
   purchasePrice: number;
@@ -462,10 +514,7 @@ function BreakEvenChart({
         </div>
         <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Jahresmiete aktuell</p>
-          <p className="mt-1 font-semibold text-slate-950">
-            {formatMoney(currentAnnualSafeRent)}
-            {currentAnnualProjectedRent > currentAnnualSafeRent ? ` / ${formatMoney(currentAnnualProjectedRent)}` : ''}
-          </p>
+          <p className="mt-1 font-semibold text-slate-950">{formatMoney(currentAnnualSafeRent)}</p>
         </div>
         <div className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-500">Sicherer Break Even</p>
@@ -496,22 +545,22 @@ function BreakEvenChart({
             </g>
           ))}
           <line
-            stroke="#7f1d1d"
+            stroke="#dc2626"
             strokeDasharray="8 6"
-            strokeWidth="2"
+            strokeWidth="3"
             x1={padding.left}
             x2={width - padding.right}
             y1={purchaseY}
             y2={purchaseY}
           />
-          <path d={lineFor('safeTotal')} fill="none" stroke="#b45309" strokeWidth="3" />
-          <path d={lineFor('projectedTotal')} fill="none" stroke="#0f766e" strokeWidth="3" />
+          <path d={lineFor('safeTotal')} fill="none" stroke="#eab308" strokeWidth="4" />
+          <path d={lineFor('projectedTotal')} fill="none" stroke="#2563eb" strokeWidth="4" />
           {points.map((point) => (
             <g key={point.date}>
-              <circle cx={toX(point.date)} cy={toY(point.safeTotal)} fill="#b45309" r="3.8">
+              <circle cx={toX(point.date)} cy={toY(point.safeTotal)} fill="#ca8a04" r="4.2">
                 <title>{`${point.date.slice(0, 4)} sicher: ${formatMoney(point.safeTotal)}`}</title>
               </circle>
-              <circle cx={toX(point.date)} cy={toY(point.projectedTotal)} fill="#0f766e" r="3.8">
+              <circle cx={toX(point.date)} cy={toY(point.projectedTotal)} fill="#2563eb" r="4.2">
                 <title>{`${point.date.slice(0, 4)} Prognose: ${formatMoney(point.projectedTotal)}`}</title>
               </circle>
               <text fill="#78716c" fontSize="11" textAnchor="middle" x={toX(point.date)} y={height - 12}>
@@ -528,11 +577,11 @@ function BreakEvenChart({
           Kaufpreis
         </span>
         <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-700" />
+          <span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
           Sichere Mietsumme
         </span>
         <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-teal-700" />
+          <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
           Mit geplanten Erhoehungen
         </span>
       </div>
@@ -1300,15 +1349,11 @@ export default function AdminDashboardOverview() {
     const contractStartYears = contractSeries
       .map(({ contract, tenant }) => parseYear(getContractBaseDate(tenant, contract)))
       .filter((year): year is number => year !== null);
-    const currentYear = new Date().getFullYear();
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
     const currentAnnualSafeRent = contractSeries.reduce(
       (total, { contract, contractIndex, tenant }) =>
-        total + getSecureColdRentAtYear(tenant, contract, contractIndex, currentYear) * 12,
-      0
-    );
-    const currentAnnualProjectedRent = contractSeries.reduce(
-      (total, { contract, contractIndex, tenant }) =>
-        total + getProjectedColdRentAtYear(tenant, contract, contractIndex, currentYear) * 12,
+        total + getSecureColdRentAtDate(tenant, contract, contractIndex, currentDate) * 12,
       0
     );
     const startYear = Math.min(...(propertyStartYears.length > 0 ? propertyStartYears : contractStartYears), currentYear);
@@ -1320,16 +1365,8 @@ export default function AdminDashboardOverview() {
     let projectedBreakEvenYear: number | null = null;
 
     for (let year = startYear; year <= maxProjectionYear; year += 1) {
-      const annualSafeRent = contractSeries.reduce(
-        (total, { contract, contractIndex, tenant }) =>
-          total + getSecureColdRentAtYear(tenant, contract, contractIndex, year) * 12,
-        0
-      );
-      const annualProjectedRent = contractSeries.reduce(
-        (total, { contract, contractIndex, tenant }) =>
-          total + getProjectedColdRentAtYear(tenant, contract, contractIndex, year) * 12,
-        0
-      );
+      const annualSafeRent = getAnnualColdRentAtYear(contractSeries, year, 'safe');
+      const annualProjectedRent = getAnnualColdRentAtYear(contractSeries, year, 'projected');
       safeTotal += annualSafeRent;
       projectedTotal += annualProjectedRent;
       if (!safeBreakEvenYear && purchasePrice > 0 && safeTotal >= purchasePrice) safeBreakEvenYear = year;
@@ -1345,7 +1382,6 @@ export default function AdminDashboardOverview() {
     }
 
     return {
-      currentAnnualProjectedRent,
       currentAnnualSafeRent,
       points,
       projectedBreakEvenYear,
@@ -1826,7 +1862,6 @@ export default function AdminDashboardOverview() {
           <div className="mt-5 min-w-0">
             {rentStatisticView === 'breakEven' ? (
               <BreakEvenChart
-                currentAnnualProjectedRent={breakEvenData.currentAnnualProjectedRent}
                 currentAnnualSafeRent={breakEvenData.currentAnnualSafeRent}
                 points={breakEvenData.points}
                 projectedBreakEvenYear={breakEvenData.projectedBreakEvenYear}
