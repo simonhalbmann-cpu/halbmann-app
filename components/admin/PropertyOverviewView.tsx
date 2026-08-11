@@ -70,6 +70,15 @@ function parseDate(value: unknown) {
   return Number.isNaN(date) ? Number.POSITIVE_INFINITY : date;
 }
 
+function parseNumber(value: unknown) {
+  const numeric = typeof value === 'number' ? value : Number.parseFloat(cleanText(value));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function getUnitDisplayOrder(unit: DocumentData, index: number, total: number) {
+  return parseNumber(unit.createdOrder) ?? total - index;
+}
+
 function parseLeaseEndReminderMonths(value: unknown) {
   const numeric = Number.parseInt(cleanText(value), 10);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : 3;
@@ -200,7 +209,11 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
 
   const units = useMemo(() => {
     if (!property || !Array.isArray(property.units)) return [];
-    return property.units.filter((unit) => unit && typeof unit === 'object') as DocumentData[];
+    const unitEntries = property.units.filter((unit) => unit && typeof unit === 'object') as DocumentData[];
+    return unitEntries
+      .map((unit, index) => ({ order: getUnitDisplayOrder(unit, index, unitEntries.length), unit }))
+      .sort((left, right) => left.order - right.order)
+      .map((entry) => entry.unit);
   }, [property]);
 
   const unitRows = useMemo(
@@ -253,10 +266,6 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
   const leaseWarnings = unitRows
     .filter((unit) => unit.currentTenant && unit.leaseWarningDate && parseDate(unit.leaseWarningDate) <= today)
     .sort((left, right) => parseDate(left.leaseWarningDate) - parseDate(right.leaseWarningDate));
-  const nextIncrease = unitRows
-    .map((unit) => ({ label: unit.label, tenant: unit.currentTenant, timestamp: parseDate(unit.currentTenant?.data.rentIncreaseNextReview) }))
-    .filter((entry) => entry.tenant && Number.isFinite(entry.timestamp))
-    .sort((left, right) => left.timestamp - right.timestamp)[0];
   const assignedServiceCount = servicePartnerFields.filter((field) => cleanText(property?.[field])).length;
   const objectMeterCount = Array.isArray(property?.meters) ? property!.meters.length : 0;
   const unitMeterCount = units.reduce((sum, unit) => sum + (Array.isArray(unit.meters) ? unit.meters.length : 0), 0);
@@ -311,7 +320,7 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.6fr)]">
+        <div className="mt-5">
           <div className="overflow-hidden rounded-[18px] border border-stone-200">
             <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_110px_120px_140px] gap-3 bg-stone-50 px-4 py-3 text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">
               <span>Einheit</span>
@@ -366,12 +375,6 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
             )}
           </div>
 
-          <aside className="grid gap-3">
-            <InsightCard label="Naechste Mieterhoehung" value={nextIncrease ? rentIncreaseLabel(nextIncrease.tenant) : 'keine Frist'} />
-            <InsightCard label="Zaehlerspiegel" value={`${objectMeterCount + unitMeterCount} Zaehler`} />
-            <InsightCard label="Dienstleister" value={`${assignedServiceCount} zugeordnet`} />
-            <InsightCard label="Dokumente" value={`${documentCount} Dateien`} />
-          </aside>
         </div>
       </section>
 
@@ -390,15 +393,6 @@ function MiniTile({ label, value }: { label: string; value: string }) {
     <div className="rounded-[14px] border border-stone-200 bg-stone-50 px-3 py-2">
       <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</p>
       <p className="mt-1 text-sm font-medium text-slate-950">{value}</p>
-    </div>
-  );
-}
-
-function InsightCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-4 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-500">{label}</p>
-      <p className="mt-2 text-sm font-medium text-slate-950">{value}</p>
     </div>
   );
 }

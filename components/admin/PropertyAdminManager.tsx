@@ -63,6 +63,7 @@ type KeyEntry = {
 type UnitForm = {
   areaSqm: string;
   basementPosition: string;
+  createdOrder: number;
   documents: StoredDocumentEntry[];
   floor: string;
   heatingDraftType: string;
@@ -290,6 +291,7 @@ const defaultFormState = (): PropertyFormState => ({
 const createUnit = (): UnitForm => ({
   areaSqm: '',
   basementPosition: '',
+  createdOrder: Date.now(),
   documents: [],
   floor: '',
   heatingDraftType: '',
@@ -308,6 +310,10 @@ const createUnit = (): UnitForm => ({
   unitPosition: '',
   unitType: '',
 });
+
+function getUnitFormOrder(unit: UnitForm, index: number, total: number) {
+  return unit.createdOrder > 0 ? unit.createdOrder : total - index;
+}
 
 const mapMeterEntry = (meter: unknown): MeterEntry | null => {
   if (!meter || typeof meter !== 'object') return null;
@@ -356,6 +362,7 @@ const mapUnit = (unit: unknown): UnitForm | null => {
   return {
     areaSqm: String((unit as DocumentData).areaSqm ?? ''),
     basementPosition: String((unit as DocumentData).basementPosition ?? ''),
+    createdOrder: Number((unit as DocumentData).createdOrder ?? 0),
     documents: cleanStoredDocuments((unit as DocumentData).documents),
     floor: String((unit as DocumentData).floor ?? ''),
     heatingDraftType: '',
@@ -615,10 +622,14 @@ export default function PropertyAdminManager({
 
       const data = snapshot.data();
       setForm(mapPropertyDataToFormState(data));
+      const mappedUnits = Array.isArray(data.units)
+        ? data.units.map(mapUnit).filter((entry): entry is UnitForm => Boolean(entry))
+        : [];
       setUnits(
-        Array.isArray(data.units)
-          ? data.units.map(mapUnit).filter((entry): entry is UnitForm => Boolean(entry))
-          : []
+        mappedUnits
+          .map((unit, index) => ({ order: getUnitFormOrder(unit, index, mappedUnits.length), unit }))
+          .sort((left, right) => left.order - right.order)
+          .map((entry) => entry.unit)
       );
       setError('');
       setIsLoadingInitialValues(false);
@@ -1016,7 +1027,7 @@ export default function PropertyAdminManager({
   }
 
   function addUnit() {
-    setUnits((current) => [createUnit(), ...current]);
+    setUnits((current) => [...current, createUnit()]);
   }
 
   function removeUnit(unitId: string) {
