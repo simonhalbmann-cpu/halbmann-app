@@ -713,17 +713,12 @@ export default function PropertyAdminManager({
     () =>
       properties
         .map((record) => {
-          const recordUnits = Array.isArray(record.data.units) ? record.data.units : [];
-          const vacantUnits = recordUnits.filter(
-            (unit) => typeof unit === 'object' && unit && !String(unit.tenantId ?? '').trim()
-          ).length;
           return {
             id: record.id,
             label: String(record.data.name ?? record.id),
             subtitle: [
               String(record.data.propertyNumber ?? ''),
               String(record.data.city ?? ''),
-              `${vacantUnits} Leerstand`,
             ]
               .filter(Boolean)
               .join(' · '),
@@ -900,6 +895,15 @@ export default function PropertyAdminManager({
       ...current,
       heatingDraftType: '',
       heatingEntries: [...current.heatingEntries, nextHeating],
+    }));
+  }
+
+  function updateCentralHeatingMode(value: string) {
+    setForm((current) => ({
+      ...current,
+      hasCentralHeating: value,
+      heatingDraftType: value === 'yes' ? current.heatingDraftType : '',
+      heatingEntries: value === 'yes' ? current.heatingEntries : [],
     }));
   }
 
@@ -1355,10 +1359,6 @@ export default function PropertyAdminManager({
               <span className="text-sm font-medium text-slate-700">Einheiten</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-slate-700 outline-none" readOnly value={units.length} />
             </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Leerstand</span>
-              <input className="w-full rounded-2xl border border-stone-300 bg-stone-100 px-4 py-3 text-sm text-slate-700 outline-none" readOnly value={derivedVacancyCount} />
-            </label>
           </div>
 
           <div className="grid gap-5 md:grid-cols-4">
@@ -1387,28 +1387,32 @@ export default function PropertyAdminManager({
               <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-slate-700">Zentrale Heizungsversorgung</span>
-                  <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('hasCentralHeating', event.target.value)} value={form.hasCentralHeating}>
+                  <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateCentralHeatingMode(event.target.value)} value={form.hasCentralHeating}>
                     <option value="yes">Ja, zentral für das Objekt</option>
                     <option value="no">Nein, auf Einheiten verteilt</option>
                   </select>
                 </label>
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">Heizungsart</span>
-                  <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('heatingDraftType', event.target.value)} value={form.heatingDraftType}>
-                    <option value="">Heizungsart wählen</option>
-                    {heatingSystemOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button className="self-end rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={addHeatingSystem} type="button">
-                  Heizung hinzufügen
-                </button>
+                {form.hasCentralHeating === 'yes' ? (
+                  <>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium text-slate-700">Heizungsart</span>
+                      <select className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateFormField('heatingDraftType', event.target.value)} value={form.heatingDraftType}>
+                        <option value="">Heizungsart wählen</option>
+                        {heatingSystemOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button className="self-end rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={addHeatingSystem} type="button">
+                      Heizung hinzufügen
+                    </button>
+                  </>
+                ) : null}
               </div>
 
-              {form.heatingEntries.length > 0 ? (
+              {form.hasCentralHeating === 'yes' && form.heatingEntries.length > 0 ? (
                 <div className="space-y-4">
                   {form.heatingEntries.map((entry) => (
                     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_180px]" key={entry.id}>
@@ -1437,11 +1441,11 @@ export default function PropertyAdminManager({
                     </div>
                   ))}
                 </div>
-              ) : (
+              ) : form.hasCentralHeating === 'yes' ? (
                 <div className="rounded-[22px] border border-dashed border-stone-300 bg-white px-4 py-4 text-sm text-slate-600">
                   Noch keine Heizungsart hinzugefügt.
                 </div>
-              )}
+              ) : null}
               <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_180px]">
                 <div className="rounded-[22px] border border-stone-200 bg-white px-4 py-4">
                   <p className="text-sm font-medium text-slate-900">Dach</p>
@@ -1566,9 +1570,6 @@ export default function PropertyAdminManager({
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-900">Einheiten</p>
-                <p className="mt-1 text-xs leading-6 text-slate-500">
-                  Leerstand ergibt sich automatisch aus Einheiten ohne zugeordneten Mieter.
-                </p>
               </div>
               <button className="rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={addUnit} type="button">
                 Einheit hinzufügen
