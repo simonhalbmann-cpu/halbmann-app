@@ -122,6 +122,22 @@ function buildLeaseWarningTargets(tenantData: DocumentData | undefined, warningM
   return targets;
 }
 
+function findTenantContractForUnit(tenant: AdminRecord, propertyId: string, unitId: string) {
+  const contracts = Array.isArray(tenant.data.leaseContracts) ? tenant.data.leaseContracts : [];
+  const match = contracts.find(
+    (contract) =>
+      contract &&
+      typeof contract === 'object' &&
+      cleanText((contract as DocumentData).propertyId) === propertyId &&
+      cleanText((contract as DocumentData).unitId) === unitId
+  );
+  if (match && typeof match === 'object') return match as DocumentData;
+  if (cleanText(tenant.data.propertyId) === propertyId && cleanText(tenant.data.unitId) === unitId) {
+    return tenant.data;
+  }
+  return null;
+}
+
 function tenantName(tenant: AdminRecord | null | undefined) {
   if (!tenant) return '';
   return (
@@ -192,18 +208,23 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
       units.map((unit) => {
         const unitId = cleanText(unit.id);
         const linkedTenants = tenants
-          .filter((tenant) => cleanText(tenant.data.unitId) === unitId)
-          .sort((left, right) => parseDate(left.data.moveInDate) - parseDate(right.data.moveInDate));
-        const currentTenant = linkedTenants.find((tenant) => cleanText(tenant.data.status) === 'active') ?? null;
-        const upcomingTenant = linkedTenants.find((tenant) => cleanText(tenant.data.status) === 'pending') ?? null;
-        const leaseEndDate = cleanText(currentTenant?.data.moveOutDate || currentTenant?.data.leaseEndDate || currentTenant?.data.endDate);
-        const leaseEndReminderMonths = parseLeaseEndReminderMonths(currentTenant?.data.leaseEndReminderMonths);
-        const leaseWarningTargets = buildLeaseWarningTargets(currentTenant?.data, leaseEndReminderMonths)
+          .map((tenant) => ({ contract: findTenantContractForUnit(tenant, propertyId, unitId), tenant }))
+          .filter((entry): entry is { contract: DocumentData; tenant: AdminRecord } => Boolean(entry.contract))
+          .sort((left, right) => parseDate(left.contract.moveInDate) - parseDate(right.contract.moveInDate));
+        const currentEntry = linkedTenants.find((entry) => cleanText(entry.contract.status || entry.tenant.data.status) === 'active') ?? null;
+        const upcomingEntry = linkedTenants.find((entry) => cleanText(entry.contract.status || entry.tenant.data.status) === 'pending') ?? null;
+        const currentTenant = currentEntry?.tenant ?? null;
+        const currentContract = currentEntry?.contract ?? null;
+        const upcomingTenant = upcomingEntry?.tenant ?? null;
+        const upcomingContract = upcomingEntry?.contract ?? null;
+        const leaseEndDate = cleanText(currentContract?.moveOutDate || currentContract?.leaseEndDate || currentContract?.endDate);
+        const leaseEndReminderMonths = parseLeaseEndReminderMonths(currentContract?.leaseEndReminderMonths ?? currentTenant?.data.leaseEndReminderMonths);
+        const leaseWarningTargets = buildLeaseWarningTargets(currentContract ?? undefined, leaseEndReminderMonths)
           .filter((target) => target.warningDate)
           .sort((left, right) => parseDate(left.warningDate) - parseDate(right.warningDate));
         const nextLeaseWarningTarget = leaseWarningTargets[0] ?? null;
         return {
-          coldRent: cleanText(currentTenant?.data.coldRent),
+          coldRent: cleanText(currentContract?.coldRent),
           currentTenant,
           id: unitId,
           label: unitDisplayLabel(unit) || unitId || 'Einheit',
@@ -217,10 +238,10 @@ export default function PropertyOverviewView({ propertyId }: PropertyOverviewVie
           leaseWarningMonths: leaseEndReminderMonths,
           nextIncrease: rentIncreaseLabel(currentTenant),
           upcomingTenant,
-          upcomingTenantDate: formatDate(upcomingTenant?.data.moveInDate),
+          upcomingTenantDate: formatDate(upcomingContract?.moveInDate),
         };
       }),
-    [tenants, units]
+    [propertyId, tenants, units]
   );
 
   const today = useMemo(() => {

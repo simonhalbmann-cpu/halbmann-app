@@ -71,60 +71,6 @@ function buildDashboardMessageHref(record: WorkflowRecord) {
   return `/admin/nachrichten/${record.id}`;
 }
 
-function buildComposeHref(params: Record<string, string>) {
-  const searchParams = new URLSearchParams({ tab: 'compose' });
-  Object.entries(params).forEach(([key, value]) => {
-    const text = cleanText(value);
-    if (text) searchParams.set(key, text);
-  });
-  return `/admin/nachrichten?${searchParams.toString()}`;
-}
-
-function buildMaintenanceComposeHref({
-  instruction,
-  propertyId,
-  serviceField,
-  subject,
-  unitId,
-}: {
-  instruction: string;
-  propertyId: string;
-  serviceField: string;
-  subject: string;
-  unitId?: string;
-}) {
-  return buildComposeHref({
-    autoDraft: '1',
-    composePreset: 'maintenance',
-    instruction,
-    propertyId,
-    serviceField,
-    subject,
-    unitId: unitId || '',
-  });
-}
-
-function buildTenantComposeHref({
-  instruction,
-  propertyId,
-  subject,
-  tenantId,
-}: {
-  instruction: string;
-  propertyId: string;
-  subject: string;
-  tenantId: string;
-}) {
-  return buildComposeHref({
-    autoDraft: '1',
-    composePreset: 'tenant',
-    instruction,
-    propertyId,
-    subject,
-    tenantId,
-  });
-}
-
 function readCollection(
   name: string,
   onError: (message: string) => void,
@@ -164,6 +110,7 @@ function parseReminderMonths(value: unknown) {
   const numeric = Number.parseInt(cleanText(value), 10);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 11;
 }
+
 
 function reminderArchiveId(entry: Pick<ReminderItem, 'dateValue' | 'id'>) {
   return `${entry.id}-${entry.dateValue}`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -249,6 +196,32 @@ function parseMoney(value: unknown) {
   const normalized = text.replace(/\./g, '').replace(/EUR/gi, '').replace(/\s/g, '').replace(',', '.');
   const numeric = Number.parseFloat(normalized);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function getTenantLeaseContracts(tenant: WorkflowRecord) {
+  const contracts = Array.isArray(tenant.data.leaseContracts)
+    ? tenant.data.leaseContracts.filter(
+        (contract): contract is DocumentData => Boolean(contract) && typeof contract === 'object'
+      )
+    : [];
+
+  if (contracts.length > 0) return contracts;
+
+  const propertyId = cleanText(tenant.data.propertyId);
+  const unitId = cleanText(tenant.data.unitId);
+  return propertyId && unitId ? [tenant.data] : [];
+}
+
+function isActiveTenantContract(tenant: WorkflowRecord, contract: DocumentData) {
+  return cleanText(contract.status || tenant.data.status) === 'active';
+}
+
+function getActiveTenantRentTotal(tenant: WorkflowRecord) {
+  const contracts = getTenantLeaseContracts(tenant).filter((contract) =>
+    isActiveTenantContract(tenant, contract)
+  );
+  if (contracts.length === 0) return 0;
+  return contracts.reduce((total, contract) => total + parseMoney(contract.coldRent), 0);
 }
 
 function formatMoney(value: number) {
@@ -471,11 +444,13 @@ export default function AdminDashboardOverview() {
   const activeTenantsByUnit = useMemo(() => {
     const map = new Map<string, WorkflowRecord>();
     tenants.forEach((tenant) => {
-      if (cleanText(tenant.data.status) !== 'active') return;
-      const propertyId = cleanText(tenant.data.propertyId);
-      const unitId = cleanText(tenant.data.unitId);
-      if (!propertyId || !unitId) return;
-      map.set(`${propertyId}::${unitId}`, tenant);
+      getTenantLeaseContracts(tenant).forEach((contract) => {
+        if (!isActiveTenantContract(tenant, contract)) return;
+        const propertyId = cleanText(contract.propertyId);
+        const unitId = cleanText(contract.unitId);
+        if (!propertyId || !unitId) return;
+        map.set(`${propertyId}::${unitId}`, tenant);
+      });
     });
     return map;
   }, [tenants]);
@@ -532,53 +507,53 @@ export default function AdminDashboardOverview() {
     });
 
     tenants.forEach((tenant) => {
-      const leaseEndDate = cleanText(tenant.data.moveOutDate || tenant.data.leaseEndDate || tenant.data.endDate);
-      const leaseEndReminderMonths = parseLeaseEndReminderMonths(tenant.data.leaseEndReminderMonths);
-      const leaseEndReminderDate = shiftDateByRawMonths(
-        leaseEndDate,
-        -leaseEndReminderMonths
-      );
-      if (leaseEndReminderDate) {
-        reminderItems.push({
-          category: 'lease',
-          dateValue: leaseEndReminderDate,
-          href: `/admin/mieter/${tenant.id}`,
-          id: `tenant-lease-end-${tenant.id}`,
-          label: buildTenantLabel(tenant),
-          meta: `Mietvertrag endet am ${formatDateOnly(leaseEndDate)} · Warnung ${leaseEndReminderMonths} Monate vorher`,
-          type: 'tenant',
-        });
-      }
-
-      buildLeaseOptionEndDates(tenant.data).forEach((optionEndDate, optionIndex) => {
-        const optionReminderDate = shiftDateByRawMonths(
-          optionEndDate,
+      getTenantLeaseContracts(tenant).forEach((contract, contractIndex) => {
+        const contractId = cleanText(contract.id) || String(contractIndex);
+        const unitLabel = cleanText(contract.unitLabel);
+        const leaseEndDate = cleanText(contract.moveOutDate || contract.leaseEndDate || contract.endDate);
+        const leaseEndReminderMonths = parseLeaseEndReminderMonths(
+          contract.leaseEndReminderMonths ?? tenant.data.leaseEndReminderMonths
+        );
+        const leaseEndReminderDate = shiftDateByRawMonths(
+          leaseEndDate,
           -leaseEndReminderMonths
         );
-        if (!optionReminderDate) return;
-        reminderItems.push({
-          category: 'lease',
-          dateValue: optionReminderDate,
-          href: `/admin/mieter/${tenant.id}`,
-          id: `tenant-option-end-${tenant.id}-${optionIndex}`,
-          label: buildTenantLabel(tenant),
-          meta: `Option ${optionIndex + 1} endet am ${formatDateOnly(optionEndDate)} · Warnung ${leaseEndReminderMonths} Monate vorher`,
-          type: 'tenant',
+        if (leaseEndReminderDate) {
+          reminderItems.push({
+            category: 'lease',
+            dateValue: leaseEndReminderDate,
+            href: `/admin/mieter/${tenant.id}`,
+            id: `tenant-lease-end-${tenant.id}-${contractId}`,
+            label: buildTenantLabel(tenant),
+            meta: `${unitLabel ? `${unitLabel} - ` : ''}Mietvertrag endet am ${formatDateOnly(leaseEndDate)} - Warnung ${leaseEndReminderMonths} Monate vorher`,
+            type: 'tenant',
+          });
+        }
+
+        buildLeaseOptionEndDates(contract).forEach((optionEndDate, optionIndex) => {
+          const optionReminderDate = shiftDateByRawMonths(
+            optionEndDate,
+            -leaseEndReminderMonths
+          );
+          if (!optionReminderDate) return;
+          reminderItems.push({
+            category: 'lease',
+            dateValue: optionReminderDate,
+            href: `/admin/mieter/${tenant.id}`,
+            id: `tenant-option-end-${tenant.id}-${contractId}-${optionIndex}`,
+            label: buildTenantLabel(tenant),
+            meta: `${unitLabel ? `${unitLabel} - ` : ''}Option ${optionIndex + 1} endet am ${formatDateOnly(optionEndDate)} - Warnung ${leaseEndReminderMonths} Monate vorher`,
+            type: 'tenant',
+          });
         });
       });
-
       const rentIncreaseType = cleanText(tenant.data.rentIncreaseType);
       const rentIncreaseNextReview = cleanText(tenant.data.rentIncreaseNextReview);
       if (rentIncreaseType && parseDateInput(rentIncreaseNextReview)) {
         reminderItems.push({
           category: 'rentIncrease',
           dateValue: rentIncreaseNextReview,
-          href: buildTenantComposeHref({
-            instruction: `Bitte bereite eine sachliche, kurze Nachricht an ${buildTenantLabel(tenant)} vor. Es geht um die Prüfung der nächsten Mieterhöhung. Bitte keine verbindliche Zusage und keine konkrete neue Miete behaupten, sondern freundlich ankündigen, dass die Vertrags- und Rechtslage geprüft wird und wir uns mit den Details separat melden.`,
-            propertyId: cleanText(tenant.data.propertyId),
-            subject: 'Prüfung Mieterhöhung',
-            tenantId: tenant.id,
-          }),
+          href: `/admin/mieter/${tenant.id}`,
           id: `tenant-rent-next-${tenant.id}`,
           label: buildTenantLabel(tenant),
           meta: `Mieterhöhung prüfen · ${getRentIncreaseTypeLabel(rentIncreaseType)}`,
@@ -596,12 +571,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           category: 'rentIncrease',
           dateValue: fromDate,
-          href: buildTenantComposeHref({
-            instruction: `Bitte bereite eine sachliche Nachricht an ${buildTenantLabel(tenant)} zur hinterlegten Staffelmiete ab ${formatDateOnly(fromDate)} vor. Der Ton soll ruhig und klar sein. Bitte keine unnötigen juristischen Details, nur freundliche Information und Hinweis auf die Vertragsgrundlage.`,
-            propertyId: cleanText(tenant.data.propertyId),
-            subject: 'Staffelmiete',
-            tenantId: tenant.id,
-          }),
+          href: `/admin/mieter/${tenant.id}`,
           id: `tenant-rent-row-${tenant.id}-${fromDate}-${rowIndex}`,
           label: buildTenantLabel(tenant),
           meta: `Staffelmiete · ${cleanText((row as DocumentData).coldRent) || 'neue Kaltmiete'}`,
@@ -618,12 +588,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           category: 'rentIncrease',
           dateValue: reminderDate,
-          href: buildTenantComposeHref({
-            instruction: `Bitte bereite eine kurze, professionelle Nachricht an ${buildTenantLabel(tenant)} vor. Anlass ist die Prüfung einer möglichen Mieterhöhung. Bitte zurückhaltend formulieren und keine konkrete Erhöhung zusagen, solange die Prüfung nicht abgeschlossen ist.`,
-            propertyId: cleanText(tenant.data.propertyId),
-            subject: 'Prüfung Mieterhöhung',
-            tenantId: tenant.id,
-          }),
+          href: `/admin/mieter/${tenant.id}`,
           id: `tenant-rent-${tenant.id}-${reminderDate}-${rowIndex}`,
           label: buildTenantLabel(tenant),
           meta: `Mieterhöhung prüfen · ${cleanText((row as DocumentData).kind) || 'Mietvertrag'}`,
@@ -642,12 +607,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           category: 'maintenance',
           dateValue: roofReminderDate,
-          href: buildMaintenanceComposeHref({
-            instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Dachwartung am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
-            propertyId: property.id,
-            serviceField: 'roofMaintenanceId',
-            subject: `Termin Dachwartung ${propertyLabel}`,
-          }),
+          href: `/admin/immobilie/${property.id}/details#maintenance`,
           id: `property-roof-${property.id}`,
           label: propertyLabel,
           meta: `Dachwartung · nach ${parseReminderMonths(property.data.roofMaintenanceReminderMonths)} Monaten`,
@@ -663,12 +623,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           category: 'maintenance',
           dateValue: gutterReminderDate,
-          href: buildMaintenanceComposeHref({
-            instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Regenrinnenreinigung am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
-            propertyId: property.id,
-            serviceField: 'gutterCleaningId',
-            subject: `Termin Regenrinnenreinigung ${propertyLabel}`,
-          }),
+          href: `/admin/immobilie/${property.id}/details#maintenance`,
           id: `property-gutter-${property.id}`,
           label: propertyLabel,
           meta: `Regenrinnenreinigung · nach ${parseReminderMonths(property.data.gutterCleaningReminderMonths)} Monaten`,
@@ -690,12 +645,7 @@ export default function AdminDashboardOverview() {
         reminderItems.push({
           category: 'maintenance',
           dateValue: heatingReminderDate,
-          href: buildMaintenanceComposeHref({
-            instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Heizungswartung (${cleanText(heating.type) || 'Heizung'}) am Objekt ${propertyLabel} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
-            propertyId: property.id,
-            serviceField: 'heatingServiceId',
-            subject: `Termin Heizungswartung ${propertyLabel}`,
-          }),
+          href: `/admin/immobilie/${property.id}/details#maintenance`,
           id: `property-heating-${property.id}-${cleanText(heating.id) || cleanText(heating.type) || heatingIndex}`,
           label: propertyLabel,
           meta: `Heizungswartung · ${cleanText(heating.type) || 'Heizung'} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
@@ -723,13 +673,7 @@ export default function AdminDashboardOverview() {
           reminderItems.push({
             category: 'maintenance',
             dateValue: heatingReminderDate,
-            href: buildMaintenanceComposeHref({
-              instruction: `Bitte bereite eine kurze, verbindliche E-Mail an den zuständigen Dienstleister vor. Wir möchten einen Termin für die Heizungswartung (${cleanText(heating.type) || 'Heizung'}) am Objekt ${propertyLabel}${unitLabel ? `, Einheit ${unitLabel}` : ''} abstimmen. Bitte um Terminvorschläge und kurze Rückmeldung bitten.`,
-              propertyId: property.id,
-              serviceField: 'heatingServiceId',
-              subject: `Termin Heizungswartung ${propertyLabel}${unitLabel ? ` · ${unitLabel}` : ''}`,
-              unitId,
-            }),
+            href: `/admin/immobilie/${property.id}/details#maintenance`,
             id: `unit-heating-${property.id}-${unitId || 'property'}-${cleanText(heating.id) || cleanText(heating.type) || heatingIndex}`,
             label: propertyLabel,
             meta: `Heizungswartung ${unitLabel ? `· ${unitLabel}` : ''} · nach ${parseReminderMonths(heating.maintenanceReminderMonths)} Monaten`,
@@ -837,17 +781,23 @@ export default function AdminDashboardOverview() {
       .sort((left, right) => left.label.localeCompare(right.label, 'de'));
     const activeTenantItems = activeRentTenants
       .map((tenant) => {
-        const property = propertyById.get(cleanText(tenant.data.propertyId));
+        const activeContracts = getTenantLeaseContracts(tenant).filter((contract) =>
+          isActiveTenantContract(tenant, contract)
+        );
+        const propertyNames = Array.from(
+          new Set(
+            activeContracts
+              .map((contract) => propertyById.get(cleanText(contract.propertyId)))
+              .filter((property): property is WorkflowRecord => Boolean(property))
+              .map(buildPropertyLabel)
+          )
+        );
+        const unitLabels = activeContracts.map((contract) => cleanText(contract.unitLabel)).filter(Boolean);
         return {
           href: `/admin/mieter/${tenant.id}`,
           id: tenant.id,
           label: buildTenantLabel(tenant),
-          meta: [
-            property ? buildPropertyLabel(property) : '',
-            cleanText(tenant.data.unitLabel),
-          ]
-            .filter(Boolean)
-            .join(' · ') || 'Aktiver Mieter',
+          meta: [...propertyNames, ...unitLabels].join(' - ') || 'Aktiver Mieter',
         };
       })
       .sort((left, right) => left.label.localeCompare(right.label, 'de'));
@@ -881,7 +831,7 @@ export default function AdminDashboardOverview() {
     : visibleInventoryItems.slice(0, 3);
 
   const currentColdRentTotal = useMemo(
-    () => activeRentTenants.reduce((total, tenant) => total + parseMoney(tenant.data.coldRent), 0),
+    () => activeRentTenants.reduce((total, tenant) => total + getActiveTenantRentTotal(tenant), 0),
     [activeRentTenants]
   );
 

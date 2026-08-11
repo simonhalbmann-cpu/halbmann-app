@@ -84,9 +84,23 @@ type UnitOption = {
   unitLabel: string;
 };
 
+type LeaseContractForm = {
+  coldRent: string;
+  id: string;
+  leaseOptionCount: string;
+  leaseOptionEnabled: string;
+  leaseOptionYears: string;
+  moveInDate: string;
+  moveOutDate: string;
+  netOperatingCosts: string;
+  selectedUnitKey: string;
+  status: string;
+};
+
 type TenantFormState = {
   additionalPersons: AdditionalPerson[];
   additionalPersonsDraftRelation: string;
+  additionalLeaseContracts: LeaseContractForm[];
   annualStatementFile: string;
   bankStatementsFile: string;
   companyCity: string;
@@ -196,6 +210,7 @@ const relationLabelMap = Object.fromEntries(
 );
 
 const defaultFormState = (): TenantFormState => ({
+  additionalLeaseContracts: [],
   additionalPersons: [],
   additionalPersonsDraftRelation: '',
   annualStatementFile: '',
@@ -472,6 +487,27 @@ const mapAdditionalPerson = (person: unknown): AdditionalPerson | null => {
   };
 };
 
+const mapLeaseContract = (contract: unknown): LeaseContractForm | null => {
+  if (!contract || typeof contract !== 'object') return null;
+  const data = contract as DocumentData;
+  const propertyId = String(data.propertyId ?? '');
+  const unitId = String(data.unitId ?? '');
+  const selectedUnitKey = propertyId && unitId ? `${propertyId}::${unitId}` : '';
+  if (!selectedUnitKey) return null;
+  return {
+    coldRent: String(data.coldRent ?? ''),
+    id: String(data.id ?? createClientId('contract')),
+    leaseOptionCount: String(data.leaseOptionCount ?? ''),
+    leaseOptionEnabled: String(data.leaseOptionEnabled ?? 'no'),
+    leaseOptionYears: String(data.leaseOptionYears ?? ''),
+    moveInDate: String(data.moveInDate ?? ''),
+    moveOutDate: String(data.moveOutDate ?? data.leaseEndDate ?? ''),
+    netOperatingCosts: String(data.netOperatingCosts ?? ''),
+    selectedUnitKey,
+    status: String(data.status ?? 'active'),
+  };
+};
+
 const mapRentIncreaseRow = (row: unknown): RentIncreaseRow | null => {
   if (!row || typeof row !== 'object') return null;
   return {
@@ -507,8 +543,19 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     : '';
   const coldRent = String(data.coldRent ?? '');
   const netOperatingCosts = String(data.netOperatingCosts ?? '');
+  const storedContracts = Array.isArray(data.leaseContracts)
+    ? data.leaseContracts
+        .map(mapLeaseContract)
+        .filter((entry): entry is LeaseContractForm => Boolean(entry))
+    : [];
+  const selectedUnitKey =
+    data.propertyId && data.unitId ? `${String(data.propertyId)}::${String(data.unitId)}` : '';
+  const additionalLeaseContracts = storedContracts.filter(
+    (contract) => contract.selectedUnitKey !== selectedUnitKey
+  );
 
   return {
+    additionalLeaseContracts,
     additionalPersons: Array.isArray(data.additionalPersons)
       ? data.additionalPersons
           .map(mapAdditionalPerson)
@@ -564,8 +611,7 @@ const mapTenantDataToFormState = (data: DocumentData): TenantFormState => {
     rentIncreaseType,
     salaryProofsFile: String(data.salaryProofsFile ?? ''),
     schufaFile: String(data.schufaFile ?? ''),
-    selectedUnitKey:
-      data.propertyId && data.unitId ? `${String(data.propertyId)}::${String(data.unitId)}` : '',
+    selectedUnitKey,
     status: String(data.status ?? 'active'),
     taxNumber: String(data.taxNumber ?? ''),
     tenantInfoFile: String(data.tenantInfoFile ?? ''),
@@ -708,14 +754,27 @@ export default function TenantAdminManager({
         const fullUnitLabel = [unitLabel, floor, position, section].filter(Boolean).join(' · ');
         const unitId = String(unit.id ?? '').trim();
         if (!unitId) return;
-        const linkedTenants = tenants.filter(
-          (tenant) =>
-            String(tenant.data.propertyId ?? '').trim() === property.id &&
-            String(tenant.data.unitId ?? '').trim() === unitId
-        );
+        const linkedTenants = tenants
+          .flatMap((tenant) => {
+            const contracts = Array.isArray(tenant.data.leaseContracts)
+              ? tenant.data.leaseContracts.filter(
+                  (contract: unknown): contract is DocumentData =>
+                    Boolean(contract) && typeof contract === 'object'
+                )
+              : [];
+            const entries = contracts.length > 0 ? contracts : [tenant.data];
+            return entries.map((contract) => ({ contract, tenant }));
+          })
+          .filter(
+            (entry) =>
+              String(entry.contract.propertyId ?? '').trim() === property.id &&
+              String(entry.contract.unitId ?? '').trim() === unitId
+          );
         const assignedTenant = tenants.find((tenant) => tenant.id === assignedTenantId) ?? null;
         const currentTenant =
-          linkedTenants.find((tenant) => String(tenant.data.status ?? '').trim() === 'active') ??
+          linkedTenants.find(
+            (entry) => String(entry.contract.status ?? entry.tenant.data.status ?? '').trim() === 'active'
+          )?.tenant ??
           (String(assignedTenant?.data.status ?? '').trim() === 'active' ? assignedTenant : null);
         const isOccupiedByOther = Boolean(currentTenant?.id && currentTenant.id !== documentId);
         const currentTenantName = currentTenant
@@ -955,6 +1014,69 @@ export default function TenantAdminManager({
         rentIncreaseRows: nextRows,
       };
     });
+  }
+
+  function addLeaseContract() {
+    setForm((current) => ({
+      ...current,
+      additionalLeaseContracts: [
+        ...current.additionalLeaseContracts,
+        {
+          coldRent: '',
+          id: createClientId('contract'),
+          leaseOptionCount: '',
+          leaseOptionEnabled: 'no',
+          leaseOptionYears: '',
+          moveInDate: current.moveInDate,
+          moveOutDate: '',
+          netOperatingCosts: '',
+          selectedUnitKey: '',
+          status: 'active',
+        },
+      ],
+    }));
+  }
+
+  function updateLeaseContract(
+    contractId: string,
+    field: keyof LeaseContractForm,
+    value: string
+  ) {
+    setForm((current) => ({
+      ...current,
+      additionalLeaseContracts: current.additionalLeaseContracts.map((contract) =>
+        contract.id === contractId
+          ? {
+              ...contract,
+              [field]:
+                field === 'coldRent' || field === 'netOperatingCosts'
+                  ? formatMoneyInput(value)
+                  : value,
+            }
+          : contract
+      ),
+    }));
+  }
+
+  function blurLeaseContractMoney(contractId: string, field: 'coldRent' | 'netOperatingCosts', value: string) {
+    setForm((current) => ({
+      ...current,
+      additionalLeaseContracts: current.additionalLeaseContracts.map((contract) =>
+        contract.id === contractId
+          ? {
+              ...contract,
+              [field]: formatMoneyForBlur(value),
+            }
+          : contract
+      ),
+    }));
+  }
+
+  function removeLeaseContract(contractId: string) {
+    setForm((current) => ({
+      ...current,
+      additionalLeaseContracts: current.additionalLeaseContracts.filter((contract) => contract.id !== contractId),
+    }));
   }
 
   function handleGuarantorChange(guarantorId: string) {
@@ -1358,6 +1480,37 @@ export default function TenantAdminManager({
       return;
     }
 
+    const selectedAdditionalContracts = form.additionalLeaseContracts
+      .map((contract) => ({
+        contract,
+        unit: unitOptions.find(
+          (unit) => `${unit.propertyId}::${unit.unitId}` === contract.selectedUnitKey
+        ) ?? null,
+      }))
+      .filter((entry) => entry.contract.selectedUnitKey);
+    const duplicateContractKeys = new Set<string>();
+    const allContractKeys = [form.selectedUnitKey];
+    for (const entry of selectedAdditionalContracts) {
+      if (allContractKeys.includes(entry.contract.selectedUnitKey)) {
+        duplicateContractKeys.add(entry.contract.selectedUnitKey);
+      }
+      allContractKeys.push(entry.contract.selectedUnitKey);
+      if (!entry.unit) {
+        setError('Bitte fuer jeden weiteren Vertrag eine vorhandene Einheit auswaehlen.');
+        return;
+      }
+      if (entry.contract.status === 'active' && entry.unit.currentTenantId) {
+        setError(
+          `Die Einheit ${entry.unit.label} ist aktuell durch ${entry.unit.currentTenantName || 'einen anderen Mieter'} belegt.`
+        );
+        return;
+      }
+    }
+    if (duplicateContractKeys.size > 0) {
+      setError('Eine Einheit darf beim selben Mieter nur einmal zugeordnet werden.');
+      return;
+    }
+
     if (form.salutation === 'Firma' && !cleanSpaces(form.companyName)) {
       setError('Bitte den Firmennamen eintragen.');
       return;
@@ -1411,6 +1564,40 @@ export default function TenantAdminManager({
             );
 
         const hasRentIncreaseType = Boolean(cleanSpaces(form.rentIncreaseType));
+        const primaryContract = {
+          coldRent: formatMoneyInput(nextColdRent),
+          id: 'primary',
+          leaseEndReminderMonths: cleanSpaces(form.leaseEndReminderMonths) || '3',
+          leaseOptionCount: form.leaseOptionEnabled === 'yes' ? cleanSpaces(form.leaseOptionCount) : '',
+          leaseOptionEnabled: form.leaseOptionEnabled,
+          leaseOptionYears: form.leaseOptionEnabled === 'yes' ? cleanSpaces(form.leaseOptionYears) : '',
+          moveInDate: form.moveInDate,
+          moveOutDate: form.moveOutDate,
+          netOperatingCosts: formatMoneyInput(form.netOperatingCosts),
+          propertyId: selectedUnit.propertyId,
+          propertyName: selectedUnit.propertyName,
+          status: form.status,
+          unitId: selectedUnit.unitId,
+          unitLabel: selectedUnit.unitLabel,
+        };
+        const additionalLeaseContracts = selectedAdditionalContracts
+          .filter((entry): entry is { contract: LeaseContractForm; unit: UnitOption } => Boolean(entry.unit))
+          .map(({ contract, unit }) => ({
+            coldRent: formatMoneyInput(contract.coldRent),
+            id: contract.id,
+            leaseEndReminderMonths: cleanSpaces(form.leaseEndReminderMonths) || '3',
+            leaseOptionCount: contract.leaseOptionEnabled === 'yes' ? cleanSpaces(contract.leaseOptionCount) : '',
+            leaseOptionEnabled: contract.leaseOptionEnabled,
+            leaseOptionYears: contract.leaseOptionEnabled === 'yes' ? cleanSpaces(contract.leaseOptionYears) : '',
+            moveInDate: contract.moveInDate,
+            moveOutDate: contract.moveOutDate,
+            netOperatingCosts: formatMoneyInput(contract.netOperatingCosts),
+            propertyId: unit.propertyId,
+            propertyName: unit.propertyName,
+            status: contract.status,
+            unitId: unit.unitId,
+            unitLabel: unit.unitLabel,
+          }));
         const payload = {
           additionalPersons: [],
           annualStatementFile: form.annualStatementFile,
@@ -1456,6 +1643,7 @@ export default function TenantAdminManager({
           propertyId: selectedUnit.propertyId,
           propertyName: selectedUnit.propertyName,
           propertyUnit: selectedUnit.label,
+          leaseContracts: [primaryContract, ...additionalLeaseContracts],
           rentHistory: nextHistory,
           rentIncreaseNextReview: hasRentIncreaseType ? form.rentIncreaseNextReview : '',
           rentIncreaseReminderIntervalYears: form.rentIncreaseReminderIntervalYears,
@@ -1994,6 +2182,91 @@ export default function TenantAdminManager({
               <span className="text-sm font-medium text-slate-700">Kautionsbetrag</span>
               <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onBlur={(event) => updateField('depositAmount', formatMoneyForBlur(event.target.value))} onChange={(event) => updateField('depositAmount', formatMoneyInput(event.target.value))} placeholder="z. B. 2.550,00 EUR" value={form.depositAmount} />
             </label>
+          </div>
+
+          <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-900">Weitere Einheiten / Vertraege</p>
+                <p className="mt-1 text-xs leading-6 text-slate-500">
+                  Fuer Stellplaetze, Garagen oder weitere Einheiten mit eigener Miete.
+                </p>
+              </div>
+              <button className="rounded-full border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950" onClick={addLeaseContract} type="button">
+                Vertrag hinzufuegen
+              </button>
+            </div>
+
+            {form.additionalLeaseContracts.length > 0 ? (
+              <div className="mt-4 space-y-4">
+                {form.additionalLeaseContracts.map((contract, index) => (
+                  <div className="rounded-[24px] border border-stone-200 bg-white p-4" key={contract.id}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-slate-900">Zusatzvertrag {index + 1}</p>
+                      <button className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100" onClick={() => removeLeaseContract(contract.id)} type="button">
+                        Entfernen
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <label className="block space-y-2 xl:col-span-2">
+                        <span className="text-sm font-medium text-slate-700">Einheit</span>
+                        <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'selectedUnitKey', event.target.value)} value={contract.selectedUnitKey}>
+                          <option value="">Bitte Einheit auswaehlen</option>
+                          {unitOptions.map((unit) => (
+                            <option key={`${contract.id}-${unit.propertyId}::${unit.unitId}`} value={`${unit.propertyId}::${unit.unitId}`}>
+                              {unit.label} - {unit.occupancyLabel}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Status</span>
+                        <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'status', event.target.value)} value={contract.status}>
+                          {statusOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Kaltmiete</span>
+                        <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onBlur={(event) => blurLeaseContractMoney(contract.id, 'coldRent', event.target.value)} onChange={(event) => updateLeaseContract(contract.id, 'coldRent', event.target.value)} placeholder="z. B. 50,00 EUR" value={contract.coldRent} />
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Betriebskosten</span>
+                        <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onBlur={(event) => blurLeaseContractMoney(contract.id, 'netOperatingCosts', event.target.value)} onChange={(event) => updateLeaseContract(contract.id, 'netOperatingCosts', event.target.value)} placeholder="optional" value={contract.netOperatingCosts} />
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Beginn</span>
+                        <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'moveInDate', event.target.value)} type="date" value={contract.moveInDate} />
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Ende</span>
+                        <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'moveOutDate', event.target.value)} type="date" value={contract.moveOutDate} />
+                      </label>
+                      <label className="block space-y-2">
+                        <span className="text-sm font-medium text-slate-700">Option</span>
+                        <select className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" onChange={(event) => updateLeaseContract(contract.id, 'leaseOptionEnabled', event.target.value)} value={contract.leaseOptionEnabled}>
+                          <option value="no">Nein</option>
+                          <option value="yes">Ja</option>
+                        </select>
+                      </label>
+                      {contract.leaseOptionEnabled === 'yes' ? (
+                        <>
+                          <label className="block space-y-2">
+                            <span className="text-sm font-medium text-slate-700">Anzahl Optionen</span>
+                            <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="1" onChange={(event) => updateLeaseContract(contract.id, 'leaseOptionCount', event.target.value)} type="number" value={contract.leaseOptionCount} />
+                          </label>
+                          <label className="block space-y-2">
+                            <span className="text-sm font-medium text-slate-700">Jahre je Option</span>
+                            <input className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-700/60" min="1" onChange={(event) => updateLeaseContract(contract.id, 'leaseOptionYears', event.target.value)} type="number" value={contract.leaseOptionYears} />
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-[28px] border border-stone-200 bg-stone-50/70 p-5">

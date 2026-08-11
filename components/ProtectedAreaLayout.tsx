@@ -114,6 +114,43 @@ const unitMenuLabel = (floorValue?: unknown, positionValue?: unknown) => {
   return [floor, mappedPosition].filter(Boolean).join(' . ') || 'Einheit';
 };
 
+function getTenantLeaseContracts(tenant: AdminRecord) {
+  const contracts = Array.isArray(tenant.data.leaseContracts)
+    ? tenant.data.leaseContracts.filter(
+        (contract): contract is DocumentData => Boolean(contract) && typeof contract === 'object'
+      )
+    : [];
+
+  if (contracts.length > 0) return contracts;
+
+  const propertyId = cleanText(tenant.data.propertyId);
+  const unitId = cleanText(tenant.data.unitId);
+  return propertyId && unitId ? [tenant.data] : [];
+}
+
+function tenantHasPropertyContract(tenant: AdminRecord, propertyId: string) {
+  return getTenantLeaseContracts(tenant).some((contract) => cleanText(contract.propertyId) === propertyId);
+}
+
+function findTenantContractForUnit(tenant: AdminRecord, propertyId: string, unitId: string) {
+  return (
+    getTenantLeaseContracts(tenant).find(
+      (contract) =>
+        cleanText(contract.propertyId) === propertyId &&
+        cleanText(contract.unitId) === unitId
+    ) ?? null
+  );
+}
+
+function tenantDisplayName(tenant: AdminRecord) {
+  return (
+    [cleanText(tenant.data.lastName), cleanText(tenant.data.firstName)].filter(Boolean).join(', ') ||
+    cleanText(tenant.data.companyName) ||
+    cleanText(tenant.data.contactPerson) ||
+    tenant.id
+  );
+}
+
 function getHeaderContent(pathname: string, fallbackTitle: string) {
   if (
     pathname === '/admin/nachrichten' ||
@@ -624,7 +661,7 @@ export default function ProtectedAreaLayout({
       )
       .map((property) => {
         const propertyTenants = tenants
-          .filter((tenant) => canReadTenants && cleanText(tenant.data.propertyId) === property.id)
+          .filter((tenant) => canReadTenants && tenantHasPropertyContract(tenant, property.id))
           .sort((left, right) =>
             cleanText(right.data.moveInDate).localeCompare(cleanText(left.data.moveInDate), 'de')
           );
@@ -636,11 +673,10 @@ export default function ProtectedAreaLayout({
             const unitId = cleanText(unit.id);
             if (!unitId) return null;
             const currentTenant =
-              propertyTenants.find(
-                (tenant) =>
-                  cleanText(tenant.data.unitId) === unitId &&
-                  cleanText(tenant.data.status) === 'active'
-              ) ?? null;
+              propertyTenants.find((tenant) => {
+                const contract = findTenantContractForUnit(tenant, property.id, unitId);
+                return contract && cleanText(contract.status || tenant.data.status) === 'active';
+              }) ?? null;
 
             return {
               currentTenant,
@@ -673,9 +709,7 @@ export default function ProtectedAreaLayout({
         ...property,
         units: property.units.filter((unit) => {
           const currentTenantName = unit.currentTenant
-            ? [cleanText(unit.currentTenant.data.lastName), cleanText(unit.currentTenant.data.firstName)]
-                .filter(Boolean)
-                .join(', ')
+            ? tenantDisplayName(unit.currentTenant)
             : '';
           return [
             unit.label.toLowerCase(),
@@ -738,19 +772,35 @@ export default function ProtectedAreaLayout({
 
     const tenantResults: SearchResult[] = canReadTenants
       ? tenants
-          .map((tenant) => {
-            const propertyId = cleanText(tenant.data.propertyId);
-            const relatedProperty = properties.find((property) => property.id === propertyId);
-            return {
-              companyId: cleanText(relatedProperty?.data.ownerId),
-              label: [cleanText(tenant.data.lastName), cleanText(tenant.data.firstName)]
-                .filter(Boolean)
-                .join(', '),
-              propertyId,
-              tenantId: tenant.id,
-              type: 'tenant' as const,
-              unitId: cleanText(tenant.data.unitId),
-            };
+          .flatMap((tenant) => {
+            const contracts = getTenantLeaseContracts(tenant);
+            const name = tenantDisplayName(tenant);
+            if (contracts.length === 0) {
+              return [
+                {
+                  companyId: '',
+                  label: name,
+                  propertyId: '',
+                  tenantId: tenant.id,
+                  type: 'tenant' as const,
+                  unitId: '',
+                },
+              ];
+            }
+
+            return contracts.map((contract) => {
+              const propertyId = cleanText(contract.propertyId);
+              const relatedProperty = properties.find((property) => property.id === propertyId);
+              const unitLabel = cleanText(contract.unitLabel);
+              return {
+                companyId: cleanText(relatedProperty?.data.ownerId),
+                label: [name, unitLabel].filter(Boolean).join(' - '),
+                propertyId,
+                tenantId: tenant.id,
+                type: 'tenant' as const,
+                unitId: cleanText(contract.unitId),
+              };
+            });
           })
           .filter((tenant) => tenant.label.toLowerCase().includes(searchText))
       : [];
