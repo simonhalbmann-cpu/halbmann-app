@@ -270,7 +270,6 @@ export default function ProtectedAreaLayout({
   const [tenants, setTenants] = useState<AdminRecord[]>([]);
   const [search, setSearch] = useState('');
   const [settingsTab, setSettingsTab] = useState('');
-  const [openCompanies, setOpenCompanies] = useState<Record<string, boolean>>({});
   const [openProperties, setOpenProperties] = useState<Record<string, boolean>>({});
   const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
   const [mailSyncNote, setMailSyncNote] = useState('');
@@ -608,10 +607,6 @@ export default function ProtectedAreaLayout({
     }));
   }
 
-  function toggleCompany(companyId: string) {
-    setOpenCompanies((current) => ({ [companyId]: !current[companyId] }));
-  }
-
   function toggleProperty(propertyId: string) {
     setOpenProperties((current) => ({ [propertyId]: !current[propertyId] }));
   }
@@ -620,41 +615,29 @@ export default function ProtectedAreaLayout({
     setOpenUnits((current) => ({ [unitKey]: !current[unitKey] }));
   }
 
-  function openCompany(companyId: string) {
+  function openProperty(propertyId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenCompanies({ [companyId]: true });
-    setOpenProperties({});
-    setOpenUnits({});
-    router.push(`/admin/firma/${companyId}`);
-  }
-
-  function openProperty(companyId: string, propertyId: string) {
-    setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenCompanies({ [companyId]: true });
     setOpenProperties({ [propertyId]: true });
     setOpenUnits({});
     router.push(`/admin/immobilie/${propertyId}`);
   }
 
-  function openPropertyServices(companyId: string, propertyId: string) {
+  function openPropertyServices(propertyId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenCompanies({ [companyId]: true });
     setOpenProperties({ [propertyId]: true });
     setOpenUnits({});
     router.push(`/admin/immobilie/${propertyId}/dienstleister`);
   }
 
-  function openUnit(companyId: string, propertyId: string, unitId: string) {
+  function openUnit(propertyId: string, unitId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenCompanies({ [companyId]: true });
     setOpenProperties({ [propertyId]: true });
     setOpenUnits({ [`${propertyId}-${unitId}`]: true });
     router.push(`/admin/einheit/${propertyId}/${unitId}`);
   }
 
-  function openTenant(companyId: string, propertyId: string, unitId: string, tenantId: string) {
+  function openTenant(propertyId: string, unitId: string, tenantId: string) {
     setOpenSections({ Bestand: true, Hinzufuegen: false });
-    setOpenCompanies({ [companyId]: true });
     setOpenProperties({ [propertyId]: true });
     setOpenUnits({ [`${propertyId}-${unitId}`]: true });
     router.push(`/admin/mieter/${tenantId}`);
@@ -790,16 +773,6 @@ export default function ProtectedAreaLayout({
     const searchText = search.trim().toLowerCase();
     if (!searchText) return [];
 
-    const companyResults: SearchResult[] = canReadCompanies
-      ? companies
-          .filter((company) => cleanText(company.data.name).toLowerCase().includes(searchText))
-          .map((company) => ({
-            companyId: company.id,
-            label: cleanText(company.data.name) || company.id,
-            type: 'company',
-          }))
-      : [];
-
     const propertyResults: SearchResult[] = canReadProperties
       ? properties
           .filter((property) => cleanText(property.data.name).toLowerCase().includes(searchText))
@@ -846,30 +819,25 @@ export default function ProtectedAreaLayout({
           .filter((tenant) => tenant.label.toLowerCase().includes(searchText))
       : [];
 
-    return [...companyResults, ...propertyResults, ...unitResults, ...tenantResults].slice(0, 12);
-  }, [canReadCompanies, canReadProperties, canReadTenants, companies, properties, search, tenants]);
+    return [...propertyResults, ...unitResults, ...tenantResults].slice(0, 12);
+  }, [canReadProperties, canReadTenants, properties, search, tenants]);
 
   function revealSearchResult(result: SearchResult) {
-    if (result.type === 'company' && result.companyId) {
-      openCompany(result.companyId);
+    if (result.type === 'property' && result.propertyId) {
+      openProperty(result.propertyId);
       return;
     }
-    if (result.type === 'property' && result.companyId && result.propertyId) {
-      openProperty(result.companyId, result.propertyId);
-      return;
-    }
-    if (result.type === 'unit' && result.companyId && result.propertyId && result.unitId) {
-      openUnit(result.companyId, result.propertyId, result.unitId);
+    if (result.type === 'unit' && result.propertyId && result.unitId) {
+      openUnit(result.propertyId, result.unitId);
       return;
     }
     if (
       result.type === 'tenant' &&
-      result.companyId &&
       result.propertyId &&
       result.unitId &&
       result.tenantId
     ) {
-      openTenant(result.companyId, result.propertyId, result.unitId, result.tenantId);
+      openTenant(result.propertyId, result.unitId, result.tenantId);
     }
   }
 
@@ -1021,13 +989,11 @@ export default function ProtectedAreaLayout({
                               type="button"
                             >
                               <span className="block text-[10px] uppercase tracking-[0.18em] text-stone-400">
-                                {result.type === 'company'
-                                  ? 'Firma'
-                                  : result.type === 'property'
-                                    ? 'Immobilie'
-                                    : result.type === 'unit'
-                                      ? 'Einheit'
-                                      : 'Mieter'}
+                                {result.type === 'property'
+                                  ? 'Immobilie'
+                                  : result.type === 'unit'
+                                    ? 'Einheit'
+                                    : 'Mieter'}
                               </span>
                               {result.label}
                             </button>
@@ -1036,37 +1002,14 @@ export default function ProtectedAreaLayout({
                       ) : null}
 
                       <div className="max-h-[62vh] space-y-1 overflow-y-auto pr-1">
-                        {companyTree.map((company) => (
-                          <div className="space-y-1" key={`mobile-company-${company.id}`}>
-                            <div className="flex items-center gap-1 rounded-[16px] bg-white/8">
-                              <button
-                                className="min-w-0 flex-1 px-3 py-2 text-left text-sm font-medium text-stone-100"
-                                onClick={() => {
-                                  openCompany(company.id);
-                                  setMobileAdminMenuOpen(false);
-                                }}
-                                type="button"
-                              >
-                                {company.label}
-                              </button>
-                              <button
-                                aria-label={openCompanies[company.id] ?? false ? 'Firma einklappen' : 'Firma aufklappen'}
-                                className="flex h-9 w-9 shrink-0 items-center justify-center text-lg leading-none text-amber-200"
-                                onClick={() => toggleCompany(company.id)}
-                                type="button"
-                              >
-                                {openCompanies[company.id] ?? false ? '-' : '+'}
-                              </button>
-                            </div>
-                            {openCompanies[company.id] ? (
-                              <div className="ml-3 space-y-1 border-l border-white/10 pl-3">
-                                {company.properties.map((property) => (
+                        {companyTree.flatMap((company) =>
+                          company.properties.map((property) => (
                                   <div className="space-y-1" key={`mobile-property-${property.id}`}>
                                     <div className="flex items-center gap-1 rounded-[14px] hover:bg-white/6">
                                       <button
                                         className="min-w-0 flex-1 px-3 py-2 text-left text-sm text-stone-200"
                                         onClick={() => {
-                                          openProperty(company.id, property.id);
+                                          openProperty(property.id);
                                           setMobileAdminMenuOpen(false);
                                         }}
                                         type="button"
@@ -1086,7 +1029,7 @@ export default function ProtectedAreaLayout({
                                     <button
                                       className="w-full rounded-[14px] px-3 py-2 text-left text-xs text-stone-300"
                                       onClick={() => {
-                                        openPropertyServices(company.id, property.id);
+                                        openPropertyServices(property.id);
                                         setMobileAdminMenuOpen(false);
                                       }}
                                       type="button"
@@ -1104,7 +1047,7 @@ export default function ProtectedAreaLayout({
                                               <button
                                                 className="min-w-0 flex-1 px-3 py-2 text-left text-xs text-stone-300"
                                                 onClick={() => {
-                                                  openUnit(company.id, property.id, unit.id);
+                                                  openUnit(property.id, unit.id);
                                                   setMobileAdminMenuOpen(false);
                                                 }}
                                                 type="button"
@@ -1124,7 +1067,7 @@ export default function ProtectedAreaLayout({
                                               <button
                                                 className="ml-3 flex items-center gap-2 rounded-[14px] px-3 py-2 text-left text-xs text-stone-200"
                                                 onClick={() => {
-                                                  openTenant(company.id, property.id, unit.id, unit.currentTenant!.id);
+                                                  openTenant(property.id, unit.id, unit.currentTenant!.id);
                                                   setMobileAdminMenuOpen(false);
                                                 }}
                                                 type="button"
@@ -1141,11 +1084,8 @@ export default function ProtectedAreaLayout({
                                     </div>
                                   ) : null}
                                 </div>
-                              ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
+                              ))
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -1219,13 +1159,11 @@ export default function ProtectedAreaLayout({
                           type="button"
                         >
                           <span className="block text-[10px] uppercase tracking-[0.22em] text-slate-400">
-                            {result.type === 'company'
-                              ? 'Firma'
-                              : result.type === 'property'
-                                ? 'Objekt'
-                                : result.type === 'unit'
-                                  ? 'Einheit'
-                                  : 'Mieter'}
+                            {result.type === 'property'
+                              ? 'Objekt'
+                              : result.type === 'unit'
+                                ? 'Einheit'
+                                : 'Mieter'}
                           </span>
                           <span className="mt-1 block">{result.label}</span>
                         </button>
@@ -1272,38 +1210,13 @@ export default function ProtectedAreaLayout({
 
                     {openSections.Bestand ?? false ? (
                       <div className="mt-3 space-y-2">
-                        {companyTree.length === 0 ? (
+                        {companyTree.flatMap((company) => company.properties).length === 0 ? (
                           <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-sm text-slate-500">
-                            Keine Firmen im Bestand gefunden.
+                            Keine Immobilien im Bestand gefunden.
                           </div>
                         ) : (
-                          companyTree.map((company) => (
-                            <div className="space-y-2" key={company.id}>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  className={`flex-1 rounded-[18px] px-3 py-2 text-left text-xs leading-5 font-medium transition ${
-                                    isCurrentPath(pathname, `/admin/firma/${company.id}`)
-                                      ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
-                                      : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
-                                  }`}
-                                  onClick={() => openCompany(company.id)}
-                                  title={company.label}
-                                  type="button"
-                                >
-                                  {company.label}
-                                </button>
-                                <button
-                                  aria-label={openCompanies[company.id] ?? false ? 'Firma einklappen' : 'Firma aufklappen'}
-                                  className="px-1 py-2 text-sm text-slate-400 transition hover:text-slate-700"
-                                  onClick={() => toggleCompany(company.id)}
-                                  type="button"
-                                >
-                                  {openCompanies[company.id] ?? false ? '˄' : '˅'}
-                                </button>
-                              </div>
-                              {openCompanies[company.id] ? (
-                                <div className="ml-3 space-y-2 border-l border-stone-200 pl-3">
-                                  {company.properties.map((property) => (
+                          companyTree.flatMap((company) =>
+                            company.properties.map((property) => (
                                     <div className="space-y-2" key={property.id}>
                                       <div className="flex items-center gap-2">
                                         <button
@@ -1312,7 +1225,7 @@ export default function ProtectedAreaLayout({
                                               ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
                                               : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
                                           }`}
-                                          onClick={() => openProperty(company.id, property.id)}
+                                          onClick={() => openProperty(property.id)}
                                           title={property.label}
                                           type="button"
                                         >
@@ -1336,7 +1249,7 @@ export default function ProtectedAreaLayout({
                                                   ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
                                                   : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
                                               }`}
-                                              onClick={() => openPropertyServices(company.id, property.id)}
+                                              onClick={() => openPropertyServices(property.id)}
                                               title={`Dienstleister ${property.label}`}
                                               type="button"
                                             >
@@ -1354,7 +1267,7 @@ export default function ProtectedAreaLayout({
                                                         ? 'border border-stone-200 bg-white text-slate-950 shadow-[0_12px_28px_-24px_rgba(148,119,77,0.4)]'
                                                         : 'border border-transparent bg-transparent text-slate-700 hover:bg-white/55'
                                                     }`}
-                                                    onClick={() => openUnit(company.id, property.id, unit.id)}
+                                                    onClick={() => openUnit(property.id, unit.id)}
                                                     title={unit.menuLabel}
                                                     type="button"
                                                   >
@@ -1379,7 +1292,7 @@ export default function ProtectedAreaLayout({
                                                               ? 'text-slate-950 underline decoration-stone-300 underline-offset-4'
                                                               : 'text-slate-700 hover:text-amber-800'
                                                           }`}
-                                                          onClick={() => openTenant(company.id, property.id, unit.id, unit.currentTenant!.id)}
+                                                          onClick={() => openTenant(property.id, unit.id, unit.currentTenant!.id)}
                                                           type="button"
                                                         >
                                                           <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
@@ -1399,11 +1312,8 @@ export default function ProtectedAreaLayout({
                                         </div>
                                       ) : null}
                                     </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ))
+                                  ))
+                          )
                         )}
                       </div>
                     ) : null}

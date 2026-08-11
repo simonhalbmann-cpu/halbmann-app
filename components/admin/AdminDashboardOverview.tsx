@@ -24,10 +24,10 @@ type ReminderItem = {
   type: 'message' | 'property' | 'tenant' | 'theme';
 };
 
-type RentFilterScope = 'all' | 'companies' | 'properties' | 'tenants';
+type RentFilterScope = 'all' | 'properties' | 'tenants';
 type DashboardReminderFilter = 'dueSoon' | 'rentIncrease';
 type DashboardThemeFilter = 'new' | 'open';
-type DashboardInventoryFilter = 'activeTenants' | 'companies' | 'properties' | 'vacancy';
+type DashboardInventoryFilter = 'activeTenants' | 'properties' | 'vacancy';
 
 type InventoryItem = {
   href: string;
@@ -280,7 +280,6 @@ export default function AdminDashboardOverview() {
   const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
-  const [companies, setCompanies] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
   const [loadError, setLoadError] = useState('');
   const [rentFilterScope, setRentFilterScope] = useState<RentFilterScope>('all');
@@ -288,11 +287,10 @@ export default function AdminDashboardOverview() {
     useState<DashboardReminderFilter>('dueSoon');
   const [dashboardThemeFilter, setDashboardThemeFilter] = useState<DashboardThemeFilter>('open');
   const [dashboardInventoryFilter, setDashboardInventoryFilter] =
-    useState<DashboardInventoryFilter>('companies');
+    useState<DashboardInventoryFilter>('properties');
   const [showAllInventory, setShowAllInventory] = useState(false);
   const [showAllReminders, setShowAllReminders] = useState(false);
   const [showAllThemes, setShowAllThemes] = useState(false);
-  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>([]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
 
@@ -301,7 +299,6 @@ export default function AdminDashboardOverview() {
       readCollection('messages', setLoadError, setFirestoreMessages),
       readCollection('tenants', setLoadError, setTenants),
       readCollection('properties', setLoadError, setProperties),
-      readCollection('companies', setLoadError, setCompanies),
       readCollection('people', setLoadError, setPeople),
     ];
 
@@ -356,12 +353,6 @@ export default function AdminDashboardOverview() {
       current.length > 0 ? current.filter((id) => properties.some((property) => property.id === id)) : []
     );
   }, [properties]);
-
-  useEffect(() => {
-    setSelectedCompanyIds((current) =>
-      current.length > 0 ? current.filter((id) => companies.some((company) => company.id === id)) : []
-    );
-  }, [companies]);
 
   useEffect(() => {
     setSelectedTenantIds((current) =>
@@ -652,14 +643,6 @@ export default function AdminDashboardOverview() {
 
   const inventoryLists = useMemo(() => {
     const propertyById = new Map(properties.map((property) => [property.id, property]));
-    const companyItems = companies
-      .map((company) => ({
-        href: `/admin/firma/${company.id}`,
-        id: company.id,
-        label: cleanText(company.data.name) || company.id,
-        meta: cleanText(company.data.email) || 'Firma',
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label, 'de'));
     const propertyItems = properties
       .map((property) => {
         const units = Array.isArray(property.data.units) ? property.data.units.length : 0;
@@ -706,11 +689,10 @@ export default function AdminDashboardOverview() {
 
     return {
       activeTenants: activeTenantItems,
-      companies: companyItems,
       properties: propertyItems,
       vacancy: vacancyItems,
     } satisfies Record<DashboardInventoryFilter, InventoryItem[]>;
-  }, [activeRentTenants, activeTenantsByUnit, companies, properties]);
+  }, [activeRentTenants, activeTenantsByUnit, properties]);
 
   const visibleInventoryItems = inventoryLists[dashboardInventoryFilter];
   const displayedInventoryItems = showAllInventory
@@ -767,23 +749,13 @@ export default function AdminDashboardOverview() {
       );
     }
 
-    if (rentFilterScope === 'companies') {
-      const filteredCompanyIds =
-        selectedCompanyIds.length > 0 ? selectedCompanyIds : companies.map((company) => company.id);
-      return activeRentTenants.filter((tenant) =>
-        filteredCompanyIds.includes(cleanText(tenant.data.companyId))
-      );
-    }
-
     const filteredTenantIds =
       selectedTenantIds.length > 0 ? selectedTenantIds : activeRentTenants.map((tenant) => tenant.id);
     return activeRentTenants.filter((tenant) => filteredTenantIds.includes(tenant.id));
   }, [
     activeRentTenants,
-    companies,
     properties,
     rentFilterScope,
-    selectedCompanyIds,
     selectedPropertyIds,
     selectedTenantIds,
   ]);
@@ -853,12 +825,6 @@ export default function AdminDashboardOverview() {
     );
   }
 
-  function toggleCompanySelection(companyId: string) {
-    setSelectedCompanyIds((current) =>
-      current.includes(companyId) ? current.filter((id) => id !== companyId) : [...current, companyId]
-    );
-  }
-
   function toggleTenantSelection(tenantId: string) {
     setSelectedTenantIds((current) =>
       current.includes(tenantId) ? current.filter((id) => id !== tenantId) : [...current, tenantId]
@@ -868,10 +834,6 @@ export default function AdminDashboardOverview() {
   function resetActiveFilterSelection() {
     if (rentFilterScope === 'properties') {
       setSelectedPropertyIds([]);
-      return;
-    }
-    if (rentFilterScope === 'companies') {
-      setSelectedCompanyIds([]);
       return;
     }
     if (rentFilterScope === 'tenants') {
@@ -986,14 +948,8 @@ export default function AdminDashboardOverview() {
           ) : null}
         </div>
 
-        <div className="mt-4 grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-[20px] border border-stone-200 bg-stone-200 lg:grid-cols-4">
+        <div className="mt-4 grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-[20px] border border-stone-200 bg-stone-200 lg:grid-cols-3">
           {[
-            {
-              active: dashboardInventoryFilter === 'companies',
-              filter: 'companies' as const,
-              label: 'Firmen',
-              value: companies.length,
-            },
             {
               active: dashboardInventoryFilter === 'properties',
               filter: 'properties' as const,
@@ -1216,7 +1172,6 @@ export default function AdminDashboardOverview() {
               >
                 <option value="all">Alle</option>
                 <option value="properties">Objekte</option>
-                <option value="companies">Firmen</option>
                 <option value="tenants">Mieter</option>
               </select>
             </label>
@@ -1232,18 +1187,6 @@ export default function AdminDashboardOverview() {
                 onReset={resetActiveFilterSelection}
                 onToggle={togglePropertySelection}
                 selectedIds={selectedPropertyIds}
-              />
-            ) : null}
-
-            {rentFilterScope === 'companies' ? (
-              <DashboardFilterButtons
-                items={companies.map((company) => ({
-                  id: company.id,
-                  label: cleanText(company.data.name) || company.id,
-                }))}
-                onReset={resetActiveFilterSelection}
-                onToggle={toggleCompanySelection}
-                selectedIds={selectedCompanyIds}
               />
             ) : null}
 
