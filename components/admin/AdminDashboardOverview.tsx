@@ -39,6 +39,8 @@ type ArchivedReminderItem = ReminderItem & {
 };
 
 type RentFilterScope = 'all' | 'properties' | 'tenants';
+type RentTimeRange = 'all' | 'last5' | 'last10';
+type RentValueMode = 'both' | 'cold' | 'costs';
 type DashboardReminderFilter = 'dueSoon' | 'maintenance' | 'rentIncrease';
 type DashboardThemeFilter = 'new' | 'open';
 type DashboardInventoryFilter = 'activeTenants' | 'properties' | 'vacancy';
@@ -224,6 +226,13 @@ function getActiveTenantRentTotal(tenant: WorkflowRecord) {
   return contracts.reduce((total, contract) => total + parseMoney(contract.coldRent), 0);
 }
 
+function tenantHasContractInProperties(tenant: WorkflowRecord, propertyIds: string[]) {
+  if (propertyIds.length === 0) return true;
+  return getTenantLeaseContracts(tenant).some((contract) =>
+    propertyIds.includes(cleanText(contract.propertyId))
+  );
+}
+
 function formatMoney(value: number) {
   return new Intl.NumberFormat('de-DE', {
     currency: 'EUR',
@@ -341,7 +350,9 @@ export default function AdminDashboardOverview() {
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
   const [loadError, setLoadError] = useState('');
+  const [rentTimeRange, setRentTimeRange] = useState<RentTimeRange>('last10');
   const [rentFilterScope, setRentFilterScope] = useState<RentFilterScope>('all');
+  const [rentValueMode, setRentValueMode] = useState<RentValueMode>('both');
   const [dashboardReminderFilter, setDashboardReminderFilter] =
     useState<DashboardReminderFilter>('dueSoon');
   const [dashboardThemeFilter, setDashboardThemeFilter] = useState<DashboardThemeFilter>('open');
@@ -929,9 +940,7 @@ export default function AdminDashboardOverview() {
     if (rentFilterScope === 'properties') {
       const filteredPropertyIds =
         selectedPropertyIds.length > 0 ? selectedPropertyIds : properties.map((property) => property.id);
-      return activeRentTenants.filter((tenant) =>
-        filteredPropertyIds.includes(cleanText(tenant.data.propertyId))
-      );
+      return activeRentTenants.filter((tenant) => tenantHasContractInProperties(tenant, filteredPropertyIds));
     }
 
     const filteredTenantIds =
@@ -946,63 +955,106 @@ export default function AdminDashboardOverview() {
   ]);
 
   const dashboardRentPoints = useMemo(() => {
-    const tenantSeries = filteredTenantsForChart
-      .map((tenant) => {
-        const history = Array.isArray(tenant.data.rentHistory) ? tenant.data.rentHistory : [];
-        const referenceDate =
-          cleanText(tenant.data.rentIncreaseReferenceDate) || cleanText(tenant.data.moveInDate) || '';
-        const points = history
-          .filter((entry) => entry && typeof entry === 'object')
-          .map((entry) => ({
-            coldRent: parseMoney((entry as DocumentData).coldRent),
-            date: cleanText((entry as DocumentData).effectiveDate),
-          }))
-          .filter((entry) => entry.date);
+    const selectedPropertySet =
+      rentFilterScope === 'properties' && selectedPropertyIds.length > 0
+        ? new Set(selectedPropertyIds)
+        : null;
+    const contractSeries = filteredTenantsForChart.flatMap((tenant) =>
+      getTenantLeaseContracts(tenant)
+        .filter((contract) => isActiveTenantContract(tenant, contract))
+        .filter((contract) => !selectedPropertySet || selectedPropertySet.has(cleanText(contract.propertyId)))
+        .map((contract, contractIndex) => {
+          const points: Array<{ coldRent: number; date: string; netOperatingCosts: number }> = [];
+          const addPoint = (date: unknown, coldRent: unknown, netOperatingCosts: unknown) => {
+            const dateText = cleanText(date);
+            if (!dateText) return;
+            points.push({
+              coldRent: parseMoney(coldRent),
+              date: dateText,
+              netOperatingCosts: parseMoney(netOperatingCosts),
+            });
+          };
 
-        if (referenceDate) {
-          points.push({
-            coldRent: parseMoney(tenant.data.coldRent),
-            date: referenceDate,
-          });
-        }
+          if (contractIndex === 0) {
+            const history = Array.isArray(tenant.data.rentHistory) ? tenant.data.rentHistory : [];
+            history
+              .filter((entry) => entry && typeof entry === 'object')
+              .forEach((entry) => {
+                const data = entry as DocumentData;
+                addPoint(data.effectiveDate, data.coldRent, data.netOperatingCosts);
+              });
 
-        const rentIncreaseRows = Array.isArray(tenant.data.rentIncreaseRows)
-          ? tenant.data.rentIncreaseRows
-          : [];
-        rentIncreaseRows
-          .filter((entry) => entry && typeof entry === 'object')
-          .forEach((entry) => {
-            const date = cleanText((entry as DocumentData).fromDate);
-            const coldRent = parseMoney((entry as DocumentData).coldRent);
-            if (!date || coldRent <= 0) return;
-            points.push({ coldRent, date });
-          });
+            addPoint(
+              cleanText(tenant.data.rentIncreaseReferenceDate) || cleanText(contract.moveInDate) || cleanText(tenant.data.moveInDate),
+              contract.coldRent ?? tenant.data.coldRent,
+              contract.netOperatingCosts ?? tenant.data.netOperatingCosts
+            );
 
-        return points.sort((left, right) => left.date.localeCompare(right.date));
-      })
-      .filter((points) => points.length > 0);
+            const rentIncreaseRows = Array.isArray(tenant.data.rentIncreaseRows)
+              ? tenant.data.rentIncreaseRows
+              : [];
+            rentIncreaseRows
+              .filter((entry) => entry && typeof entry === 'object')
+              .forEach((entry) => {
+                const data = entry as DocumentData;
+                addPoint(data.fromDate, data.coldRent, data.netOperatingCosts ?? contract.netOperatingCosts);
+              });
+          } else {
+            addPoint(
+              contract.moveInDate || tenant.data.moveInDate,
+              contract.coldRent,
+              contract.netOperatingCosts
+            );
+          }
 
-    const uniqueDates = Array.from(
-      new Set(tenantSeries.flatMap((series) => series.map((entry) => entry.date)))
-    ).sort((left, right) => left.localeCompare(right));
+          return points.sort((left, right) => left.date.localeCompare(right.date));
+        })
+        .filter((points) => points.length > 0)
+    );
 
-    return uniqueDates.map((date) => {
-      const coldRent = tenantSeries.reduce((total, series) => {
-        const latest = series
-          .filter((entry) => entry.date <= date)
-          .sort((left, right) => left.date.localeCompare(right.date))
-          .at(-1);
-        return total + (latest?.coldRent ?? 0);
-      }, 0);
+    if (contractSeries.length === 0) return [];
+
+    const currentYear = new Date().getFullYear();
+    const dataYears = contractSeries.flatMap((series) =>
+      series.map((point) => new Date(`${point.date}T12:00:00`).getFullYear()).filter(Number.isFinite)
+    );
+    const minDataYear = dataYears.length > 0 ? Math.min(...dataYears) : currentYear;
+    const startYear =
+      rentTimeRange === 'last5'
+        ? currentYear - 4
+        : rentTimeRange === 'last10'
+          ? currentYear - 9
+          : minDataYear;
+    const years = Array.from(
+      { length: Math.max(currentYear - startYear + 1, 1) },
+      (_, index) => startYear + index
+    );
+
+    return years.map((year) => {
+      const cutoffDate = `${year}-12-31`;
+      const totals = contractSeries.reduce(
+        (result, series) => {
+          const latest = series
+            .filter((entry) => entry.date <= cutoffDate)
+            .sort((left, right) => left.date.localeCompare(right.date))
+            .at(-1);
+          return {
+            coldRent: result.coldRent + (latest?.coldRent ?? 0),
+            netOperatingCosts: result.netOperatingCosts + (latest?.netOperatingCosts ?? 0),
+          };
+        },
+        { coldRent: 0, netOperatingCosts: 0 }
+      );
 
       return {
-        coldRent,
-        date,
-        label: 'Gesamte Kaltmiete',
+        coldRent: totals.coldRent,
+        date: `${year}-01-01`,
+        label: 'Jahressumme',
+        netOperatingCosts: totals.netOperatingCosts,
         pointType: 'history' as const,
       } satisfies RentHistoryChartPoint;
     });
-  }, [filteredTenantsForChart]);
+  }, [filteredTenantsForChart, rentFilterScope, rentTimeRange, selectedPropertyIds]);
 
   function togglePropertySelection(propertyId: string) {
     setSelectedPropertyIds((current) =>
@@ -1376,26 +1428,51 @@ export default function AdminDashboardOverview() {
           <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-amber-700/80">
-                Kaltmiete
+                Statistik
               </p>
-              <h3 className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">Verlauf und Erhöhungen</h3>
+              <h3 className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">Mietentwicklung</h3>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Die Kurve enthält gespeicherte Mietstände und geplante Staffeln, sofern sie beim
-                Mieter hinterlegt sind.
+                Jahresvergleich fuer Kaltmiete und Nebenkosten nach Mieter, Objekt oder Gesamtbestand.
               </p>
             </div>
-            <label className="inline-flex w-fit max-w-full items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700 lg:max-w-[220px]">
-              <span>Filter</span>
-              <select
-                className="bg-transparent text-xs text-slate-900 outline-none"
-                onChange={(event) => setRentFilterScope(event.target.value as RentFilterScope)}
-                value={rentFilterScope}
-              >
-                <option value="all">Alle</option>
-                <option value="properties">Objekte</option>
-                <option value="tenants">Mieter</option>
-              </select>
-            </label>
+            <div className="grid w-full max-w-3xl gap-2 sm:grid-cols-3">
+              <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+                <span>Zeitraum</span>
+                <select
+                  className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none"
+                  onChange={(event) => setRentTimeRange(event.target.value as RentTimeRange)}
+                  value={rentTimeRange}
+                >
+                  <option value="all">Gesamtzeit</option>
+                  <option value="last5">Letzte 5 Jahre</option>
+                  <option value="last10">Letzte 10 Jahre</option>
+                </select>
+              </label>
+              <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+                <span>Anzeige</span>
+                <select
+                  className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none"
+                  onChange={(event) => setRentValueMode(event.target.value as RentValueMode)}
+                  value={rentValueMode}
+                >
+                  <option value="cold">Kaltmiete</option>
+                  <option value="costs">Nebenkosten</option>
+                  <option value="both">Beides</option>
+                </select>
+              </label>
+              <label className="flex min-w-0 items-center gap-2 rounded-full border border-stone-300 bg-white px-3 py-2 text-xs text-slate-700">
+                <span>Quelle</span>
+                <select
+                  className="min-w-0 flex-1 bg-transparent text-xs text-slate-900 outline-none"
+                  onChange={(event) => setRentFilterScope(event.target.value as RentFilterScope)}
+                  value={rentFilterScope}
+                >
+                  <option value="all">Alle zusammen</option>
+                  <option value="properties">Ganzes Objekt</option>
+                  <option value="tenants">Einzelne Mieter</option>
+                </select>
+              </label>
+            </div>
           </div>
 
           <div className="mt-4 space-y-3">
@@ -1426,11 +1503,13 @@ export default function AdminDashboardOverview() {
 
           <div className="mt-5 min-w-0">
             <RentHistoryChart
-              defaultMode="cold"
+              defaultMode={rentValueMode}
               emptyText="Für die gewählte Auswahl liegen noch keine Mietdaten vor."
               framed={false}
+              mode={rentValueMode}
               points={dashboardRentPoints}
-              showCosts={false}
+              showCosts
+              showModeControl={false}
               subtitle=""
               title=""
             />

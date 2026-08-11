@@ -14,6 +14,8 @@ type RentHistoryChartProps = {
   defaultMode?: 'both' | 'cold' | 'costs';
   emptyText?: string;
   framed?: boolean;
+  mode?: 'both' | 'cold' | 'costs';
+  showModeControl?: boolean;
   points: RentHistoryChartPoint[];
   showCosts?: boolean;
   subtitle: string;
@@ -33,10 +35,19 @@ function formatDateLabel(dateValue: string) {
   return new Intl.DateTimeFormat('de-DE').format(date);
 }
 
-function formatMonthLabel(dateValue: string) {
+function formatYearLabel(dateValue: string) {
   const date = new Date(`${dateValue}T12:00:00`);
   if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('de-DE', { month: 'short', year: '2-digit' }).format(date);
+  return new Intl.DateTimeFormat('de-DE', { year: 'numeric' }).format(date);
+}
+
+function niceStep(rawStep: number) {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return 100;
+  const exponent = Math.floor(Math.log10(rawStep));
+  const base = 10 ** exponent;
+  const fraction = rawStep / base;
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  return Math.max(niceFraction * base, 50);
 }
 
 function sortPoints(left: RentHistoryChartPoint, right: RentHistoryChartPoint) {
@@ -49,14 +60,17 @@ export default function RentHistoryChart({
   defaultMode = 'both',
   emptyText = 'Keine Daten vorhanden.',
   framed = true,
+  mode,
   points,
+  showModeControl = true,
   showCosts = true,
   subtitle,
   title,
 }: RentHistoryChartProps) {
-  const [mode, setMode] = useState<'both' | 'cold' | 'costs'>(defaultMode);
+  const [internalMode, setInternalMode] = useState<'both' | 'cold' | 'costs'>(defaultMode);
 
-  const safeMode = showCosts ? mode : 'cold';
+  const selectedMode = mode ?? internalMode;
+  const safeMode = showCosts ? selectedMode : 'cold';
   const sortedPoints = useMemo(
     () => points.filter((point) => point.date).slice().sort(sortPoints),
     [points]
@@ -65,9 +79,17 @@ export default function RentHistoryChart({
   const chart = useMemo(() => {
     if (sortedPoints.length === 0) return null;
 
-    const width = 760;
+    const years = Array.from(
+      new Set(
+        sortedPoints
+          .map((point) => new Date(`${point.date}T12:00:00`))
+          .filter((date) => !Number.isNaN(date.getTime()))
+          .map((date) => date.getFullYear())
+      )
+    ).sort((left, right) => left - right);
+    const width = Math.max(760, Math.max(years.length, 1) * 78);
     const height = 260;
-    const padding = { bottom: 36, left: 52, right: 20, top: 20 };
+    const padding = { bottom: 42, left: 78, right: 24, top: 20 };
     const minDate = new Date(`${sortedPoints[0].date}T12:00:00`).getTime();
     const maxDate = new Date(`${sortedPoints[sortedPoints.length - 1].date}T12:00:00`).getTime();
     const dateRange = Math.max(maxDate - minDate, 1);
@@ -80,6 +102,8 @@ export default function RentHistoryChart({
       return values;
     });
     const maxValue = Math.max(...visibleValues, 1);
+    const yStep = niceStep(maxValue / 4);
+    const yMax = Math.max(yStep, Math.ceil(maxValue / yStep) * yStep);
 
     const toX = (dateValue: string) => {
       const timestamp = new Date(`${dateValue}T12:00:00`).getTime();
@@ -87,7 +111,7 @@ export default function RentHistoryChart({
     };
 
     const toY = (value: number) =>
-      height - padding.bottom - (value / (maxValue * 1.15)) * (height - padding.top - padding.bottom);
+      height - padding.bottom - (value / yMax) * (height - padding.top - padding.bottom);
 
     const coldLine = sortedPoints
       .map(
@@ -113,63 +137,77 @@ export default function RentHistoryChart({
         x: toX(point.date),
         y: toY(point.coldRent),
       })),
-      ticks: sortedPoints.map((point) => ({
-        date: point.date,
-        label: formatMonthLabel(point.date),
-        x: toX(point.date),
+      xTicks: years.map((year) => ({
+        date: `${year}-01-01`,
+        label: String(year),
+        x: toX(`${year}-01-01`),
       })),
+      yTicks: Array.from({ length: Math.floor(yMax / yStep) + 1 }, (_, index) => {
+        const value = index * yStep;
+        return {
+          label: formatMoneyNumber(value).replace(',00 EUR', ' EUR'),
+          value,
+          y: toY(value),
+        };
+      }),
       width,
     };
   }, [safeMode, showCosts, sortedPoints]);
 
   const Wrapper = framed ? 'section' : 'div';
+  const showHeader = Boolean(title || subtitle || (showCosts && showModeControl));
 
   return (
     <Wrapper className={framed ? 'rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]' : ''}>
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">{title}</p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{subtitle}</p>
-        </div>
-        {showCosts ? (
-          <div className="inline-flex rounded-full border border-stone-300 bg-white p-1">
-            {[
-              { label: 'Beide', value: 'both' },
-              { label: 'Kaltmiete', value: 'cold' },
-              { label: 'Nebenkosten', value: 'costs' },
-            ].map((option) => (
-              <button
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                  safeMode === option.value ? 'bg-amber-700 text-white' : 'text-slate-600 hover:text-slate-950'
-                }`}
-                key={option.value}
-                onClick={() => setMode(option.value as 'both' | 'cold' | 'costs')}
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
+      {showHeader ? (
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            {title ? <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700/80">{title}</p> : null}
+            {subtitle ? <p className="mt-2 text-sm leading-6 text-slate-600">{subtitle}</p> : null}
           </div>
-        ) : null}
-      </div>
+          {showCosts && showModeControl ? (
+            <div className="inline-flex rounded-full border border-stone-300 bg-white p-1">
+              {[
+                { label: 'Beide', value: 'both' },
+                { label: 'Kaltmiete', value: 'cold' },
+                { label: 'Nebenkosten', value: 'costs' },
+              ].map((option) => (
+                <button
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                    safeMode === option.value ? 'bg-amber-700 text-white' : 'text-slate-600 hover:text-slate-950'
+                  }`}
+                  key={option.value}
+                  onClick={() => setInternalMode(option.value as 'both' | 'cold' | 'costs')}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {chart ? (
         <>
-          <div className="mt-5 overflow-x-auto">
+          <div className={`${showHeader ? 'mt-5' : ''} overflow-x-auto`}>
             <svg className="h-auto min-w-[720px] w-full" viewBox={`0 0 ${chart.width} ${chart.height}`}>
-              {[0.25, 0.5, 0.75, 1].map((step) => {
-                const y = chart.height - 36 - step * (chart.height - 56);
+              {chart.yTicks.map((tick) => {
                 return (
-                  <line
-                    key={step}
-                    stroke="#e7e5e4"
-                    strokeDasharray="4 6"
-                    strokeWidth="1"
-                    x1="52"
-                    x2={chart.width - 20}
-                    y1={y}
-                    y2={y}
-                  />
+                  <g key={tick.value}>
+                    <line
+                      stroke="#e7e5e4"
+                      strokeDasharray={tick.value === 0 ? '0' : '4 6'}
+                      strokeWidth="1"
+                      x1="78"
+                      x2={chart.width - 24}
+                      y1={tick.y}
+                      y2={tick.y}
+                    />
+                    <text fill="#78716c" fontSize="11" textAnchor="end" x="70" y={tick.y + 4}>
+                      {tick.label}
+                    </text>
+                  </g>
                 );
               })}
 
@@ -200,7 +238,7 @@ export default function RentHistoryChart({
                 </g>
               ))}
 
-              {chart.ticks.map((tick) => (
+              {chart.xTicks.map((tick) => (
                 <text
                   fill="#78716c"
                   fontSize="11"
@@ -209,7 +247,7 @@ export default function RentHistoryChart({
                   x={tick.x}
                   y={chart.height - 12}
                 >
-                  {tick.label}
+                  {tick.label || formatYearLabel(tick.date)}
                 </text>
               ))}
             </svg>
