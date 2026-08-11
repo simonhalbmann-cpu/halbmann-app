@@ -1,7 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { collection, onSnapshot, query, type DocumentData } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  type DocumentData,
+} from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -22,6 +31,10 @@ type ReminderItem = {
   label: string;
   meta: string;
   type: 'message' | 'property' | 'tenant' | 'theme';
+};
+
+type ArchivedReminderItem = ReminderItem & {
+  archivedAt?: unknown;
 };
 
 type RentFilterScope = 'all' | 'properties' | 'tenants';
@@ -149,6 +162,29 @@ function formatDateOnly(value: unknown) {
 function parseReminderMonths(value: unknown) {
   const numeric = Number.parseInt(cleanText(value), 10);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 11;
+}
+
+function reminderArchiveId(entry: Pick<ReminderItem, 'dateValue' | 'id'>) {
+  return `${entry.id}-${entry.dateValue}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function mapArchivedReminder(record: WorkflowRecord): ArchivedReminderItem | null {
+  const id = cleanText(record.data.reminderId);
+  const dateValue = cleanText(record.data.dateValue);
+  if (!id || !dateValue) return null;
+  const type = cleanText(record.data.type);
+  return {
+    archivedAt: record.data.archivedAt,
+    dateValue,
+    href: cleanText(record.data.href),
+    id,
+    label: cleanText(record.data.label) || 'Termin',
+    meta: cleanText(record.data.meta),
+    type:
+      type === 'message' || type === 'property' || type === 'tenant' || type === 'theme'
+        ? type
+        : 'property',
+  };
 }
 
 function parseLeaseEndReminderMonths(value: unknown) {
@@ -310,6 +346,7 @@ export default function AdminDashboardOverview() {
   const { user } = useAuth();
   const [firestoreMessages, setFirestoreMessages] = useState<WorkflowRecord[]>([]);
   const [messageThemes, setMessageThemes] = useState<LocalMessageTheme[]>([]);
+  const [archivedReminders, setArchivedReminders] = useState<WorkflowRecord[]>([]);
   const [tenants, setTenants] = useState<WorkflowRecord[]>([]);
   const [properties, setProperties] = useState<WorkflowRecord[]>([]);
   const [people, setPeople] = useState<WorkflowRecord[]>([]);
@@ -322,6 +359,7 @@ export default function AdminDashboardOverview() {
     useState<DashboardInventoryFilter>('properties');
   const [showAllInventory, setShowAllInventory] = useState(false);
   const [showAllReminders, setShowAllReminders] = useState(false);
+  const [showReminderArchive, setShowReminderArchive] = useState(false);
   const [showAllThemes, setShowAllThemes] = useState(false);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
@@ -332,6 +370,7 @@ export default function AdminDashboardOverview() {
       readCollection('tenants', setLoadError, setTenants),
       readCollection('properties', setLoadError, setProperties),
       readCollection('people', setLoadError, setPeople),
+      readCollection('dashboardReminderArchive', setLoadError, setArchivedReminders),
     ];
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -371,6 +410,25 @@ export default function AdminDashboardOverview() {
       window.clearInterval(intervalId);
     };
   }, [user]);
+
+  async function markReminderDone(entry: ReminderItem) {
+    if (!user) return;
+    await setDoc(doc(db, 'dashboardReminderArchive', reminderArchiveId(entry)), {
+      archivedAt: serverTimestamp(),
+      archivedByEmail: user.email ?? '',
+      archivedByUid: user.uid,
+      dateValue: entry.dateValue,
+      href: entry.href,
+      label: entry.label,
+      meta: entry.meta,
+      reminderId: entry.id,
+      type: entry.type,
+    });
+  }
+
+  async function reactivateReminder(entry: ReminderItem) {
+    await deleteDoc(doc(db, 'dashboardReminderArchive', reminderArchiveId(entry)));
+  }
 
   const messages = useMemo(() => {
     const unique = new Map<string, WorkflowRecord>();
@@ -659,15 +717,38 @@ export default function AdminDashboardOverview() {
     });
   }, [messages, properties, tenants, themes]);
 
+  const archivedReminderItems = useMemo(
+    () =>
+      archivedReminders
+        .map(mapArchivedReminder)
+        .filter((entry): entry is ArchivedReminderItem => Boolean(entry))
+        .sort((left, right) => {
+          const leftDate = parseDateInput(left.dateValue)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          const rightDate = parseDateInput(right.dateValue)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+          return rightDate - leftDate;
+        }),
+    [archivedReminders]
+  );
+
+  const archivedReminderKeys = useMemo(
+    () => new Set(archivedReminderItems.map(reminderArchiveId)),
+    [archivedReminderItems]
+  );
+
+  const activeReminders = useMemo(
+    () => reminders.filter((entry) => !archivedReminderKeys.has(reminderArchiveId(entry))),
+    [archivedReminderKeys, reminders]
+  );
+
   const dueSoonReminders = useMemo(
     () =>
-      reminders.filter((entry) => {
+      activeReminders.filter((entry) => {
         const date = parseDateInput(entry.dateValue);
         if (!date) return false;
         const diffDays = Math.ceil((date.getTime() - today.getTime()) / 86400000);
         return diffDays <= 14;
       }),
-    [reminders, today]
+    [activeReminders, today]
   );
 
   const dueSoonGeneralReminders = useMemo(
@@ -771,8 +852,8 @@ export default function AdminDashboardOverview() {
   );
 
   const rentIncreaseReminders = useMemo(
-    () => reminders.filter(isRentIncreaseReminder),
-    [reminders]
+    () => activeReminders.filter(isRentIncreaseReminder),
+    [activeReminders]
   );
 
   const activeRentIncreaseReminders = useMemo(
@@ -782,6 +863,9 @@ export default function AdminDashboardOverview() {
 
   const visibleDashboardReminders = useMemo(
     () =>
+      showReminderArchive
+        ? archivedReminderItems
+        :
       dashboardReminderFilter === 'rentIncrease'
         ? showAllReminders
           ? rentIncreaseReminders
@@ -789,19 +873,21 @@ export default function AdminDashboardOverview() {
         : dueSoonGeneralReminders,
     [
       activeRentIncreaseReminders,
+      archivedReminderItems,
       dashboardReminderFilter,
       dueSoonGeneralReminders,
       rentIncreaseReminders,
       showAllReminders,
+      showReminderArchive,
     ]
   );
 
   const displayedDashboardReminders = useMemo(
     () =>
-      dashboardReminderFilter === 'rentIncrease' || showAllReminders
+      showReminderArchive || dashboardReminderFilter === 'rentIncrease' || showAllReminders
         ? visibleDashboardReminders
         : visibleDashboardReminders.slice(0, 3),
-    [dashboardReminderFilter, showAllReminders, visibleDashboardReminders]
+    [dashboardReminderFilter, showAllReminders, showReminderArchive, visibleDashboardReminders]
   );
 
   const filteredTenantsForChart = useMemo(() => {
@@ -1168,20 +1254,38 @@ export default function AdminDashboardOverview() {
                 Termine
               </p>
               <h3 className="mt-2 font-serif text-2xl leading-tight text-slate-950 sm:text-3xl">
-                {dashboardReminderFilter === 'rentIncrease' ? 'Mieterhoehungen' : 'Naechste Fristen'}
+                {showReminderArchive
+                  ? 'Archiv'
+                  : dashboardReminderFilter === 'rentIncrease'
+                    ? 'Mieterhoehungen'
+                    : 'Naechste Fristen'}
               </h3>
             </div>
-            {(dashboardReminderFilter === 'rentIncrease'
-              ? rentIncreaseReminders.length > activeRentIncreaseReminders.length
-              : visibleDashboardReminders.length > 3) ? (
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
-                onClick={() => setShowAllReminders((current) => !current)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  showReminderArchive
+                    ? 'border-amber-700 bg-amber-700 text-white'
+                    : 'border-stone-300 text-slate-700 hover:border-stone-400 hover:text-slate-950'
+                }`}
+                onClick={() => setShowReminderArchive((current) => !current)}
                 type="button"
               >
-                {showAllReminders ? 'Weniger ^' : 'Alle >'}
+                Archiv
               </button>
-            ) : null}
+              {!showReminderArchive &&
+              (dashboardReminderFilter === 'rentIncrease'
+                ? rentIncreaseReminders.length > activeRentIncreaseReminders.length
+                : visibleDashboardReminders.length > 3) ? (
+                <button
+                  className="rounded-full border border-stone-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-stone-400 hover:text-slate-950"
+                  onClick={() => setShowAllReminders((current) => !current)}
+                  type="button"
+                >
+                  {showAllReminders ? 'Weniger ^' : 'Alle >'}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-5 divide-y divide-stone-200 border-y border-stone-200">
@@ -1189,7 +1293,9 @@ export default function AdminDashboardOverview() {
               <div className="py-5">
                 <EmptyList
                   text={
-                    dashboardReminderFilter === 'rentIncrease'
+                    showReminderArchive
+                      ? 'Noch keine erledigten Termine im Archiv.'
+                      : dashboardReminderFilter === 'rentIncrease'
                       ? 'Aktuell keine Mieterhöhungen vorgemerkt.'
                       : 'Aktuell keine Wiedervorlagen in den nächsten 14 Tagen.'
                   }
@@ -1197,19 +1303,37 @@ export default function AdminDashboardOverview() {
               </div>
             ) : (
               displayedDashboardReminders.map((entry) => (
-                <Link
-                  className="grid min-w-0 gap-2 px-1 py-4 transition hover:bg-stone-50/80 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
-                  href={entry.href}
+                <div
+                  className="grid min-w-0 gap-3 px-1 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
                   key={`${entry.id}-${entry.href}-${entry.dateValue}`}
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-950">{entry.label}</p>
                     <p className="mt-1 truncate text-xs text-slate-500">{entry.meta}</p>
                   </div>
-                  <span className="w-fit rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 sm:justify-self-end">
-                    {formatDateOnly(entry.dateValue)}
-                  </span>
-                </Link>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-self-end">
+                    <span className="w-fit rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                      {formatDateOnly(entry.dateValue)}
+                    </span>
+                    <button
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                        showReminderArchive
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                          : 'border-stone-300 bg-white text-slate-700 hover:border-emerald-300 hover:text-emerald-700'
+                      }`}
+                      onClick={() => {
+                        if (showReminderArchive) {
+                          void reactivateReminder(entry);
+                          return;
+                        }
+                        void markReminderDone(entry);
+                      }}
+                      type="button"
+                    >
+                      {showReminderArchive ? 'Reaktivieren' : 'Erledigt'}
+                    </button>
+                  </div>
+                </div>
               ))
             )}
           </div>

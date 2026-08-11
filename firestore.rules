@@ -113,6 +113,10 @@ service cloud.firestore {
       allow read, create, update, delete: if isAdmin();
     }
 
+    match /dashboardReminderArchive/{documentId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
     match /deletedMessages/{documentId} {
       allow read, create, update, delete: if isAdmin();
     }
