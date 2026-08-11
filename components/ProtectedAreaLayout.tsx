@@ -183,6 +183,7 @@ function resolveRequiredAdminPermission(
 
   if (pathname === '/admin/immobilie' || pathname === '/admin/objekte') return 'properties.create';
   if (/^\/admin\/immobilie\/[^/]+\/dienstleister$/.test(pathname)) return 'contacts.read';
+  if (/^\/admin\/immobilie\/[^/]+\/details$/.test(pathname)) return 'properties.read';
   if (/^\/admin\/immobilie\/[^/]+\/bearbeiten$/.test(pathname)) return 'properties.update';
   if (/^\/admin\/immobilie\/[^/]+$/.test(pathname)) return 'properties.read';
   if (/^\/admin\/einheit\/[^/]+\/[^/]+$/.test(pathname)) return 'properties.read';
@@ -316,7 +317,7 @@ export default function ProtectedAreaLayout({
     requiredRole === 'admin' && (canReadProperties || canReadTenants || canReadContacts);
   const isCompactHeaderRoute = isMessageRoute || isTenantOverviewRoute || isTenantDetailRoute || isBriefSettingsRoute;
   const propertyDetailId = useMemo(() => {
-    const match = pathname.match(/^\/admin\/immobilie\/([^/]+)$/);
+    const match = pathname.match(/^\/admin\/immobilie\/([^/]+)(?:\/details)?$/);
     return match ? match[1] : '';
   }, [pathname]);
   const unitRouteMatch = useMemo(() => {
@@ -1190,7 +1191,7 @@ export default function ProtectedAreaLayout({
                     <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
                       <Link
                         className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-                        href={`/admin/immobilie/${propertyDetailId}#details`}
+                        href={`/admin/immobilie/${propertyDetailId}/details`}
                       >
                         Details
                       </Link>
@@ -1202,7 +1203,7 @@ export default function ProtectedAreaLayout({
                       </Link>
                       <Link
                         className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-amber-700/40 hover:text-slate-950"
-                        href="/admin/immobilie"
+                        href={`/admin/immobilie/${propertyDetailId}`}
                       >
                         Übersicht
                       </Link>

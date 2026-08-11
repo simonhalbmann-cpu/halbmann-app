@@ -769,7 +769,10 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </DetailCard>
       </div>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section
+        className="admin-card scroll-mt-28 rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]"
+        id="meters"
+      >
           <button
             className="flex w-full items-center justify-between text-left"
             onClick={() => setShowObjectMeters((current) => !current)}
@@ -931,7 +934,10 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </DetailCard>
       </div>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section
+        className="admin-card scroll-mt-28 rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]"
+        id="maintenance"
+      >
         <button
           className="flex w-full items-center justify-between text-left"
           onClick={() => setShowMaintenance((current) => !current)}
@@ -1151,7 +1157,10 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </div>
       </section>
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section
+        className="admin-card scroll-mt-28 rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]"
+        id="service-providers"
+      >
         <button
           className="flex w-full items-center justify-between text-left"
           onClick={() => setShowServiceProviders((current) => !current)}
@@ -1246,7 +1255,10 @@ export default function PropertyDetailView({ propertyId, selectedUnitId }: Prope
         </div>
       ) : null}
 
-      <section className="admin-card rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]">
+      <section
+        className="admin-card scroll-mt-28 rounded-[24px] border border-stone-200 bg-white p-5 shadow-[0_24px_60px_-38px_rgba(148,119,77,0.28)]"
+        id="documents"
+      >
         <button
           className="flex w-full items-center justify-between text-left"
           onClick={() => setShowPropertyDocuments((current) => !current)}
